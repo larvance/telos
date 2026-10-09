@@ -2007,3 +2007,129 @@ fn test_server_game_mode_transitions_and_capabilities() {
     assert!(s.capabilities.noclip);
     assert!(s.capabilities.flying);
 }
+
+#[test]
+#[allow(clippy::float_cmp)]
+fn test_server_minecart_spawning_rail_tracking_and_riding() {
+    use glam::DVec3;
+    use telos_core::Identifier;
+    use telos_core::coords::BlockPos;
+    use telos_protocol::messages::{
+        C2sInteractEntity, C2sMessage, C2sPlayerCommand, PlayerCommandKind,
+    };
+    use telos_sim::{EntityType, MinecartEntity, Riding};
+
+    let mut server = Server::new(42, ServerConfig::default());
+    let (server_conn, client_conn) = MemoryConnection::pair_default();
+    let session_id = server.add_connection(Box::new(server_conn));
+    login_test_client(&mut server, &client_conn, "Engineer");
+
+    // Position player next to future rail site
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::PlayerPosition(C2sPlayerPosition {
+                x: 10.0,
+                y: 64.0,
+                z: 10.0,
+                yaw: 0.0,
+                pitch: 0.0,
+                on_ground: true,
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    // 1. Place a rail at (10, 64, 10)
+    let rail_pos = BlockPos::new(10, 64, 10);
+    let rail_state = server
+        .registries()
+        .block_registry()
+        .get(&Identifier::new("telos", "rail").unwrap())
+        .expect("rail state exists")
+        .default_state();
+    server.world_mut().set_block(rail_pos, rail_state);
+
+    // 2. Spawn a minecart at (10.5, 64.0625, 10.5)
+    let cart_net_id = server.spawn_mob(EntityType::Minecart, DVec3::new(10.5, 64.0625, 10.5));
+
+    // 3. Tick server: verifies pre-schedule rail tracking logic attaches cart to rail
+    server.tick();
+
+    let cart_ent = *server
+        .tracked_mobs
+        .get(&cart_net_id)
+        .expect("cart entity tracked");
+    let cart_comp = server
+        .ecs_world()
+        .get::<MinecartEntity>(cart_ent)
+        .expect("MinecartEntity component exists");
+    assert!(cart_comp.on_rail, "Minecart must be snapped to rail");
+    assert_eq!(cart_comp.rail_pos, Some(rail_pos));
+
+    let player_session = server.get_session(session_id).unwrap();
+    let player_ent = player_session.ecs_entity.unwrap();
+    let player_net_id = player_session.entity_id;
+
+    // 4. Client right-clicks minecart to mount
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::InteractEntity(C2sInteractEntity {
+                target_net_id: cart_net_id,
+                action: 1, // Interact / Mount
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    // Verify player is riding vehicle
+    let riding = server
+        .ecs_world()
+        .get::<Riding>(player_ent)
+        .expect("Player should be riding");
+    assert_eq!(riding.vehicle_net_id, cart_net_id);
+
+    let updated_cart = server.ecs_world().get::<MinecartEntity>(cart_ent).unwrap();
+    assert_eq!(updated_cart.passenger_id, Some(player_net_id));
+
+    // 5. Send steering command
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::PlayerCommand(C2sPlayerCommand {
+                command: PlayerCommandKind::SteerVehicle {
+                    forward: 1.0,
+                    turn: 0.0,
+                    unmount: false,
+                },
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    let cart_steered = server.ecs_world().get::<MinecartEntity>(cart_ent).unwrap();
+    assert_eq!(cart_steered.forward_input, 1.0);
+
+    // 6. Dismount via sneak / unmount
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::PlayerCommand(C2sPlayerCommand {
+                command: PlayerCommandKind::SteerVehicle {
+                    forward: 0.0,
+                    turn: 0.0,
+                    unmount: true,
+                },
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    assert!(
+        server.ecs_world().get::<Riding>(player_ent).is_none(),
+        "Player should no longer be riding"
+    );
+    let cart_unmounted = server.ecs_world().get::<MinecartEntity>(cart_ent).unwrap();
+    assert_eq!(cart_unmounted.passenger_id, None);
+}

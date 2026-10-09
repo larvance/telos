@@ -2007,10 +2007,10 @@ impl C2sPlayerCommand {
                 let y = f64::from_le_bytes(cursor[9..17].try_into().unwrap());
                 let z = f64::from_le_bytes(cursor[17..25].try_into().unwrap());
                 *cursor = &cursor[25..];
-                if mob_type == 0 || mob_type > 9 {
+                if mob_type == 0 || mob_type > 10 {
                     return Err(ProtocolError::InvalidValue {
                         field: "player_command.spawn_mob.mob_type",
-                        reason: "Mob type must be 1..=9".to_string(),
+                        reason: "Mob type must be 1..=10".to_string(),
                     });
                 }
                 if !x.is_finite() || !y.is_finite() || !z.is_finite() {
@@ -4003,5 +4003,38 @@ mod tests {
         let decoded_s2c = S2cVoiceData::decode(&mut cursor_s2c).expect("decode S2cVoiceData");
         assert_eq!(s2c_voice, decoded_s2c);
         assert!(cursor_s2c.is_empty());
+    }
+
+    #[test]
+    fn test_spawn_mob_command_codec_minecart() {
+        let cmd = C2sPlayerCommand {
+            command: PlayerCommandKind::SpawnMob {
+                mob_type: 10, // Minecart
+                x: 10.5,
+                y: 64.0,
+                z: -5.5,
+            },
+        };
+        let mut buf = Vec::new();
+        cmd.encode(&mut buf);
+        let mut cursor = &buf[..];
+        let decoded = C2sPlayerCommand::decode(&mut cursor).expect("decode C2sPlayerCommand");
+        assert_eq!(cmd, decoded);
+        assert!(cursor.is_empty());
+
+        // Invalid mob type 11 should be rejected
+        let invalid_cmd = C2sPlayerCommand {
+            command: PlayerCommandKind::SpawnMob {
+                mob_type: 11,
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+        };
+        let mut buf_inv = Vec::new();
+        invalid_cmd.encode(&mut buf_inv);
+        let mut cursor_inv = &buf_inv[..];
+        let res = C2sPlayerCommand::decode(&mut cursor_inv);
+        assert!(res.is_err());
     }
 }

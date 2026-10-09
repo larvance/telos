@@ -189,11 +189,36 @@ pub const ITEM_OAK_BOAT: u32 = 97;
 pub const ITEM_STRING: u32 = 55;
 /// Fishing rod item identifier (98).
 pub const ITEM_FISHING_ROD: u32 = 98;
+/// Minecart vehicle item identifier (99).
+pub const ITEM_MINECART: u32 = 99;
+/// Standard rail track item identifier (100).
+pub const ITEM_RAIL: u32 = 100;
+/// Powered booster rail track item identifier (101).
+pub const ITEM_POWERED_RAIL: u32 = 101;
+/// Detector switch rail track item identifier (102).
+pub const ITEM_DETECTOR_RAIL: u32 = 102;
+/// Activator trigger rail track item identifier (103).
+pub const ITEM_ACTIVATOR_RAIL: u32 = 103;
 
 /// Returns true if the item is a boat.
 #[must_use]
 pub const fn is_boat(item: u32) -> bool {
     item == ITEM_OAK_BOAT
+}
+
+/// Returns true if the item is a minecart.
+#[must_use]
+pub const fn is_minecart(item: u32) -> bool {
+    item == ITEM_MINECART
+}
+
+/// Returns true if the item is any type of rail track.
+#[must_use]
+pub const fn is_rail(item: u32) -> bool {
+    matches!(
+        item,
+        ITEM_RAIL | ITEM_POWERED_RAIL | ITEM_DETECTOR_RAIL | ITEM_ACTIVATOR_RAIL
+    )
 }
 
 /// Returns true if the item is a fishing rod.
@@ -412,6 +437,11 @@ pub fn item_name(item: u32) -> &'static str {
         96 => "Cooked Cod",
         97 => "Oak Boat",
         98 => "Fishing Rod",
+        99 => "Minecart",
+        100 => "Rail",
+        101 => "Powered Rail",
+        102 => "Detector Rail",
+        103 => "Activator Rail",
         _ => "Unknown Item",
     }
 }
@@ -1503,5 +1533,22 @@ mod tests {
         .unwrap();
         assert_eq!(player_inv.slots[9], ItemStack::EMPTY);
         assert_eq!(chest.slots[0], ItemStack::new(1, 64));
+    }
+
+    #[test]
+    fn test_minecart_and_rail_item_properties() {
+        assert!(is_minecart(ITEM_MINECART));
+        assert!(!is_minecart(ITEM_RAIL));
+        assert!(is_rail(ITEM_RAIL));
+        assert!(is_rail(ITEM_POWERED_RAIL));
+        assert!(is_rail(ITEM_DETECTOR_RAIL));
+        assert!(is_rail(ITEM_ACTIVATOR_RAIL));
+        assert!(!is_rail(ITEM_MINECART));
+
+        assert_eq!(item_name(ITEM_MINECART), "Minecart");
+        assert_eq!(item_name(ITEM_RAIL), "Rail");
+        assert_eq!(item_name(ITEM_POWERED_RAIL), "Powered Rail");
+        assert_eq!(item_name(ITEM_DETECTOR_RAIL), "Detector Rail");
+        assert_eq!(item_name(ITEM_ACTIVATOR_RAIL), "Activator Rail");
     }
 }

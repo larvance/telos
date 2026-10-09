@@ -46,13 +46,14 @@ use telos_sim::{
     BOW_FULL_CHARGE_TICKS, BOW_MAX_RELEASE_SPEED, BOW_MIN_CHARGE_TICKS, BOW_MIN_RELEASE_SPEED,
     BoatEntity, CombatTracker, DamageType, EffectInstance, EnchantmentKind, EntityType, Experience,
     FishingBobberEntity, GameMode, Health, Hunger, HurtTime, ITEM_ARROW, ITEM_BOW,
-    ITEM_DESPAWN_TICKS, ITEM_FISHING_ROD, ITEM_MERGE_RADIUS, ITEM_OAK_BOAT, ITEM_PICKUP_RADIUS,
-    Inventory, ItemEntity, ItemStack, Mob, MobBundle, MoveMode, NetEntity,
-    PLAYER_DROP_PICKUP_DELAY, PlayerPositions, Position, PotionType, Riding, Rotation, SimParams,
-    SimulationFrozen, StatusEffectKind, StatusEffectRegistry, StatusEffects, TargetablePlayer,
-    Velocity, WeatherKind, WeatherState, apply_mitigated_damage, block_to_drop_item,
-    build_sim_schedule, calculate_total_epf, is_boat, merge_item_stacks, roll_fishing_loot,
-    tick_arrow_physics_step, tick_item_physics_step_fluid,
+    ITEM_DESPAWN_TICKS, ITEM_FISHING_ROD, ITEM_MERGE_RADIUS, ITEM_MINECART, ITEM_OAK_BOAT,
+    ITEM_PICKUP_RADIUS, Inventory, ItemEntity, ItemStack, MinecartEntity, Mob, MobBundle, MoveMode,
+    NetEntity, PLAYER_DROP_PICKUP_DELAY, PlayerPositions, Position, PotionType, RailKind, Riding,
+    Rotation, SimParams, SimulationFrozen, StatusEffectKind, StatusEffectRegistry, StatusEffects,
+    TargetablePlayer, Velocity, WeatherKind, WeatherState, apply_mitigated_damage,
+    block_to_drop_item, build_sim_schedule, calculate_total_epf, determine_rail_shape, is_boat,
+    is_minecart, merge_item_stacks, roll_fishing_loot, tick_arrow_physics_step,
+    tick_item_physics_step_fluid,
 };
 use telos_voxel::fluid::{FluidKind, FluidState, calculate_fluid_flow};
 use telos_voxel::state::BlockStateId;
@@ -489,20 +490,53 @@ impl Server {
             .default_world()
             .seed()
             .wrapping_add(u64::from(net_id));
-        let (bundle, is_aquatic, is_boat, is_bobber) = match entity_type {
-            EntityType::Pig => (MobBundle::new_pig(net_id, pos, seed), false, false, false),
-            EntityType::Cow => (MobBundle::new_cow(net_id, pos, seed), false, false, false),
-            EntityType::Squid => (MobBundle::new_squid(net_id, pos, seed), true, false, false),
-            EntityType::Fish => (MobBundle::new_fish(net_id, pos, seed), true, false, false),
-            EntityType::Boat => (MobBundle::new_boat(net_id, pos), false, true, false),
+        let (bundle, is_aquatic, is_boat, is_bobber, is_cart) = match entity_type {
+            EntityType::Pig => (
+                MobBundle::new_pig(net_id, pos, seed),
+                false,
+                false,
+                false,
+                false,
+            ),
+            EntityType::Cow => (
+                MobBundle::new_cow(net_id, pos, seed),
+                false,
+                false,
+                false,
+                false,
+            ),
+            EntityType::Squid => (
+                MobBundle::new_squid(net_id, pos, seed),
+                true,
+                false,
+                false,
+                false,
+            ),
+            EntityType::Fish => (
+                MobBundle::new_fish(net_id, pos, seed),
+                true,
+                false,
+                false,
+                false,
+            ),
+            EntityType::Boat => (MobBundle::new_boat(net_id, pos), false, true, false, false),
             EntityType::FishingBobber => (
                 MobBundle::new_fishing_bobber(net_id, pos),
+                false,
+                false,
+                true,
+                false,
+            ),
+            EntityType::Minecart => (
+                MobBundle::new_minecart(net_id, pos),
+                false,
                 false,
                 false,
                 true,
             ),
             EntityType::Zombie | EntityType::Player | EntityType::Item | EntityType::Arrow => (
                 MobBundle::new_zombie(net_id, pos, seed),
+                false,
                 false,
                 false,
                 false,
@@ -520,6 +554,9 @@ impl Server {
         }
         if is_bobber {
             entity_builder.insert(FishingBobberEntity::new(0));
+        }
+        if is_cart {
+            entity_builder.insert(MinecartEntity::new());
         }
         let entity = entity_builder.id();
 
@@ -999,6 +1036,7 @@ impl Server {
             EntityType::Squid => (2, vec![("ink_sac", count_1_to_3)]),
             EntityType::Fish => (1, vec![("cod", 1)]),
             EntityType::Boat => (0, vec![("oak_boat", 1)]),
+            EntityType::Minecart => (0, vec![("minecart", 1)]),
             EntityType::Player
             | EntityType::Item
             | EntityType::Arrow
@@ -3366,12 +3404,18 @@ impl Server {
                 });
                 if let Some(entity) = session.ecs_entity {
                     if let Some(riding) = self.ecs_world.get::<Riding>(entity).copied()
-                        && let Some(&boat_ent) = self.tracked_mobs.get(&riding.vehicle_net_id)
-                        && let Some(mut boat) = self.ecs_world.get_mut::<BoatEntity>(boat_ent)
+                        && let Some(&veh_ent) = self.tracked_mobs.get(&riding.vehicle_net_id)
                     {
-                        boat.driver_id = None;
-                        boat.forward_input = 0.0;
-                        boat.turn_input = 0.0;
+                        if let Some(mut boat) = self.ecs_world.get_mut::<BoatEntity>(veh_ent) {
+                            boat.driver_id = None;
+                            boat.forward_input = 0.0;
+                            boat.turn_input = 0.0;
+                        }
+                        if let Some(mut cart) = self.ecs_world.get_mut::<MinecartEntity>(veh_ent) {
+                            cart.passenger_id = None;
+                            cart.forward_input = 0.0;
+                            cart.turn_input = 0.0;
+                        }
                     }
                     self.ecs_world.despawn(entity);
                 }
@@ -3717,23 +3761,39 @@ impl Server {
                             if let Some(riding) =
                                 self.ecs_world.get::<Riding>(player_entity).copied()
                             {
-                                if let Some(&boat_ent) =
+                                if let Some(&veh_ent) =
                                     self.tracked_mobs.get(&riding.vehicle_net_id)
-                                    && let Some(mut boat) =
-                                        self.ecs_world.get_mut::<BoatEntity>(boat_ent)
                                 {
-                                    boat.driver_id = None;
-                                    boat.forward_input = 0.0;
-                                    boat.turn_input = 0.0;
+                                    if let Some(mut boat) =
+                                        self.ecs_world.get_mut::<BoatEntity>(veh_ent)
+                                    {
+                                        boat.driver_id = None;
+                                        boat.forward_input = 0.0;
+                                        boat.turn_input = 0.0;
+                                    }
+                                    if let Some(mut cart) =
+                                        self.ecs_world.get_mut::<MinecartEntity>(veh_ent)
+                                    {
+                                        cart.passenger_id = None;
+                                        cart.forward_input = 0.0;
+                                        cart.turn_input = 0.0;
+                                    }
                                 }
                                 self.ecs_world.entity_mut(player_entity).remove::<Riding>();
                             }
                         } else if let Some(riding) = self.ecs_world.get::<Riding>(player_entity)
-                            && let Some(&boat_ent) = self.tracked_mobs.get(&riding.vehicle_net_id)
-                            && let Some(mut boat) = self.ecs_world.get_mut::<BoatEntity>(boat_ent)
+                            && let Some(&veh_ent) = self.tracked_mobs.get(&riding.vehicle_net_id)
                         {
-                            boat.forward_input = forward.clamp(-1.0, 1.0);
-                            boat.turn_input = turn.clamp(-1.0, 1.0);
+                            if let Some(mut boat) = self.ecs_world.get_mut::<BoatEntity>(veh_ent) {
+                                boat.forward_input = forward.clamp(-1.0, 1.0);
+                                boat.turn_input = turn.clamp(-1.0, 1.0);
+                            }
+                            if let Some(mut cart) =
+                                self.ecs_world.get_mut::<MinecartEntity>(veh_ent)
+                            {
+                                cart.forward_input = forward.clamp(-1.0, 1.0);
+                                cart.turn_input = turn.clamp(-1.0, 1.0);
+                            }
                         }
                     }
                 }
@@ -4006,13 +4066,30 @@ impl Server {
                             boat.forward_input = 0.0;
                             boat.turn_input = 0.0;
                         }
+                        if let Some(mut cart) =
+                            self.ecs_world.get_mut::<MinecartEntity>(target_entity)
+                        {
+                            cart.passenger_id = None;
+                            cart.forward_input = 0.0;
+                            cart.turn_input = 0.0;
+                        }
                     } else if let Some(mut boat) =
                         self.ecs_world.get_mut::<BoatEntity>(target_entity)
                         && boat.driver_id.is_none()
                     {
-                        // Mount into vehicle
+                        // Mount into boat
                         boat.driver_id = Some(p_net);
                         boat.rock_ticks = 10;
+                        self.ecs_world.entity_mut(p_ent).insert(Riding {
+                            vehicle_net_id: interact.target_net_id,
+                        });
+                    } else if let Some(mut cart) =
+                        self.ecs_world.get_mut::<MinecartEntity>(target_entity)
+                        && cart.passenger_id.is_none()
+                    {
+                        // Mount into minecart
+                        cart.passenger_id = Some(p_net);
+                        cart.rock_ticks = 10;
                         self.ecs_world.entity_mut(p_ent).insert(Riding {
                             vehicle_net_id: interact.target_net_id,
                         });
@@ -5048,6 +5125,46 @@ impl Server {
                     continue;
                 }
 
+                if let BlockActionKind::Place { state_id, .. } = action.action
+                    && (is_minecart(state_id.as_u32()) || state_id.as_u32() == ITEM_MINECART)
+                {
+                    let spawn_pos = DVec3::new(
+                        f64::from(target_pos.x()) + 0.5,
+                        f64::from(target_pos.y()) + 0.0625,
+                        f64::from(target_pos.z()) + 0.5,
+                    );
+                    self.spawn_mob(EntityType::Minecart, spawn_pos);
+
+                    // If in survival, deduct 1 minecart item from player hotbar
+                    if session_game_mode == GameMode::Survival
+                        && let Some(p_ent) =
+                            self.sessions.get(&session_id).and_then(|s| s.ecs_entity)
+                        && let Some(mut inv) = self.ecs_world.get_mut::<Inventory>(p_ent)
+                    {
+                        let slot_idx = self
+                            .sessions
+                            .get(&session_id)
+                            .map_or(0, |s| s.selected_slot as usize);
+                        if slot_idx < inv.slots.len()
+                            && (is_minecart(inv.slots[slot_idx].item)
+                                || inv.slots[slot_idx].item == ITEM_MINECART)
+                        {
+                            inv.slots[slot_idx].count = inv.slots[slot_idx].count.saturating_sub(1);
+                            inv.slots[slot_idx].normalize();
+                            let slot_msg = S2cMessage::InventorySlot(S2cInventorySlot {
+                                slot: slot_idx as u16,
+                                item: inv.slots[slot_idx].item,
+                                count: inv.slots[slot_idx].count,
+                                enchantments: inv.slots[slot_idx].enchantments.0,
+                            });
+                            if let Some(s) = self.sessions.get_mut(&session_id) {
+                                let _ = s.connection.send(Lane::Control, Payload::Msg(slot_msg));
+                            }
+                        }
+                    }
+                    continue;
+                }
+
                 if matches!(action.action, BlockActionKind::Break)
                     && !self.js_plugins.dispatch_block_break(
                         session_entity_id,
@@ -5874,6 +5991,91 @@ impl Server {
             }
         }
 
+        // Update minecart rail tracking, power state, and track topology
+        {
+            let cart_positions: Vec<(bevy_ecs::entity::Entity, DVec3)> = {
+                let mut cart_query =
+                    self.ecs_world
+                        .query::<(bevy_ecs::entity::Entity, &Position, &MinecartEntity)>();
+                cart_query
+                    .iter(&self.ecs_world)
+                    .map(|(entity, pos, _)| (entity, pos.0))
+                    .collect()
+            };
+
+            for (entity, pos) in cart_positions {
+                #[allow(clippy::cast_possible_truncation, clippy::similar_names)]
+                let (bx, by, bz) = (
+                    pos.x.floor() as i32,
+                    pos.y.floor() as i32,
+                    pos.z.floor() as i32,
+                );
+
+                let test_pos_at = BlockPos::new(bx, by, bz);
+                #[allow(clippy::cast_possible_truncation)]
+                let test_pos_sub = BlockPos::new(bx, (pos.y - 0.2).floor() as i32, bz);
+
+                let b_at = self.worlds.default_world_mut().get_block(test_pos_at);
+                let b_sub = self.worlds.default_world_mut().get_block(test_pos_sub);
+
+                let (rail_pos, block_id) = if self.registries.block_registry().is_rail(b_at) {
+                    (Some(test_pos_at), b_at)
+                } else if self.registries.block_registry().is_rail(b_sub) {
+                    (Some(test_pos_sub), b_sub)
+                } else {
+                    (None, BlockStateId::AIR)
+                };
+
+                if let Some(mut cart) = self.ecs_world.get_mut::<MinecartEntity>(entity) {
+                    if let Some(r_pos) = rail_pos {
+                        cart.on_rail = true;
+                        cart.rail_pos = Some(r_pos);
+
+                        let is_p = self.registries.block_registry().is_powered_rail(block_id);
+                        let is_d = self.registries.block_registry().is_detector_rail(block_id);
+                        let is_a = self.registries.block_registry().is_activator_rail(block_id);
+
+                        cart.rail_kind = if is_p {
+                            RailKind::Powered
+                        } else if is_d {
+                            RailKind::Detector
+                        } else if is_a {
+                            RailKind::Activator
+                        } else {
+                            RailKind::Normal
+                        };
+
+                        let power = self
+                            .worlds
+                            .default_world_mut()
+                            .logic_engine
+                            .get_power(r_pos);
+                        cart.powered = power > 0;
+
+                        if is_d {
+                            self.worlds
+                                .default_world_mut()
+                                .logic_engine
+                                .set_component(r_pos, telos_sim::logic::LogicKind::PowerBlock);
+                            self.worlds
+                                .default_world_mut()
+                                .logic_engine
+                                .propagate_around(r_pos);
+                        }
+
+                        let can_curve = cart.rail_kind.can_curve();
+                        cart.rail_shape = determine_rail_shape(r_pos, can_curve, |p| {
+                            let b = self.worlds.default_world_mut().get_block(p);
+                            self.registries.block_registry().is_rail(b)
+                        });
+                    } else {
+                        cart.on_rail = false;
+                        cart.rail_pos = None;
+                    }
+                }
+            }
+        }
+
         self.sim_schedule.run(&mut self.ecs_world);
 
         // Broadcast splash particles when a fishing bobber gets a bite
@@ -6517,10 +6719,12 @@ impl Server {
             if session.phase == ConnectionPhase::Play
                 && let Some(p_ent) = session.ecs_entity
                 && let Some(riding) = self.ecs_world.get::<Riding>(p_ent)
-                && let Some(&boat_ent) = self.tracked_mobs.get(&riding.vehicle_net_id)
-                && let Some(boat_pos) = self.ecs_world.get::<Position>(boat_ent)
+                && let Some(&veh_ent) = self.tracked_mobs.get(&riding.vehicle_net_id)
+                && let Some(veh_pos) = self.ecs_world.get::<Position>(veh_ent)
             {
-                let seat_pos = boat_pos.0 + DVec3::new(0.0, 0.45, 0.0);
+                let is_cart = self.ecs_world.get::<MinecartEntity>(veh_ent).is_some();
+                let seat_offset = if is_cart { 0.35 } else { 0.45 };
+                let seat_pos = veh_pos.0 + DVec3::new(0.0, seat_offset, 0.0);
                 session.position = seat_pos;
                 if let Some(mut p_pos) = self.ecs_world.get_mut::<Position>(p_ent) {
                     p_pos.0 = seat_pos;

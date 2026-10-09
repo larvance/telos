@@ -563,10 +563,20 @@ impl LanguageCatalog {
             ("item.telos.cooked_cod", "Cooked Cod"),
             ("item.telos.oak_boat", "Oak Boat"),
             ("item.telos.fishing_rod", "Fishing Rod"),
+            ("item.telos.minecart", "Minecart"),
+            ("item.telos.rail", "Rail"),
+            ("item.telos.powered_rail", "Powered Rail"),
+            ("item.telos.detector_rail", "Detector Rail"),
+            ("item.telos.activator_rail", "Activator Rail"),
+            ("block.telos.rail", "Rail"),
+            ("block.telos.powered_rail", "Powered Rail"),
+            ("block.telos.detector_rail", "Detector Rail"),
+            ("block.telos.activator_rail", "Activator Rail"),
             ("entity.telos.squid", "Squid"),
             ("entity.telos.fish", "Fish"),
             ("entity.telos.boat", "Boat"),
             ("entity.telos.fishing_bobber", "Fishing Bobber"),
+            ("entity.telos.minecart", "Minecart"),
         ];
 
         for (k, v) in en_pairs {

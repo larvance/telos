@@ -29,6 +29,7 @@ pub mod nav;
 pub mod particle;
 pub mod potion;
 pub mod prediction;
+pub mod rail;
 pub mod schedule;
 pub mod smelting;
 pub mod weather;
@@ -109,15 +110,15 @@ pub use inventory::{
     ITEM_INK_SAC, ITEM_IRON_AXE, ITEM_IRON_BOOTS, ITEM_IRON_CHESTPLATE, ITEM_IRON_HELMET,
     ITEM_IRON_HOE, ITEM_IRON_LEGGINGS, ITEM_IRON_PICKAXE, ITEM_IRON_SHOVEL, ITEM_IRON_SWORD,
     ITEM_LEATHER_BOOTS, ITEM_LEATHER_CHESTPLATE, ITEM_LEATHER_HELMET, ITEM_LEATHER_LEGGINGS,
-    ITEM_OAK_BOAT, ITEM_POTION, ITEM_STONE_AXE, ITEM_STONE_HOE, ITEM_STONE_PICKAXE,
-    ITEM_STONE_SHOVEL, ITEM_STONE_SWORD, ITEM_STRING, ITEM_WOODEN_AXE, ITEM_WOODEN_HOE,
-    ITEM_WOODEN_PICKAXE, ITEM_WOODEN_SHOVEL, ITEM_WOODEN_SWORD, Inventory, InventoryError,
-    ItemStack, MAX_STACK_SIZE, OFFHAND_SLOT, PLAYER_INVENTORY_SLOTS, STORAGE_SLOTS,
-    block_to_drop_item, container_click, inventory_click, inventory_click_with_registry, is_anvil,
-    is_armor, is_arrow, is_axe, is_boat, is_book, is_boots, is_bow, is_chest, is_chestplate,
-    is_enchanted_book, is_fishing_rod, is_furnace, is_helmet, is_hoe, is_leggings, is_pickaxe,
-    is_potion, is_shovel, is_slot_valid_for_item, is_sword, is_tool, item_name,
-    matching_armor_slot,
+    ITEM_MINECART, ITEM_OAK_BOAT, ITEM_POTION, ITEM_POWERED_RAIL, ITEM_RAIL, ITEM_STONE_AXE,
+    ITEM_STONE_HOE, ITEM_STONE_PICKAXE, ITEM_STONE_SHOVEL, ITEM_STONE_SWORD, ITEM_STRING,
+    ITEM_WOODEN_AXE, ITEM_WOODEN_HOE, ITEM_WOODEN_PICKAXE, ITEM_WOODEN_SHOVEL, ITEM_WOODEN_SWORD,
+    Inventory, InventoryError, ItemStack, MAX_STACK_SIZE, OFFHAND_SLOT, PLAYER_INVENTORY_SLOTS,
+    STORAGE_SLOTS, block_to_drop_item, container_click, inventory_click,
+    inventory_click_with_registry, is_anvil, is_armor, is_arrow, is_axe, is_boat, is_book,
+    is_boots, is_bow, is_chest, is_chestplate, is_enchanted_book, is_fishing_rod, is_furnace,
+    is_helmet, is_hoe, is_leggings, is_minecart, is_pickaxe, is_potion, is_rail, is_shovel,
+    is_slot_valid_for_item, is_sword, is_tool, item_name, matching_armor_slot,
 };
 pub use logic::{
     LogicChunk, LogicComponent, LogicEngine, LogicKind, MAX_SIGNAL_DISTANCE, ScheduledLogicTick,
@@ -135,6 +136,12 @@ pub use potion::{BrewingRecipe, BrewingRegistry, PotionType, consume_item_effect
 pub use prediction::{
     PREDICTION_BUFFER_CAPACITY, PredictionBuffer, PredictionEntry, ReconciliationResult,
     VisualSmoothing,
+};
+pub use rail::{
+    MINECART_EMPTY_RAIL_FRICTION, MINECART_MAX_SPEED, MINECART_PASSENGER_RAIL_FRICTION,
+    MINECART_POWERED_ACCEL, MINECART_SLOPE_GRAVITY, MINECART_UNPOWERED_BRAKE_FACTOR,
+    MinecartEntity, RailKind, RailShape, determine_rail_shape, minecart_movement_system,
+    step_minecart_offrail_physics, step_minecart_rail_physics,
 };
 pub use schedule::{SimTick, TickSet, build_sim_schedule};
 pub use smelting::{

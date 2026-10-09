@@ -1293,6 +1293,74 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
                 ..Default::default()
             },
         ),
+        // Rail transportation blocks
+        (
+            "rail",
+            "Rail",
+            BlockDef {
+                shape: BlockShapeDef::FlatPlate,
+                render_layer: RenderLayerDef::Cutout,
+                opacity: OpacityDef::Transparent,
+                hardness: 0.7,
+                blast_resistance: 0.7,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(69),
+                ..Default::default()
+            },
+        ),
+        (
+            "powered_rail",
+            "Powered Rail",
+            BlockDef {
+                shape: BlockShapeDef::FlatPlate,
+                render_layer: RenderLayerDef::Cutout,
+                opacity: OpacityDef::Transparent,
+                hardness: 0.7,
+                blast_resistance: 0.7,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(70),
+                logic_component: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "detector_rail",
+            "Detector Rail",
+            BlockDef {
+                shape: BlockShapeDef::FlatPlate,
+                render_layer: RenderLayerDef::Cutout,
+                opacity: OpacityDef::Transparent,
+                hardness: 0.7,
+                blast_resistance: 0.7,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(71),
+                logic_component: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "activator_rail",
+            "Activator Rail",
+            BlockDef {
+                shape: BlockShapeDef::FlatPlate,
+                render_layer: RenderLayerDef::Cutout,
+                opacity: OpacityDef::Transparent,
+                hardness: 0.7,
+                blast_resistance: 0.7,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(72),
+                logic_component: true,
+                ..Default::default()
+            },
+        ),
     ]
 }
 
@@ -1657,6 +1725,14 @@ pub fn core_items() -> Vec<(&'static str, ItemDef)> {
             "fishing_rod",
             ItemDef {
                 name: "Fishing Rod".into(),
+                max_stack_size: 1,
+                item_type: ItemTypeDef::Generic,
+            },
+        ),
+        (
+            "minecart",
+            ItemDef {
+                name: "Minecart".into(),
                 max_stack_size: 1,
                 item_type: ItemTypeDef::Generic,
             },

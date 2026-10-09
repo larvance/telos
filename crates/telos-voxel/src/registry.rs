@@ -736,6 +736,35 @@ impl BlockRegistry {
         let anvil_id = Identifier::new("telos", "anvil").unwrap();
         reg.register(anvil_id, StateFlags::OPAQUE_CUBE);
 
+        // Rail transportation blocks
+        let rail_id = Identifier::new("telos", "rail").unwrap();
+        reg.register_with_shape(
+            rail_id,
+            StateFlags::NON_EMPTY | StateFlags::CUTOUT,
+            crate::shape::BlockShape::flat_plate(),
+        );
+
+        let powered_rail_id = Identifier::new("telos", "powered_rail").unwrap();
+        reg.register_with_shape(
+            powered_rail_id,
+            StateFlags::NON_EMPTY | StateFlags::CUTOUT | StateFlags::LOGIC_COMPONENT,
+            crate::shape::BlockShape::flat_plate(),
+        );
+
+        let detector_rail_id = Identifier::new("telos", "detector_rail").unwrap();
+        reg.register_with_shape(
+            detector_rail_id,
+            StateFlags::NON_EMPTY | StateFlags::CUTOUT | StateFlags::LOGIC_COMPONENT,
+            crate::shape::BlockShape::flat_plate(),
+        );
+
+        let activator_rail_id = Identifier::new("telos", "activator_rail").unwrap();
+        reg.register_with_shape(
+            activator_rail_id,
+            StateFlags::NON_EMPTY | StateFlags::CUTOUT | StateFlags::LOGIC_COMPONENT,
+            crate::shape::BlockShape::flat_plate(),
+        );
+
         reg.freeze();
         reg
     }
@@ -895,6 +924,40 @@ impl BlockRegistry {
             .is_some_and(|ident| ident.path() == "anvil")
     }
 
+    /// Returns `true` if the given block state represents any type of rail track.
+    #[inline]
+    #[must_use]
+    pub fn is_rail(&self, id: BlockStateId) -> bool {
+        self.identifier(id).is_some_and(|ident| {
+            let p = ident.path();
+            p == "rail" || p == "powered_rail" || p == "detector_rail" || p == "activator_rail"
+        })
+    }
+
+    /// Returns `true` if the given block state represents a powered rail.
+    #[inline]
+    #[must_use]
+    pub fn is_powered_rail(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "powered_rail")
+    }
+
+    /// Returns `true` if the given block state represents a detector rail.
+    #[inline]
+    #[must_use]
+    pub fn is_detector_rail(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "detector_rail")
+    }
+
+    /// Returns `true` if the given block state represents an activator rail.
+    #[inline]
+    #[must_use]
+    pub fn is_activator_rail(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "activator_rail")
+    }
+
     /// Returns `true` if the block state at `id` can be freely replaced by flowing fluids.
     #[inline]
     #[must_use]
@@ -1013,6 +1076,35 @@ mod tests {
             .unwrap();
         assert!(reg.is_logic_component(wire_powered.default_state()));
         assert!(reg.is_logic_powered(wire_powered.default_state()));
+    }
+
+    #[test]
+    fn test_standard_registry_rail_blocks() {
+        let reg = BlockRegistry::standard();
+        let rail = reg.get(&Identifier::new("telos", "rail").unwrap()).unwrap();
+        let p_rail = reg
+            .get(&Identifier::new("telos", "powered_rail").unwrap())
+            .unwrap();
+        let d_rail = reg
+            .get(&Identifier::new("telos", "detector_rail").unwrap())
+            .unwrap();
+        let a_rail = reg
+            .get(&Identifier::new("telos", "activator_rail").unwrap())
+            .unwrap();
+
+        assert!(reg.is_rail(rail.default_state()));
+        assert!(reg.is_rail(p_rail.default_state()));
+        assert!(reg.is_rail(d_rail.default_state()));
+        assert!(reg.is_rail(a_rail.default_state()));
+
+        assert!(reg.is_powered_rail(p_rail.default_state()));
+        assert!(!reg.is_powered_rail(rail.default_state()));
+
+        assert!(reg.is_detector_rail(d_rail.default_state()));
+        assert!(!reg.is_detector_rail(rail.default_state()));
+
+        assert!(reg.is_activator_rail(a_rail.default_state()));
+        assert!(!reg.is_activator_rail(rail.default_state()));
     }
 
     #[test]

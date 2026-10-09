@@ -584,6 +584,63 @@ impl RecipeRegistry {
             true,
         ));
 
+        // -------------------------------------------------------------
+        // 6. Minecarts & Rail Transportation
+        // -------------------------------------------------------------
+        // Minecart (3x2): 5 Iron Ingots in U-shape
+        // [52,  0, 52]
+        // [52, 52, 52]
+        reg.register_shaped(ShapedRecipe::new(
+            3,
+            2,
+            vec![52, 0, 52, 52, 52, 52],
+            ItemStack::new(crate::inventory::ITEM_MINECART, 1),
+        ));
+
+        // Rail (3x3): 6 Iron Ingots + 1 Stick -> 16 Rails
+        // [52,  0, 52]
+        // [52, 13, 52]
+        // [52,  0, 52]
+        reg.register_shaped(ShapedRecipe::new(
+            3,
+            3,
+            vec![52, 0, 52, 52, 13, 52, 52, 0, 52],
+            ItemStack::new(crate::inventory::ITEM_RAIL, 16),
+        ));
+
+        // Powered Rail (3x3): 6 Gold Ingots + 1 Stick + 1 Redstone -> 6 Powered Rails
+        // [53,  0, 53]
+        // [53, 13, 53]
+        // [53, 19, 53]
+        reg.register_shaped(ShapedRecipe::new(
+            3,
+            3,
+            vec![53, 0, 53, 53, 13, 53, 53, 19, 53],
+            ItemStack::new(crate::inventory::ITEM_POWERED_RAIL, 6),
+        ));
+
+        // Detector Rail (3x3): 6 Iron Ingots + 1 Stone Slab (10) + 1 Redstone -> 6 Detector Rails
+        // [52,  0, 52]
+        // [52, 10, 52]
+        // [52, 19, 52]
+        reg.register_shaped(ShapedRecipe::new(
+            3,
+            3,
+            vec![52, 0, 52, 52, 10, 52, 52, 19, 52],
+            ItemStack::new(crate::inventory::ITEM_DETECTOR_RAIL, 6),
+        ));
+
+        // Activator Rail (3x3): 6 Iron Ingots + 2 Sticks + 1 Torch (15) -> 6 Activator Rails
+        // [52, 13, 52]
+        // [52, 15, 52]
+        // [52, 13, 52]
+        reg.register_shaped(ShapedRecipe::new(
+            3,
+            3,
+            vec![52, 13, 52, 52, 15, 52, 52, 13, 52],
+            ItemStack::new(crate::inventory::ITEM_ACTIVATOR_RAIL, 6),
+        ));
+
         reg
     }
 }
@@ -1162,5 +1219,72 @@ mod tests {
         for slot_idx in 40..44 {
             assert_eq!(inv.slots[slot_idx], ItemStack::new(202, 1));
         }
+    }
+
+    #[test]
+    fn test_minecart_and_rail_crafting_recipes() {
+        let reg = RecipeRegistry::standard();
+
+        // 1. Minecart recipe: 5 iron ingots (52)
+        // [52,  0, 52]
+        // [52, 52, 52]
+        let minecart_grid = vec![
+            ItemStack::new(52, 1),
+            ItemStack::EMPTY,
+            ItemStack::new(52, 1),
+            ItemStack::new(52, 1),
+            ItemStack::new(52, 1),
+            ItemStack::new(52, 1),
+            ItemStack::EMPTY,
+            ItemStack::EMPTY,
+            ItemStack::EMPTY,
+        ];
+        let res = reg.find_match(&minecart_grid, 3, 3);
+        assert!(res.is_some());
+        assert_eq!(
+            res.unwrap().result(),
+            ItemStack::new(crate::inventory::ITEM_MINECART, 1)
+        );
+
+        // 2. Rail recipe: 6 iron ingots (52) + 1 stick (13)
+        // [52,  0, 52]
+        // [52, 13, 52]
+        // [52,  0, 52]
+        let rail_grid = vec![
+            ItemStack::new(52, 1),
+            ItemStack::EMPTY,
+            ItemStack::new(52, 1),
+            ItemStack::new(52, 1),
+            ItemStack::new(13, 1),
+            ItemStack::new(52, 1),
+            ItemStack::new(52, 1),
+            ItemStack::EMPTY,
+            ItemStack::new(52, 1),
+        ];
+        let res = reg.find_match(&rail_grid, 3, 3);
+        assert!(res.is_some());
+        assert_eq!(
+            res.unwrap().result(),
+            ItemStack::new(crate::inventory::ITEM_RAIL, 16)
+        );
+
+        // 3. Powered rail recipe: 6 gold ingots (53) + 1 stick (13) + 1 redstone (19)
+        let powered_rail_grid = vec![
+            ItemStack::new(53, 1),
+            ItemStack::EMPTY,
+            ItemStack::new(53, 1),
+            ItemStack::new(53, 1),
+            ItemStack::new(13, 1),
+            ItemStack::new(53, 1),
+            ItemStack::new(53, 1),
+            ItemStack::new(19, 1),
+            ItemStack::new(53, 1),
+        ];
+        let res = reg.find_match(&powered_rail_grid, 3, 3);
+        assert!(res.is_some());
+        assert_eq!(
+            res.unwrap().result(),
+            ItemStack::new(crate::inventory::ITEM_POWERED_RAIL, 6)
+        );
     }
 }

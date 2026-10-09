@@ -7,6 +7,7 @@ use crate::entity::{
     mob_hurt_decay_system, mob_movement_system,
 };
 use crate::hunger::{Hunger, SimParams, tick_hunger};
+use crate::rail::minecart_movement_system;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{ScheduleLabel, SystemSet};
 
@@ -67,6 +68,7 @@ pub fn build_sim_schedule() -> Schedule {
             aquatic_movement_system,
             boat_movement_system,
             fishing_bobber_movement_system,
+            minecart_movement_system,
         )
             .in_set(TickSet::Movement),
     );

@@ -507,6 +507,7 @@ impl ClientEntityStore {
                 EntityType::Fish => 4,
                 EntityType::Boat => 5,
                 EntityType::FishingBobber => 6,
+                EntityType::Minecart => 7,
             };
 
             match entity.entity_type {
@@ -567,6 +568,17 @@ impl ClientEntityStore {
                 }
                 EntityType::Boat => {
                     build_boat_mesh(
+                        entity,
+                        sky,
+                        block,
+                        layer,
+                        hurt_tint,
+                        body_roll,
+                        out_vertices,
+                    );
+                }
+                EntityType::Minecart => {
+                    build_minecart_mesh(
                         entity,
                         sky,
                         block,
@@ -1584,6 +1596,143 @@ fn build_boat_mesh(
     );
 }
 
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn build_minecart_mesh(
+    entity: &ClientEntity,
+    sky: u8,
+    block: u8,
+    layer: u32,
+    hurt_tint: f32,
+    body_roll: f32,
+    out: &mut Vec<EntityVertexGpu>,
+) {
+    let body_quat = Quat::from_rotation_y((-entity.yaw).to_radians())
+        * Quat::from_rotation_x(entity.pitch.to_radians())
+        * Quat::from_rotation_z(body_roll.to_radians());
+
+    let death_lift = (entity.death_timer / 0.5) * 0.4;
+    let cart_pos = entity.pos;
+
+    // 1. Hull Bottom Floor: 16x2x14 pixels centered horizontally
+    emit_cuboid(
+        cart_pos,
+        body_quat,
+        death_lift,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        Vec3::new(-8.0 * S, 0.0 * S, -7.0 * S),
+        Vec3::new(8.0 * S, 2.0 * S, 7.0 * S),
+        (0.0, 0.0, 16.0, 2.0, 14.0),
+        sky,
+        block,
+        layer,
+        hurt_tint,
+        out,
+    );
+
+    // 2. Port Wall (Left): 16x8x2 pixels along +Z side
+    emit_cuboid(
+        cart_pos,
+        body_quat,
+        death_lift,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        Vec3::new(-8.0 * S, 2.0 * S, 5.0 * S),
+        Vec3::new(8.0 * S, 10.0 * S, 7.0 * S),
+        (0.0, 16.0, 16.0, 8.0, 2.0),
+        sky,
+        block,
+        layer,
+        hurt_tint,
+        out,
+    );
+
+    // 3. Starboard Wall (Right): 16x8x2 pixels along -Z side
+    emit_cuboid(
+        cart_pos,
+        body_quat,
+        death_lift,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        Vec3::new(-8.0 * S, 2.0 * S, -7.0 * S),
+        Vec3::new(8.0 * S, 10.0 * S, -5.0 * S),
+        (0.0, 26.0, 16.0, 8.0, 2.0),
+        sky,
+        block,
+        layer,
+        hurt_tint,
+        out,
+    );
+
+    // 4. Bow Wall (Front): 2x8x10 pixels along +X side
+    emit_cuboid(
+        cart_pos,
+        body_quat,
+        death_lift,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        Vec3::new(6.0 * S, 2.0 * S, -5.0 * S),
+        Vec3::new(8.0 * S, 10.0 * S, 5.0 * S),
+        (0.0, 36.0, 2.0, 8.0, 10.0),
+        sky,
+        block,
+        layer,
+        hurt_tint,
+        out,
+    );
+
+    // 5. Stern Wall (Back): 2x8x10 pixels along -X side
+    emit_cuboid(
+        cart_pos,
+        body_quat,
+        death_lift,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        Vec3::new(-8.0 * S, 2.0 * S, -5.0 * S),
+        Vec3::new(-6.0 * S, 10.0 * S, 5.0 * S),
+        (0.0, 46.0, 2.0, 8.0, 10.0),
+        sky,
+        block,
+        layer,
+        hurt_tint,
+        out,
+    );
+
+    // 6. Front Wheel Truck / Axle: 2x1x12 pixels underneath front
+    emit_cuboid(
+        cart_pos,
+        body_quat,
+        death_lift,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        Vec3::new(4.0 * S, -S, -6.0 * S),
+        Vec3::new(6.0 * S, 0.0 * S, 6.0 * S),
+        (20.0, 0.0, 2.0, 1.0, 12.0),
+        sky,
+        block,
+        layer,
+        hurt_tint,
+        out,
+    );
+
+    // 7. Back Wheel Truck / Axle: 2x1x12 pixels underneath back
+    emit_cuboid(
+        cart_pos,
+        body_quat,
+        death_lift,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        Vec3::new(-6.0 * S, -S, -6.0 * S),
+        Vec3::new(-4.0 * S, 0.0 * S, 6.0 * S),
+        (20.0, 14.0, 2.0, 1.0, 12.0),
+        sky,
+        block,
+        layer,
+        hurt_tint,
+        out,
+    );
+}
+
 // ----------------------------------------------------------------------------
 // Low-level cuboid face emitter
 // ----------------------------------------------------------------------------
@@ -2091,5 +2240,43 @@ mod tests {
         );
         assert_eq!(vertices_with_line.len(), 108 + 72);
         assert!(vertices_with_line.iter().all(|v| v.layer == 6));
+    }
+
+    #[test]
+    fn test_minecart_mesh_generation() {
+        let mut store = ClientEntityStore::new();
+
+        store.on_spawn(S2cSpawnEntity {
+            net_id: 120,
+            entity_type: EntityType::Minecart.to_u8(),
+            x: 10.0,
+            y: 64.0,
+            z: 10.0,
+            yaw: 45.0,
+            pitch: 15.0,
+            head_yaw: 45.0,
+            health: 4.0,
+            max_health: 4.0,
+        });
+
+        assert_eq!(store.count(), 1);
+        let cart = store.get(120).unwrap();
+        assert_eq!(cart.entity_type, EntityType::Minecart);
+
+        // Raycasting should be able to hit minecarts
+        let hit = store.raycast(DVec3::new(10.0, 64.0, 0.0), Vec3::new(0.0, 0.0, 1.0), 15.0);
+        assert!(hit.is_some());
+        assert_eq!(hit.unwrap().0, 120);
+
+        store.update(0.05);
+
+        let mut vertices = Vec::new();
+        store.build_mesh(|_| (15, 0), &mut vertices);
+
+        // Minecart: 7 cuboids * 36 vertices = 252 vertices
+        assert_eq!(vertices.len(), 252);
+
+        // All minecart vertices use layer 7
+        assert!(vertices.iter().all(|v| v.layer == 7));
     }
 }

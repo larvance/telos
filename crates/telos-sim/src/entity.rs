@@ -10,6 +10,8 @@ use telos_core::coords::{BlockPos, Face};
 use crate::attributes::{CombatTracker, Health};
 use crate::inventory::ItemStack;
 
+pub use crate::rail::{MinecartEntity, minecart_movement_system};
+
 /// Marker component indicating an entity is outside active simulation distance and frozen in place.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SimulationFrozen;
@@ -39,6 +41,8 @@ pub enum EntityType {
     Boat = 8,
     /// Floating fishing bobber entity.
     FishingBobber = 9,
+    /// Rail transportation vehicle entity.
+    Minecart = 10,
 }
 
 impl EntityType {
@@ -56,6 +60,7 @@ impl EntityType {
             7 => Some(Self::Fish),
             8 => Some(Self::Boat),
             9 => Some(Self::FishingBobber),
+            10 => Some(Self::Minecart),
             _ => None,
         }
     }
@@ -80,6 +85,7 @@ impl EntityType {
             Self::Fish => "Fish",
             Self::Boat => "Boat",
             Self::FishingBobber => "FishingBobber",
+            Self::Minecart => "Minecart",
         }
     }
 
@@ -122,6 +128,10 @@ impl EntityType {
             Self::Boat => EntityAabb {
                 half_size: Vec3::new(0.7, 0.3, 0.7),
                 y_offset: 0.3,
+            },
+            Self::Minecart => EntityAabb {
+                half_size: Vec3::new(0.49, 0.35, 0.49),
+                y_offset: 0.35,
             },
         }
     }
@@ -917,6 +927,27 @@ impl MobBundle {
             attack_cooldown: AttackCooldown::new(u32::MAX, 0.0, 0.0),
         }
     }
+
+    /// Creates a new `Minecart` vehicle entity bundle.
+    #[must_use]
+    pub fn new_minecart(net_id: u32, pos: DVec3) -> Self {
+        Self {
+            net: NetEntity {
+                net_id,
+                entity_type: EntityType::Minecart,
+            },
+            pos: Position(pos),
+            rot: Rotation::default(),
+            vel: Velocity::default(),
+            aabb: EntityType::Minecart.default_aabb(),
+            health: Health::new(4.0),
+            combat: CombatTracker::default(),
+            hurt_time: HurtTime::default(),
+            mob: Mob::new_passive(0),
+            path_follower: PathFollower::default(),
+            attack_cooldown: AttackCooldown::new(u32::MAX, 0.0, 0.0),
+        }
+    }
 }
 
 /// Component attached to Boat entities representing rowboat physics, rowing paddle animations, and passenger state.
@@ -1449,6 +1480,7 @@ pub fn mob_movement_system(
             Without<AquaticMob>,
             Without<BoatEntity>,
             Without<FishingBobberEntity>,
+            Without<crate::rail::MinecartEntity>,
         ),
     >,
 ) {
@@ -1717,7 +1749,8 @@ mod tests {
         assert_eq!(EntityType::from_u8(7), Some(EntityType::Fish));
         assert_eq!(EntityType::from_u8(8), Some(EntityType::Boat));
         assert_eq!(EntityType::from_u8(9), Some(EntityType::FishingBobber));
-        assert_eq!(EntityType::from_u8(10), None);
+        assert_eq!(EntityType::from_u8(10), Some(EntityType::Minecart));
+        assert_eq!(EntityType::from_u8(11), None);
         assert_eq!(EntityType::Zombie.to_u8(), 1);
         assert_eq!(EntityType::Item.to_u8(), 4);
         assert_eq!(EntityType::Arrow.to_u8(), 5);
@@ -1725,11 +1758,13 @@ mod tests {
         assert_eq!(EntityType::Fish.to_u8(), 7);
         assert_eq!(EntityType::Boat.to_u8(), 8);
         assert_eq!(EntityType::FishingBobber.to_u8(), 9);
+        assert_eq!(EntityType::Minecart.to_u8(), 10);
         assert_eq!(EntityType::Pig.name(), "Pig");
         assert_eq!(EntityType::Squid.name(), "Squid");
         assert_eq!(EntityType::Fish.name(), "Fish");
         assert_eq!(EntityType::Boat.name(), "Boat");
         assert_eq!(EntityType::FishingBobber.name(), "FishingBobber");
+        assert_eq!(EntityType::Minecart.name(), "Minecart");
         assert_eq!(EntityType::Item.name(), "Item");
         assert_eq!(EntityType::Arrow.name(), "Arrow");
     }
