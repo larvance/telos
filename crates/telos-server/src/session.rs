@@ -121,6 +121,8 @@ pub struct PlayerSession {
     pub pending_challenge: Option<[u8; 32]>,
     /// Pending username awaiting cryptographic verification.
     pub pending_username: Option<String>,
+    /// Active fishing bobber network entity ID cast by this player, if any.
+    pub active_fishing_bobber: Option<u32>,
 }
 
 /// Tracks an open container window for a player session.
@@ -224,6 +226,7 @@ impl PlayerSession {
             public_key: None,
             pending_challenge: None,
             pending_username: None,
+            active_fishing_bobber: None,
         }
     }
 

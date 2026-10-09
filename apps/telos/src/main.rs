@@ -4756,8 +4756,18 @@ impl App {
                     (15, 0)
                 }
             };
+            let rod_tip = if telos_sim::is_fishing_rod(self.inventory_sim.selected_item().item) {
+                let forward = self.camera.forward();
+                let right = self.camera.right();
+                Some(
+                    self.camera.position.as_dvec3()
+                        + (forward * 0.4 + right * 0.35 - Vec3::new(0.0, 0.25, 0.0)).as_dvec3(),
+                )
+            } else {
+                None
+            };
             self.entity_store
-                .build_mesh(get_light, &mut entity_vertices);
+                .build_mesh_with_line(get_light, rod_tip, &mut entity_vertices);
         }
 
         if entity_vertices.len() > 16384 {
@@ -10458,6 +10468,15 @@ impl ApplicationHandler for App {
                                 return;
                             }
 
+                            if telos_sim::is_fishing_rod(self.inventory_sim.selected_item().item) {
+                                let cmd = C2sMessage::PlayerCommand(C2sPlayerCommand {
+                                    command: PlayerCommandKind::UseFishingRod,
+                                });
+                                let _ = self.client_conn.send(Lane::Control, Payload::Msg(cmd));
+                                self.audio.play_bow_shoot(self.camera.position);
+                                return;
+                            }
+
                             if let Some(hit) = self.targeted_block {
                                 let target_state = self.get_block_at(hit.pos);
                                 if self.block_registry.is_chest(target_state) && !self.shift_held {
@@ -12294,7 +12313,7 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
     copy_to_layer_at(&mut pixel_data, 5, 0, 0, &inv_bg_img);
 
     // Layer 6: Item Icons Atlas (256x256 holding 16x16 icons for registered items)
-    let item_textures: [(u32, &str, [u8; 4]); 61] = [
+    let item_textures: [(u32, &str, [u8; 4]); 62] = [
         (1, "textures/block/stone.png", [128, 128, 128, 255]),
         (2, "textures/block/dirt.png", [134, 96, 67, 255]),
         (3, "textures/block/grass_block_side.png", [90, 160, 60, 255]),
@@ -12372,6 +12391,7 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
         (95, "textures/item/cod.png", [180, 150, 120, 255]),
         (96, "textures/item/cooked_cod.png", [190, 130, 90, 255]),
         (97, "textures/item/oak_boat.png", [150, 110, 60, 255]),
+        (98, "textures/item/fishing_rod.png", [140, 100, 50, 255]),
     ];
 
     let copy_icon =
@@ -12992,7 +13012,7 @@ fn load_and_upload_weather_textures(gpu_context: &GpuContext) -> Result<GpuTextu
 )]
 fn load_and_upload_entity_textures(gpu_context: &GpuContext) -> Result<GpuTextureArray> {
     const ENTITY_RES: u32 = 64;
-    const LAYER_COUNT: u32 = 6;
+    const LAYER_COUNT: u32 = 7;
 
     let mut pixel_data = vec![0u8; (ENTITY_RES * ENTITY_RES * 4 * LAYER_COUNT) as usize];
 
@@ -13197,6 +13217,47 @@ fn load_and_upload_entity_textures(gpu_context: &GpuContext) -> Result<GpuTextur
     };
     copy_to_layer(&mut pixel_data, 5, &boat_img);
 
+    // Layer 6: Fishing Bobber
+    let bobber_img = if let Some(img) = stack
+        .find_texture("textures/entity/fishing_hook.png")
+        .or_else(|| stack.find_texture("textures/entity/fishing_bobber.png"))
+        .and_then(|p| telos_assets::RgbaImage::from_file_exact(&p).ok())
+    {
+        if img.width != ENTITY_RES || img.height != ENTITY_RES {
+            img.rescale(ENTITY_RES, ENTITY_RES)
+        } else {
+            img
+        }
+    } else {
+        let mut img = telos_assets::RgbaImage::new(ENTITY_RES, ENTITY_RES);
+        for y in 0..ENTITY_RES {
+            for x in 0..ENTITY_RES {
+                let idx = ((y * ENTITY_RES + x) * 4) as usize;
+                if (16..20).contains(&x) && y < 16 {
+                    // Spindle stem / line attachment: dark wood / black
+                    img.data[idx] = 30;
+                    img.data[idx + 1] = 30;
+                    img.data[idx + 2] = 30;
+                    img.data[idx + 3] = 255;
+                } else if y < 32 {
+                    // Top half: bright red
+                    img.data[idx] = 220;
+                    img.data[idx + 1] = 30;
+                    img.data[idx + 2] = 30;
+                    img.data[idx + 3] = 255;
+                } else {
+                    // Bottom half: bright white
+                    img.data[idx] = 240;
+                    img.data[idx + 1] = 240;
+                    img.data[idx + 2] = 240;
+                    img.data[idx + 3] = 255;
+                }
+            }
+        }
+        img
+    };
+    copy_to_layer(&mut pixel_data, 6, &bobber_img);
+
     let regions: Vec<TextureMipRegion> = (0..LAYER_COUNT)
         .map(|layer| TextureMipRegion {
             buffer_offset: u64::from(layer * ENTITY_RES * ENTITY_RES * 4),
@@ -13210,7 +13271,9 @@ fn load_and_upload_entity_textures(gpu_context: &GpuContext) -> Result<GpuTextur
     let texture_array =
         gpu_context.create_texture_array(ENTITY_RES, LAYER_COUNT, 1, &pixel_data, &regions)?;
 
-    info!("Entity texture array loaded (6 layers: Zombie, Pig, Cow, Squid, Fish, Boat, 64x64)");
+    info!(
+        "Entity texture array loaded (7 layers: Zombie, Pig, Cow, Squid, Fish, Boat, FishingBobber, 64x64)"
+    );
 
     Ok(texture_array)
 }

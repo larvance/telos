@@ -572,6 +572,18 @@ impl RecipeRegistry {
             ItemStack::new(crate::inventory::ITEM_ARROW, 4),
         ));
 
+        // Fishing Rod (3x3 mirrored):
+        // [ 0,  0, 13]
+        // [ 0, 13, 55]
+        // [13,  0, 55]
+        reg.register_shaped(ShapedRecipe::new_mirrored(
+            3,
+            3,
+            vec![0, 0, 13, 0, 13, 55, 13, 0, 55],
+            ItemStack::new(crate::inventory::ITEM_FISHING_ROD, 1),
+            true,
+        ));
+
         reg
     }
 }

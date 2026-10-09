@@ -3,8 +3,8 @@
 use crate::attributes::{CombatTracker, Health};
 use crate::effect::status_effect_system;
 use crate::entity::{
-    aquatic_movement_system, boat_movement_system, mob_ai_system, mob_hurt_decay_system,
-    mob_movement_system,
+    aquatic_movement_system, boat_movement_system, fishing_bobber_movement_system, mob_ai_system,
+    mob_hurt_decay_system, mob_movement_system,
 };
 use crate::hunger::{Hunger, SimParams, tick_hunger};
 use bevy_ecs::prelude::*;
@@ -66,6 +66,7 @@ pub fn build_sim_schedule() -> Schedule {
             mob_movement_system,
             aquatic_movement_system,
             boat_movement_system,
+            fishing_bobber_movement_system,
         )
             .in_set(TickSet::Movement),
     );

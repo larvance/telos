@@ -1653,5 +1653,13 @@ pub fn core_items() -> Vec<(&'static str, ItemDef)> {
                 item_type: ItemTypeDef::Generic,
             },
         ),
+        (
+            "fishing_rod",
+            ItemDef {
+                name: "Fishing Rod".into(),
+                max_stack_size: 1,
+                item_type: ItemTypeDef::Generic,
+            },
+        ),
     ]
 }

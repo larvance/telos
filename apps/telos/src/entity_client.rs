@@ -450,6 +450,7 @@ impl ClientEntityStore {
             if entity.death_timer > 0.0
                 || entity.entity_type == EntityType::Item
                 || entity.entity_type == EntityType::Arrow
+                || entity.entity_type == EntityType::FishingBobber
             {
                 continue;
             }
@@ -474,6 +475,17 @@ impl ClientEntityStore {
         get_light: impl Fn(DVec3) -> (u8, u8),
         out_vertices: &mut Vec<EntityVertexGpu>,
     ) {
+        self.build_mesh_with_line(get_light, None, out_vertices);
+    }
+
+    /// Generates hierarchical cuboid geometry for all active entities and optional fishing line.
+    #[allow(clippy::too_many_lines)]
+    pub fn build_mesh_with_line(
+        &self,
+        get_light: impl Fn(DVec3) -> (u8, u8),
+        rod_tip: Option<DVec3>,
+        out_vertices: &mut Vec<EntityVertexGpu>,
+    ) {
         for entity in self.entities.values() {
             let (sky, block) = get_light(entity.pos);
             let hurt_tint = if entity.death_timer > 0.0 {
@@ -494,6 +506,7 @@ impl ClientEntityStore {
                 EntityType::Squid => 3,
                 EntityType::Fish => 4,
                 EntityType::Boat => 5,
+                EntityType::FishingBobber => 6,
             };
 
             match entity.entity_type {
@@ -569,6 +582,34 @@ impl ClientEntityStore {
                 EntityType::Arrow => {
                     build_arrow_mesh(entity, sky, block, hurt_tint, out_vertices);
                 }
+                EntityType::FishingBobber => {
+                    build_fishing_bobber_mesh(entity, sky, block, layer, hurt_tint, out_vertices);
+                    let line_start = rod_tip.or_else(|| {
+                        self.entities
+                            .values()
+                            .filter(|e| e.entity_type == EntityType::Player)
+                            .min_by(|a, b| {
+                                a.pos
+                                    .distance_squared(entity.pos)
+                                    .partial_cmp(&b.pos.distance_squared(entity.pos))
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                            .filter(|p| p.pos.distance_squared(entity.pos) <= 36.0 * 36.0)
+                            .map(|p| p.pos + DVec3::new(0.3, 0.9, 0.3))
+                    });
+
+                    if let Some(start) = line_start {
+                        let bobber_tip = entity.pos + DVec3::new(0.0, 7.0 * f64::from(S), 0.0);
+                        emit_catenary_fishing_line(
+                            start,
+                            bobber_tip,
+                            sky,
+                            block,
+                            layer,
+                            out_vertices,
+                        );
+                    }
+                }
             }
         }
     }
@@ -597,6 +638,156 @@ fn build_arrow_mesh(
         hurt_tint,
         out,
     );
+}
+
+fn build_fishing_bobber_mesh(
+    entity: &ClientEntity,
+    sky: u8,
+    block: u8,
+    layer: u32,
+    hurt_tint: f32,
+    out: &mut Vec<EntityVertexGpu>,
+) {
+    let body_quat = Quat::from_rotation_y((-entity.yaw).to_radians());
+
+    // 1. Float bottom (white): 4x2x4 pixels (0.25m x 0.125m x 0.25m)
+    emit_cuboid(
+        entity.pos,
+        body_quat,
+        0.0,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        Vec3::new(-2.0 * S, 0.0, -2.0 * S),
+        Vec3::new(2.0 * S, 2.0 * S, 2.0 * S),
+        (0.0, 32.0, 4.0, 2.0, 4.0),
+        sky,
+        block,
+        layer,
+        hurt_tint,
+        out,
+    );
+
+    // 2. Float top (red): 4x2x4 pixels
+    emit_cuboid(
+        entity.pos,
+        body_quat,
+        0.0,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        Vec3::new(-2.0 * S, 2.0 * S, -2.0 * S),
+        Vec3::new(2.0 * S, 4.0 * S, 2.0 * S),
+        (0.0, 0.0, 4.0, 2.0, 4.0),
+        sky,
+        block,
+        layer,
+        hurt_tint,
+        out,
+    );
+
+    // 3. Spindle / stem: 1x4x1 pixels (center rod)
+    emit_cuboid(
+        entity.pos,
+        body_quat,
+        0.0,
+        Vec3::ZERO,
+        Vec3::ZERO,
+        Vec3::new(-0.5 * S, 3.5 * S, -0.5 * S),
+        Vec3::new(0.5 * S, 7.5 * S, 0.5 * S),
+        (16.0, 0.0, 1.0, 4.0, 1.0),
+        sky,
+        block,
+        layer,
+        hurt_tint,
+        out,
+    );
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::similar_names
+)]
+fn emit_catenary_fishing_line(
+    start: DVec3,
+    end: DVec3,
+    sky: u8,
+    block: u8,
+    layer: u32,
+    out: &mut Vec<EntityVertexGpu>,
+) {
+    const NUM_SEGMENTS: usize = 12;
+    let dist_xz = ((end.x - start.x).hypot(end.z - start.z)) as f32;
+    let sag_amount = (dist_xz * 0.08).clamp(0.05, 0.9);
+
+    let mut prev_pt = start;
+    let pack_l = (u32::from(sky) & 0xF) | ((u32::from(block) & 0xF) << 4);
+    let uv = [16.0 / 64.0, 1.0 / 64.0];
+
+    for i in 1..=NUM_SEGMENTS {
+        let t = (i as f32) / (NUM_SEGMENTS as f32);
+        let linear = start.lerp(end, f64::from(t));
+        // Parabolic catenary sag: 4 * t * (1 - t) peaks at 1.0 when t = 0.5
+        let sag = f64::from(sag_amount * 4.0 * t * (1.0 - t));
+        let curr_pt = DVec3::new(linear.x, linear.y - sag, linear.z);
+
+        let seg_dir = (curr_pt - prev_pt).as_vec3();
+        let len = seg_dir.length();
+        if len > 1e-4 {
+            let p0 = prev_pt.as_vec3();
+            let p1 = curr_pt.as_vec3();
+            let normal = Vec3::new(-seg_dir.z, 0.0, seg_dir.x).normalize_or_zero() * 0.008;
+
+            let v0 = p0 - normal;
+            let v1 = p0 + normal;
+            let v2 = p1 + normal;
+            let v3 = p1 - normal;
+
+            out.push(EntityVertexGpu {
+                pos: v0.to_array(),
+                light: pack_l,
+                uv,
+                layer,
+                hurt_tint: 0.0,
+            });
+            out.push(EntityVertexGpu {
+                pos: v1.to_array(),
+                light: pack_l,
+                uv,
+                layer,
+                hurt_tint: 0.0,
+            });
+            out.push(EntityVertexGpu {
+                pos: v2.to_array(),
+                light: pack_l,
+                uv,
+                layer,
+                hurt_tint: 0.0,
+            });
+
+            out.push(EntityVertexGpu {
+                pos: v0.to_array(),
+                light: pack_l,
+                uv,
+                layer,
+                hurt_tint: 0.0,
+            });
+            out.push(EntityVertexGpu {
+                pos: v2.to_array(),
+                light: pack_l,
+                uv,
+                layer,
+                hurt_tint: 0.0,
+            });
+            out.push(EntityVertexGpu {
+                pos: v3.to_array(),
+                light: pack_l,
+                uv,
+                layer,
+                hurt_tint: 0.0,
+            });
+        }
+        prev_pt = curr_pt;
+    }
 }
 
 fn build_item_mesh(
@@ -1858,5 +2049,47 @@ mod tests {
 
         // All boat vertices use layer 5
         assert!(vertices.iter().all(|v| v.layer == 5));
+    }
+
+    #[test]
+    fn test_fishing_bobber_and_line_mesh_generation() {
+        let mut store = ClientEntityStore::new();
+
+        store.on_spawn(S2cSpawnEntity {
+            net_id: 110,
+            entity_type: EntityType::FishingBobber.to_u8(),
+            x: 2.0,
+            y: 64.0,
+            z: 2.0,
+            yaw: 0.0,
+            pitch: 0.0,
+            head_yaw: 0.0,
+            health: 1.0,
+            max_health: 1.0,
+        });
+
+        assert_eq!(store.count(), 1);
+        let bobber = store.get(110).unwrap();
+        assert_eq!(bobber.entity_type, EntityType::FishingBobber);
+
+        // Raycasting should NOT hit fishing bobber entities
+        let hit = store.raycast(DVec3::new(2.0, 64.0, 0.0), Vec3::new(0.0, 0.0, 1.0), 10.0);
+        assert!(hit.is_none());
+
+        // Build mesh without rod tip: 3 cuboids * 36 vertices = 108 vertices
+        let mut vertices = Vec::new();
+        store.build_mesh(|_| (15, 0), &mut vertices);
+        assert_eq!(vertices.len(), 108);
+        assert!(vertices.iter().all(|v| v.layer == 6));
+
+        // Build mesh with rod tip: 108 bobber vertices + 12 segments * 6 = 180 vertices
+        let mut vertices_with_line = Vec::new();
+        store.build_mesh_with_line(
+            |_| (15, 0),
+            Some(DVec3::new(0.0, 65.0, 0.0)),
+            &mut vertices_with_line,
+        );
+        assert_eq!(vertices_with_line.len(), 108 + 72);
+        assert!(vertices_with_line.iter().all(|v| v.layer == 6));
     }
 }

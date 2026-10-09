@@ -37,6 +37,8 @@ pub enum EntityType {
     Fish = 7,
     /// Watercraft vehicle entity.
     Boat = 8,
+    /// Floating fishing bobber entity.
+    FishingBobber = 9,
 }
 
 impl EntityType {
@@ -53,6 +55,7 @@ impl EntityType {
             6 => Some(Self::Squid),
             7 => Some(Self::Fish),
             8 => Some(Self::Boat),
+            9 => Some(Self::FishingBobber),
             _ => None,
         }
     }
@@ -76,6 +79,7 @@ impl EntityType {
             Self::Squid => "Squid",
             Self::Fish => "Fish",
             Self::Boat => "Boat",
+            Self::FishingBobber => "FishingBobber",
         }
     }
 
@@ -99,7 +103,7 @@ impl EntityType {
                 half_size: Vec3::new(0.45, 0.7, 0.45),
                 y_offset: 0.7,
             },
-            Self::Item => EntityAabb {
+            Self::Item | Self::FishingBobber => EntityAabb {
                 half_size: Vec3::new(0.125, 0.125, 0.125),
                 y_offset: 0.125,
             },
@@ -892,6 +896,27 @@ impl MobBundle {
             attack_cooldown: AttackCooldown::new(u32::MAX, 0.0, 0.0),
         }
     }
+
+    /// Creates a new `FishingBobber` entity bundle.
+    #[must_use]
+    pub fn new_fishing_bobber(net_id: u32, pos: DVec3) -> Self {
+        Self {
+            net: NetEntity {
+                net_id,
+                entity_type: EntityType::FishingBobber,
+            },
+            pos: Position(pos),
+            rot: Rotation::default(),
+            vel: Velocity::default(),
+            aabb: EntityType::FishingBobber.default_aabb(),
+            health: Health::new(1.0),
+            combat: CombatTracker::default(),
+            hurt_time: HurtTime::default(),
+            mob: Mob::new_passive(0),
+            path_follower: PathFollower::default(),
+            attack_cooldown: AttackCooldown::new(u32::MAX, 0.0, 0.0),
+        }
+    }
 }
 
 /// Component attached to Boat entities representing rowboat physics, rowing paddle animations, and passenger state.
@@ -932,6 +957,47 @@ impl BoatEntity {
 impl Default for BoatEntity {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Component representing a floating fishing bobber projectile with buoyancy, line tension, and fish biting timers.
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+pub struct FishingBobberEntity {
+    /// Entity ID or session ID of the casting player.
+    pub owner_id: u32,
+    /// Whether the bobber is currently floating in or resting upon water.
+    pub in_water: bool,
+    /// Water surface Y level when floating.
+    pub water_y: f32,
+    /// Timer countdown in ticks until a fish bites (nibble phase).
+    pub nibble_timer: u32,
+    /// Timer window in ticks while a fish is biting and can be hooked (bite phase).
+    pub bite_timer: u32,
+    /// Number of ticks the bobber has existed.
+    pub age: u32,
+    /// Bobbing phase / animation time in radians.
+    pub bob_phase: f32,
+}
+
+impl FishingBobberEntity {
+    /// Creates a new default `FishingBobberEntity` for the given owner.
+    #[must_use]
+    pub const fn new(owner_id: u32) -> Self {
+        Self {
+            owner_id,
+            in_water: false,
+            water_y: 0.0,
+            nibble_timer: 200,
+            bite_timer: 0,
+            age: 0,
+            bob_phase: 0.0,
+        }
+    }
+}
+
+impl Default for FishingBobberEntity {
+    fn default() -> Self {
+        Self::new(0)
     }
 }
 
@@ -997,6 +1063,7 @@ pub fn mob_ai_system(
             Without<SimulationFrozen>,
             Without<AquaticMob>,
             Without<BoatEntity>,
+            Without<FishingBobberEntity>,
         ),
     >,
     players: Option<Res<PlayerPositions>>,
@@ -1381,6 +1448,7 @@ pub fn mob_movement_system(
             Without<SimulationFrozen>,
             Without<AquaticMob>,
             Without<BoatEntity>,
+            Without<FishingBobberEntity>,
         ),
     >,
 ) {
@@ -1553,6 +1621,64 @@ pub fn boat_movement_system(
     }
 }
 
+/// Movement, buoyancy, and timer simulation system for fishing bobbers.
+#[allow(
+    clippy::type_complexity,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+pub fn fishing_bobber_movement_system(
+    mut query: Query<
+        (&mut Position, &mut Velocity, &mut FishingBobberEntity),
+        Without<SimulationFrozen>,
+    >,
+) {
+    for (mut pos, mut vel, mut bobber) in &mut query {
+        bobber.age += 1;
+        bobber.bob_phase += 0.12;
+
+        if bobber.in_water {
+            // High fluid drag
+            vel.0.x *= 0.82;
+            vel.0.z *= 0.82;
+
+            // Target resting water surface Y
+            let mut target_y =
+                f64::from(bobber.water_y) + 0.08 + f64::from(bobber.bob_phase.sin() * 0.025);
+            if bobber.bite_timer > 0 {
+                // Fish is actively tugging the bobber down!
+                target_y -= 0.28;
+            }
+
+            let diff_y = target_y - pos.0.y;
+            vel.0.y = (diff_y * 0.35) as f32;
+
+            // Timers
+            if bobber.nibble_timer > 0 {
+                bobber.nibble_timer -= 1;
+                if bobber.nibble_timer == 0 {
+                    bobber.bite_timer = 40; // 2 seconds bite window
+                }
+            } else if bobber.bite_timer > 0 {
+                bobber.bite_timer -= 1;
+                if bobber.bite_timer == 0 {
+                    // Fish got away, reset countdown
+                    bobber.nibble_timer = 200;
+                }
+            }
+        } else {
+            // Airborne projectile: gravity and air drag
+            vel.0.y = (vel.0.y - 0.04).max(-2.0);
+            vel.0.x *= 0.92;
+            vel.0.z *= 0.92;
+        }
+
+        pos.0.x += f64::from(vel.0.x);
+        pos.0.y += f64::from(vel.0.y);
+        pos.0.z += f64::from(vel.0.z);
+    }
+}
+
 /// System that counts down entity hurt animation and triggers panic flee on passive mobs.
 pub fn mob_hurt_decay_system(
     mut query: Query<(&mut HurtTime, &mut Mob, &Position), Without<SimulationFrozen>>,
@@ -1590,17 +1716,20 @@ mod tests {
         assert_eq!(EntityType::from_u8(6), Some(EntityType::Squid));
         assert_eq!(EntityType::from_u8(7), Some(EntityType::Fish));
         assert_eq!(EntityType::from_u8(8), Some(EntityType::Boat));
-        assert_eq!(EntityType::from_u8(9), None);
+        assert_eq!(EntityType::from_u8(9), Some(EntityType::FishingBobber));
+        assert_eq!(EntityType::from_u8(10), None);
         assert_eq!(EntityType::Zombie.to_u8(), 1);
         assert_eq!(EntityType::Item.to_u8(), 4);
         assert_eq!(EntityType::Arrow.to_u8(), 5);
         assert_eq!(EntityType::Squid.to_u8(), 6);
         assert_eq!(EntityType::Fish.to_u8(), 7);
         assert_eq!(EntityType::Boat.to_u8(), 8);
+        assert_eq!(EntityType::FishingBobber.to_u8(), 9);
         assert_eq!(EntityType::Pig.name(), "Pig");
         assert_eq!(EntityType::Squid.name(), "Squid");
         assert_eq!(EntityType::Fish.name(), "Fish");
         assert_eq!(EntityType::Boat.name(), "Boat");
+        assert_eq!(EntityType::FishingBobber.name(), "FishingBobber");
         assert_eq!(EntityType::Item.name(), "Item");
         assert_eq!(EntityType::Arrow.name(), "Arrow");
     }
@@ -1817,5 +1946,36 @@ mod tests {
             AiState::Fleeing { timer, .. } => assert_eq!(timer, 80),
             _ => panic!("Expected pig to flee when hurt"),
         }
+    }
+
+    #[test]
+    fn test_fishing_bobber_buoyancy_and_timers() {
+        let mut world = bevy_ecs::world::World::new();
+        let bobber_bundle = MobBundle::new_fishing_bobber(1, DVec3::new(5.0, 62.0, 5.0));
+        let mut bobber_comp = FishingBobberEntity::new(42);
+        bobber_comp.in_water = true;
+        bobber_comp.water_y = 62.0;
+        bobber_comp.nibble_timer = 2; // Short countdown for testing
+
+        let e = world.spawn((bobber_bundle, bobber_comp)).id();
+
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        schedule.add_systems(fishing_bobber_movement_system);
+
+        // Tick 1: nibble_timer decreases from 2 to 1
+        schedule.run(&mut world);
+        let b1 = world.get::<FishingBobberEntity>(e).unwrap();
+        assert_eq!(b1.nibble_timer, 1);
+        assert_eq!(b1.bite_timer, 0);
+
+        // Tick 2: nibble_timer reaches 0 -> bite_timer triggers to 40
+        schedule.run(&mut world);
+        let b2 = world.get::<FishingBobberEntity>(e).unwrap();
+        assert_eq!(b2.nibble_timer, 0);
+        assert_eq!(b2.bite_timer, 40);
+
+        // Position should reflect water surface bobbing
+        let pos = world.get::<Position>(e).unwrap();
+        assert!(pos.0.y >= 61.5 && pos.0.y <= 62.5);
     }
 }

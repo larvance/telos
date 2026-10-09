@@ -1525,6 +1525,8 @@ pub enum PlayerCommandKind {
         /// If true, requests to unmount / dismount the vehicle.
         unmount: bool,
     },
+    /// Cast or reel in fishing rod.
+    UseFishingRod,
 }
 
 /// Server synchronizes weather condition, rain/thunder levels, and lightning flash to clients.
@@ -1917,6 +1919,9 @@ impl C2sPlayerCommand {
                 buf.extend_from_slice(&turn.to_le_bytes());
                 buf.push(u8::from(unmount));
             }
+            PlayerCommandKind::UseFishingRod => {
+                buf.push(15);
+            }
         }
     }
 
@@ -2002,10 +2007,10 @@ impl C2sPlayerCommand {
                 let y = f64::from_le_bytes(cursor[9..17].try_into().unwrap());
                 let z = f64::from_le_bytes(cursor[17..25].try_into().unwrap());
                 *cursor = &cursor[25..];
-                if mob_type == 0 || mob_type > 8 {
+                if mob_type == 0 || mob_type > 9 {
                     return Err(ProtocolError::InvalidValue {
                         field: "player_command.spawn_mob.mob_type",
-                        reason: "Mob type must be 1..=8".to_string(),
+                        reason: "Mob type must be 1..=9".to_string(),
                     });
                 }
                 if !x.is_finite() || !y.is_finite() || !z.is_finite() {
@@ -2092,6 +2097,7 @@ impl C2sPlayerCommand {
                     unmount,
                 }
             }
+            15 => PlayerCommandKind::UseFishingRod,
             other => {
                 return Err(ProtocolError::InvalidDiscriminant {
                     enum_name: "PlayerCommandKind",
@@ -3843,6 +3849,16 @@ mod tests {
         let decoded_steer =
             C2sPlayerCommand::decode(&mut cursor).expect("failed to decode SteerVehicle");
         assert_eq!(cmd_steer, decoded_steer);
+
+        let cmd_fish = C2sPlayerCommand {
+            command: PlayerCommandKind::UseFishingRod,
+        };
+        let mut buf = Vec::new();
+        cmd_fish.encode(&mut buf);
+        let mut cursor = &buf[..];
+        let decoded_fish =
+            C2sPlayerCommand::decode(&mut cursor).expect("failed to decode UseFishingRod");
+        assert_eq!(cmd_fish, decoded_fish);
     }
 
     #[test]

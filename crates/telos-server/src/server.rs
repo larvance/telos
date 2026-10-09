@@ -45,13 +45,14 @@ use telos_sim::{
     AiState, AquaticMob, ArrowEntity, ArrowStepOutcome, AttackCooldown, AttributeKind, Attributes,
     BOW_FULL_CHARGE_TICKS, BOW_MAX_RELEASE_SPEED, BOW_MIN_CHARGE_TICKS, BOW_MIN_RELEASE_SPEED,
     BoatEntity, CombatTracker, DamageType, EffectInstance, EnchantmentKind, EntityType, Experience,
-    GameMode, Health, Hunger, HurtTime, ITEM_ARROW, ITEM_BOW, ITEM_DESPAWN_TICKS,
-    ITEM_MERGE_RADIUS, ITEM_OAK_BOAT, ITEM_PICKUP_RADIUS, Inventory, ItemEntity, ItemStack, Mob,
-    MobBundle, MoveMode, NetEntity, PLAYER_DROP_PICKUP_DELAY, PlayerPositions, Position,
-    PotionType, Riding, Rotation, SimParams, SimulationFrozen, StatusEffectKind,
-    StatusEffectRegistry, StatusEffects, TargetablePlayer, Velocity, WeatherKind, WeatherState,
-    apply_mitigated_damage, block_to_drop_item, build_sim_schedule, calculate_total_epf, is_boat,
-    merge_item_stacks, tick_arrow_physics_step, tick_item_physics_step_fluid,
+    FishingBobberEntity, GameMode, Health, Hunger, HurtTime, ITEM_ARROW, ITEM_BOW,
+    ITEM_DESPAWN_TICKS, ITEM_FISHING_ROD, ITEM_MERGE_RADIUS, ITEM_OAK_BOAT, ITEM_PICKUP_RADIUS,
+    Inventory, ItemEntity, ItemStack, Mob, MobBundle, MoveMode, NetEntity,
+    PLAYER_DROP_PICKUP_DELAY, PlayerPositions, Position, PotionType, Riding, Rotation, SimParams,
+    SimulationFrozen, StatusEffectKind, StatusEffectRegistry, StatusEffects, TargetablePlayer,
+    Velocity, WeatherKind, WeatherState, apply_mitigated_damage, block_to_drop_item,
+    build_sim_schedule, calculate_total_epf, is_boat, merge_item_stacks, roll_fishing_loot,
+    tick_arrow_physics_step, tick_item_physics_step_fluid,
 };
 use telos_voxel::fluid::{FluidKind, FluidState, calculate_fluid_flow};
 use telos_voxel::state::BlockStateId;
@@ -488,15 +489,24 @@ impl Server {
             .default_world()
             .seed()
             .wrapping_add(u64::from(net_id));
-        let (bundle, is_aquatic, is_boat) = match entity_type {
-            EntityType::Pig => (MobBundle::new_pig(net_id, pos, seed), false, false),
-            EntityType::Cow => (MobBundle::new_cow(net_id, pos, seed), false, false),
-            EntityType::Squid => (MobBundle::new_squid(net_id, pos, seed), true, false),
-            EntityType::Fish => (MobBundle::new_fish(net_id, pos, seed), true, false),
-            EntityType::Boat => (MobBundle::new_boat(net_id, pos), false, true),
-            EntityType::Zombie | EntityType::Player | EntityType::Item | EntityType::Arrow => {
-                (MobBundle::new_zombie(net_id, pos, seed), false, false)
-            }
+        let (bundle, is_aquatic, is_boat, is_bobber) = match entity_type {
+            EntityType::Pig => (MobBundle::new_pig(net_id, pos, seed), false, false, false),
+            EntityType::Cow => (MobBundle::new_cow(net_id, pos, seed), false, false, false),
+            EntityType::Squid => (MobBundle::new_squid(net_id, pos, seed), true, false, false),
+            EntityType::Fish => (MobBundle::new_fish(net_id, pos, seed), true, false, false),
+            EntityType::Boat => (MobBundle::new_boat(net_id, pos), false, true, false),
+            EntityType::FishingBobber => (
+                MobBundle::new_fishing_bobber(net_id, pos),
+                false,
+                false,
+                true,
+            ),
+            EntityType::Zombie | EntityType::Player | EntityType::Item | EntityType::Arrow => (
+                MobBundle::new_zombie(net_id, pos, seed),
+                false,
+                false,
+                false,
+            ),
         };
         let health = bundle.health.cur;
         let mut entity_builder =
@@ -507,6 +517,9 @@ impl Server {
         }
         if is_boat {
             entity_builder.insert(BoatEntity::new());
+        }
+        if is_bobber {
+            entity_builder.insert(FishingBobberEntity::new(0));
         }
         let entity = entity_builder.id();
 
@@ -529,6 +542,58 @@ impl Server {
 
         for s in self.sessions.values_mut() {
             if s.phase == ConnectionPhase::Play {
+                let _ = s
+                    .connection
+                    .send(Lane::Control, Payload::Msg(spawn_msg.clone()));
+            }
+        }
+
+        net_id
+    }
+
+    /// Spawns a fishing bobber entity in the specified world at `pos` with initial `vel`.
+    pub fn spawn_fishing_bobber_entity(
+        &mut self,
+        world_name: &str,
+        pos: DVec3,
+        vel: Vec3,
+        owner_session_id: u32,
+    ) -> u32 {
+        let net_id = self.next_entity_id;
+        self.next_entity_id += 1;
+
+        let mut bundle = MobBundle::new_fishing_bobber(net_id, pos);
+        bundle.vel = Velocity(vel);
+
+        let entity = self
+            .ecs_world
+            .spawn((
+                bundle,
+                Attributes::player_default(),
+                StatusEffects::new(),
+                FishingBobberEntity::new(owner_session_id),
+            ))
+            .id();
+
+        self.tracked_mobs.insert(net_id, entity);
+        self.mob_positions.insert(net_id, pos);
+        self.mob_yaws.insert(net_id, 0.0);
+
+        let spawn_msg = S2cMessage::SpawnEntity(S2cSpawnEntity {
+            net_id,
+            entity_type: EntityType::FishingBobber.to_u8(),
+            x: pos.x,
+            y: pos.y,
+            z: pos.z,
+            yaw: 0.0,
+            pitch: 0.0,
+            head_yaw: 0.0,
+            health: 1.0,
+            max_health: 1.0,
+        });
+
+        for s in self.sessions.values_mut() {
+            if s.phase == ConnectionPhase::Play && s.world_name == world_name {
                 let _ = s
                     .connection
                     .send(Lane::Control, Payload::Msg(spawn_msg.clone()));
@@ -934,7 +999,10 @@ impl Server {
             EntityType::Squid => (2, vec![("ink_sac", count_1_to_3)]),
             EntityType::Fish => (1, vec![("cod", 1)]),
             EntityType::Boat => (0, vec![("oak_boat", 1)]),
-            EntityType::Player | EntityType::Item | EntityType::Arrow => (0, Vec::new()),
+            EntityType::Player
+            | EntityType::Item
+            | EntityType::Arrow
+            | EntityType::FishingBobber => (0, Vec::new()),
         };
 
         // 4. Award XP to killer if within reach
@@ -3307,6 +3375,9 @@ impl Server {
                     }
                     self.ecs_world.despawn(entity);
                 }
+                if let Some(bobber_id) = session.active_fishing_bobber {
+                    self.despawn_mob(bobber_id);
+                }
                 self.pending_forms.retain(|&(s_id, _), _| s_id != id);
                 info!(session_id = id, "Session disconnected");
             }
@@ -3663,6 +3734,133 @@ impl Server {
                         {
                             boat.forward_input = forward.clamp(-1.0, 1.0);
                             boat.turn_input = turn.clamp(-1.0, 1.0);
+                        }
+                    }
+                }
+                PlayerCommandKind::UseFishingRod => {
+                    let (selected_slot, world_name, pitch) = match self.sessions.get(&session_id) {
+                        Some(s) => (s.selected_slot, s.world_name.clone(), s.pitch),
+                        None => continue,
+                    };
+
+                    let active_bobber = self
+                        .sessions
+                        .get(&session_id)
+                        .and_then(|s| s.active_fishing_bobber);
+
+                    if let Some(bobber_net_id) = active_bobber {
+                        // Reel in existing bobber
+                        if let Some(&bobber_ent) = self.tracked_mobs.get(&bobber_net_id) {
+                            let bobber_pos = self
+                                .ecs_world
+                                .get::<Position>(bobber_ent)
+                                .map_or(session_pos, |p| p.0);
+                            let bobber_comp = self
+                                .ecs_world
+                                .get::<FishingBobberEntity>(bobber_ent)
+                                .copied();
+
+                            if let Some(bobber) = bobber_comp
+                                && bobber.bite_timer > 0
+                            {
+                                // Successful catch!
+                                let is_raining = self.weather.rain_level > 0.1;
+                                let seed = self
+                                    .tick_count
+                                    .wrapping_add(u64::from(bobber_net_id))
+                                    .wrapping_add(self.worlds.default_world().seed());
+                                let (loot_item, loot_count, _) =
+                                    roll_fishing_loot(seed, is_raining);
+                                let stack = ItemStack::new(loot_item, loot_count);
+
+                                // Fling loot from bobber pos toward player
+                                let to_player = (session_pos + DVec3::new(0.0, 1.0, 0.0)
+                                    - bobber_pos)
+                                    .as_vec3();
+                                let dist = to_player.length().max(1.0);
+                                let vel = (to_player / dist) * 0.35 + Vec3::new(0.0, 0.28, 0.0);
+                                self.spawn_item_entity(
+                                    &world_name,
+                                    bobber_pos + DVec3::new(0.0, 0.3, 0.0),
+                                    vel,
+                                    stack,
+                                    0,
+                                );
+
+                                // Award small amount of XP (1 to 6)
+                                #[allow(clippy::cast_possible_truncation)]
+                                let xp_amount = ((seed % 6) + 1) as u32;
+                                if let Some(player_entity) = entity
+                                    && let Some(mut xp) =
+                                        self.ecs_world.get_mut::<Experience>(player_entity)
+                                {
+                                    xp.add_xp(xp_amount);
+                                }
+
+                                // Splash particles on catch
+                                #[allow(clippy::cast_possible_truncation)]
+                                let splash_msg = S2cMessage::ParticleEvent(S2cParticleEvent {
+                                    effect: ParticleEffectKind::Smoke,
+                                    x: bobber_pos.x as f32,
+                                    y: bobber_pos.y as f32 + 0.1,
+                                    z: bobber_pos.z as f32,
+                                    count: 10,
+                                    speed: 0.15,
+                                    block_state_id: 0,
+                                });
+                                for s in self.sessions.values_mut() {
+                                    if s.phase == ConnectionPhase::Play
+                                        && s.world_name == world_name
+                                    {
+                                        let _ = s
+                                            .connection
+                                            .send(Lane::Control, Payload::Msg(splash_msg.clone()));
+                                    }
+                                }
+                            }
+
+                            self.despawn_mob(bobber_net_id);
+                        }
+
+                        if let Some(session) = self.sessions.get_mut(&session_id) {
+                            session.active_fishing_bobber = None;
+                        }
+                    } else {
+                        // Cast new bobber if holding a fishing rod
+                        let is_holding_rod = if let Some(player_entity) = entity
+                            && let Some(inv) = self.ecs_world.get::<Inventory>(player_entity)
+                        {
+                            let slot_idx = selected_slot as usize;
+                            slot_idx < inv.slots.len()
+                                && inv.slots[slot_idx].item == ITEM_FISHING_ROD
+                        } else {
+                            false
+                        };
+
+                        if !is_holding_rod {
+                            continue;
+                        }
+
+                        let yaw_rad = session_yaw.to_radians();
+                        let pitch_rad = pitch.to_radians();
+                        let forward_x = -yaw_rad.sin() * pitch_rad.cos();
+                        let forward_y = -pitch_rad.sin();
+                        let forward_z = -yaw_rad.cos() * pitch_rad.cos();
+                        let dir = Vec3::new(forward_x, forward_y, forward_z).normalize_or_zero();
+                        let vel = dir * 1.15 + Vec3::new(0.0, 0.22, 0.0);
+
+                        let launch_pos =
+                            session_pos + DVec3::new(0.0, 1.5, 0.0) + (dir * 0.35).as_dvec3();
+                        #[allow(clippy::cast_possible_truncation)]
+                        let bobber_id = self.spawn_fishing_bobber_entity(
+                            &world_name,
+                            launch_pos,
+                            vel,
+                            session_id as u32,
+                        );
+
+                        if let Some(session) = self.sessions.get_mut(&session_id) {
+                            session.active_fishing_bobber = Some(bobber_id);
                         }
                     }
                 }
@@ -5631,7 +5829,120 @@ impl Server {
             }
         }
 
+        // Update fishing bobber immersion status and water surface Y
+        {
+            let bobber_positions: Vec<(bevy_ecs::entity::Entity, DVec3)> = {
+                let mut bobber_query =
+                    self.ecs_world
+                        .query::<(bevy_ecs::entity::Entity, &Position, &FishingBobberEntity)>();
+                bobber_query
+                    .iter(&self.ecs_world)
+                    .map(|(entity, pos, _)| (entity, pos.0))
+                    .collect()
+            };
+
+            for (entity, pos) in bobber_positions {
+                #[allow(clippy::cast_possible_truncation)]
+                let test_pos_sub = BlockPos::new(
+                    pos.x.floor() as i32,
+                    (pos.y - 0.1).floor() as i32,
+                    pos.z.floor() as i32,
+                );
+                #[allow(clippy::cast_possible_truncation)]
+                let test_pos_at = BlockPos::new(
+                    pos.x.floor() as i32,
+                    pos.y.floor() as i32,
+                    pos.z.floor() as i32,
+                );
+                let b_sub = self.worlds.default_world_mut().get_block(test_pos_sub);
+                let b_at = self.worlds.default_world_mut().get_block(test_pos_at);
+                let sub_water = self.registries.block_registry().is_water(b_sub);
+                let at_water = self.registries.block_registry().is_water(b_at);
+
+                if let Some(mut bobber) = self.ecs_world.get_mut::<FishingBobberEntity>(entity) {
+                    #[allow(clippy::cast_precision_loss)]
+                    if at_water {
+                        bobber.in_water = true;
+                        bobber.water_y = test_pos_at.y() as f32 + 0.9;
+                    } else if sub_water {
+                        bobber.in_water = true;
+                        bobber.water_y = test_pos_sub.y() as f32 + 0.9;
+                    } else {
+                        bobber.in_water = false;
+                    }
+                }
+            }
+        }
+
         self.sim_schedule.run(&mut self.ecs_world);
+
+        // Broadcast splash particles when a fishing bobber gets a bite
+        {
+            let mut splash_particles = Vec::new();
+            let mut bobber_query = self.ecs_world.query::<(&Position, &FishingBobberEntity)>();
+            for (pos, bobber) in bobber_query.iter(&self.ecs_world) {
+                if bobber.bite_timer == 40 {
+                    splash_particles.push(pos.0);
+                }
+            }
+            for p in splash_particles {
+                #[allow(clippy::cast_possible_truncation)]
+                let splash_msg = S2cMessage::ParticleEvent(S2cParticleEvent {
+                    effect: ParticleEffectKind::Smoke,
+                    x: p.x as f32,
+                    y: p.y as f32 + 0.15,
+                    z: p.z as f32,
+                    count: 12,
+                    speed: 0.12,
+                    block_state_id: 0,
+                });
+                for s in self.sessions.values_mut() {
+                    if s.phase == ConnectionPhase::Play {
+                        let _ = s
+                            .connection
+                            .send(Lane::Control, Payload::Msg(splash_msg.clone()));
+                    }
+                }
+            }
+        }
+
+        // Manage active fishing bobbers: auto-despawn on distance > 36 or held item switch
+        {
+            let mut bobbers_to_clean = Vec::new();
+            for (&session_id, session) in &self.sessions {
+                if session.phase != ConnectionPhase::Play {
+                    continue;
+                }
+                if let Some(bobber_id) = session.active_fishing_bobber {
+                    let holding_rod = if let Some(p_ent) = session.ecs_entity
+                        && let Some(inv) = self.ecs_world.get::<Inventory>(p_ent)
+                    {
+                        let slot_idx = session.selected_slot as usize;
+                        slot_idx < inv.slots.len() && inv.slots[slot_idx].item == ITEM_FISHING_ROD
+                    } else {
+                        false
+                    };
+
+                    let too_far = if let Some(&bobber_ent) = self.tracked_mobs.get(&bobber_id)
+                        && let Some(bobber_pos) = self.ecs_world.get::<Position>(bobber_ent)
+                    {
+                        bobber_pos.0.distance_squared(session.position) > 36.0 * 36.0
+                    } else {
+                        true
+                    };
+
+                    if !holding_rod || too_far {
+                        bobbers_to_clean.push((session_id, bobber_id));
+                    }
+                }
+            }
+            for (session_id, bobber_id) in bobbers_to_clean {
+                self.despawn_mob(bobber_id);
+                if let Some(session) = self.sessions.get_mut(&session_id) {
+                    session.active_fishing_bobber = None;
+                }
+            }
+        }
 
         // 5a. Authoritative mob melee attacks on survival players
         let mut attacks_to_resolve = Vec::new();

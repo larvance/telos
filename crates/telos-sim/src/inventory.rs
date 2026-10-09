@@ -185,11 +185,21 @@ pub const ITEM_COD: u32 = 95;
 pub const ITEM_COOKED_COD: u32 = 96;
 /// Oak boat item identifier (97).
 pub const ITEM_OAK_BOAT: u32 = 97;
+/// String item identifier (55).
+pub const ITEM_STRING: u32 = 55;
+/// Fishing rod item identifier (98).
+pub const ITEM_FISHING_ROD: u32 = 98;
 
 /// Returns true if the item is a boat.
 #[must_use]
 pub const fn is_boat(item: u32) -> bool {
     item == ITEM_OAK_BOAT
+}
+
+/// Returns true if the item is a fishing rod.
+#[must_use]
+pub const fn is_fishing_rod(item: u32) -> bool {
+    item == ITEM_FISHING_ROD
 }
 
 /// Returns true if the item is a sword.
@@ -300,6 +310,7 @@ pub const fn is_slot_valid_for_item(slot: usize, item: u32) -> bool {
 
 /// Returns the user-facing name of an item ID.
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn item_name(item: u32) -> &'static str {
     match item {
         0 => "Air",
@@ -396,6 +407,11 @@ pub fn item_name(item: u32) -> &'static str {
         91 => "Anvil",
         92 => "Book",
         93 => "Enchanted Book",
+        94 => "Ink Sac",
+        95 => "Raw Cod",
+        96 => "Cooked Cod",
+        97 => "Oak Boat",
+        98 => "Fishing Rod",
         _ => "Unknown Item",
     }
 }
