@@ -46,8 +46,12 @@ impl DepthBuffer {
         // SAFETY: Querying memory requirements for the depth image
         let requirements = unsafe { device.get_image_memory_requirements(image) };
 
-        let allocation =
-            allocator.allocate("depth_buffer", requirements, MemoryLocation::GpuOnly, false)?;
+        let allocation = allocator.allocate_image(
+            "depth_buffer",
+            image,
+            requirements,
+            MemoryLocation::GpuOnly,
+        )?;
 
         // SAFETY: Binding image memory
         unsafe {

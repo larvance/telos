@@ -65,8 +65,12 @@ impl HiZPyramid {
 
         // SAFETY: Querying memory requirements for image
         let requirements = unsafe { device.get_image_memory_requirements(image) };
-        let allocation =
-            allocator.allocate("hiz_pyramid", requirements, MemoryLocation::GpuOnly, false)?;
+        let allocation = allocator.allocate_image(
+            "hiz_pyramid",
+            image,
+            requirements,
+            MemoryLocation::GpuOnly,
+        )?;
 
         // SAFETY: Binding image memory to allocation
         unsafe {

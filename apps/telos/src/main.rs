@@ -6007,12 +6007,13 @@ impl App {
                 if let (Some(pano_pipe), Some(pano_set)) =
                     (&self.panorama_pipeline, self.panorama_descriptor_set)
                 {
-                    let yaw = (self.frame_counter as f32 * 0.0015) % std::f32::consts::TAU;
+                    let elapsed = self.start_time.elapsed().as_secs_f32();
+                    let yaw = (elapsed * 0.05) % std::f32::consts::TAU;
                     let fov = 85.0_f32.to_radians();
                     let aspect = swapchain_extent.width as f32 / swapchain_extent.height as f32;
                     let mut pano_cam = Camera::new(Vec3::ZERO);
                     pano_cam.yaw = yaw;
-                    pano_cam.pitch = 0.0;
+                    pano_cam.pitch = -5.0_f32.to_radians();
                     pano_cam.fov_y = fov;
                     let inv_view_proj = pano_cam.view_proj_matrix(aspect).inverse();
                     let pano_pc = PanoramaPushConstants {
@@ -13438,8 +13439,9 @@ fn load_and_upload_panorama_textures(gpu_context: &GpuContext) -> Result<GpuText
         })
         .collect();
 
-    let texture_array =
+    let mut texture_array =
         gpu_context.create_texture_array(PANO_RES, LAYER_COUNT, 1, &pixel_data, &regions)?;
+    texture_array.set_linear_clamped_sampler(gpu_context.device().raw())?;
 
     info!("3D Panorama cubemap texture array loaded (6 layers, {PANO_RES}x{PANO_RES})");
 

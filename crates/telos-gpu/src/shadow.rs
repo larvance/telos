@@ -212,11 +212,11 @@ impl CascadedShadowMap {
         // SAFETY: Querying memory requirements for depth image allocation
         let requirements = unsafe { device.get_image_memory_requirements(image) };
 
-        let allocation = allocator.allocate(
+        let allocation = allocator.allocate_image(
             "cascaded_shadow_map",
+            image,
             requirements,
             MemoryLocation::GpuOnly,
-            false,
         )?;
 
         // SAFETY: Binding image memory

@@ -53,14 +53,18 @@ void main() {
         if (dir.y > 0.0) {
             // Face 4: Up (+Y)
             layer = 4u;
-            st = vec2(dir.x / dir.y, -dir.z / dir.y);
+            st = vec2(-dir.x / dir.y, -dir.z / dir.y);
         } else {
             // Face 5: Down (-Y)
             layer = 5u;
-            st = vec2(dir.x / -dir.y, dir.z / dir.y);
+            st = vec2(-dir.x / -dir.y, dir.z / -dir.y);
         }
     }
 
-    vec2 uv = vec2(0.5 + 0.5 * st.x, 0.5 - 0.5 * st.y);
+    // Map st in [-1.0, 1.0] to normalized UV coordinates.
+    // Clamping to texel centers prevents linear filtering from bleeding across face borders.
+    const float N = 512.0;
+    vec2 uv_raw = vec2(0.5 + 0.5 * st.x, 0.5 - 0.5 * st.y);
+    vec2 uv = clamp(uv_raw, 0.5 / N, 1.0 - 0.5 / N);
     out_color = texture(u_panorama, vec3(uv, float(layer)));
 }

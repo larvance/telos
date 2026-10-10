@@ -86,7 +86,10 @@ pub fn create_device(
         ));
     }
 
-    let env_override = env::var("VOXEL_GPU").ok();
+    let env_override = env::var("VOXEL_GPU")
+        .or_else(|_| env::var("VX_GPU"))
+        .or_else(|_| env::var("TELOS_GPU"))
+        .ok();
 
     let mut scored_devices: Vec<(
         i32,

@@ -28,7 +28,7 @@ impl GpuAllocator {
             physical_device,
             debug_settings: AllocatorDebugSettings::default(),
             buffer_device_address: true,
-            allocation_sizes: AllocationSizes::default(),
+            allocation_sizes: AllocationSizes::new(32 * 1024 * 1024, 32 * 1024 * 1024),
         };
 
         let allocator = Allocator::new(&desc).map_err(|e| {
@@ -63,8 +63,58 @@ impl GpuAllocator {
             .lock()
             .map_err(|_| GpuError::Allocation("Allocator lock poisoned".into()))?;
 
+        match alloc.allocate(&desc) {
+            Ok(a) => Ok(a),
+            Err(e) => {
+                tracing::error!(
+                    name = name,
+                    size = desc.requirements.size,
+                    align = desc.requirements.alignment,
+                    type_bits = format!("{:#x}", desc.requirements.memory_type_bits),
+                    location = ?desc.location,
+                    linear = desc.linear,
+                    "Allocation failed: {e}"
+                );
+                Err(GpuError::Allocation(format!(
+                    "Allocation failed for '{name}': {e}"
+                )))
+            }
+        }
+    }
+
+    /// Allocates device memory for an image, preferring a dedicated allocation if possible.
+    pub fn allocate_image(
+        &self,
+        name: &'static str,
+        image: vk::Image,
+        requirements: vk::MemoryRequirements,
+        location: gpu_allocator::MemoryLocation,
+    ) -> Result<Allocation, GpuError> {
+        let dedicated_desc = AllocationCreateDesc {
+            name,
+            requirements,
+            location,
+            linear: false,
+            allocation_scheme: AllocationScheme::DedicatedImage(image),
+        };
+
+        let mut alloc = self
+            .allocator
+            .lock()
+            .map_err(|_| GpuError::Allocation("Allocator lock poisoned".into()))?;
+
         alloc
-            .allocate(&desc)
+            .allocate(&dedicated_desc)
+            .or_else(|_| {
+                let fallback_desc = AllocationCreateDesc {
+                    name,
+                    requirements,
+                    location,
+                    linear: false,
+                    allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                };
+                alloc.allocate(&fallback_desc)
+            })
             .map_err(|e| GpuError::Allocation(format!("Allocation failed for '{name}': {e}")))
     }
 

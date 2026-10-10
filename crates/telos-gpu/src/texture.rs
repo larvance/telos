@@ -112,7 +112,7 @@ impl GpuTextureArray {
         let reqs = unsafe { device.get_image_memory_requirements(image) };
 
         let allocation =
-            allocator.allocate("texture_array", reqs, MemoryLocation::GpuOnly, false)?;
+            allocator.allocate_image("texture_array", image, reqs, MemoryLocation::GpuOnly)?;
 
         // SAFETY: Binding image memory
         unsafe {
@@ -271,6 +271,29 @@ impl GpuTextureArray {
         })
     }
 
+    /// Replaces the default sampler with a linear clamped sampler suitable for cubemaps and panoramas.
+    #[allow(clippy::cast_precision_loss)]
+    pub fn set_linear_clamped_sampler(&mut self, device: &ash::Device) -> Result<(), GpuError> {
+        let sampler_info = vk::SamplerCreateInfo::default()
+            .mag_filter(vk::Filter::LINEAR)
+            .min_filter(vk::Filter::LINEAR)
+            .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+            .anisotropy_enable(true)
+            .max_anisotropy(16.0)
+            .min_lod(0.0)
+            .max_lod(self.mip_levels as f32);
+
+        // SAFETY: Destroy old sampler and create new linear clamped sampler
+        unsafe {
+            device.destroy_sampler(self.sampler, None);
+            self.sampler = device.create_sampler(&sampler_info, None)?;
+        }
+        Ok(())
+    }
+
     /// Image view handle configured as `TYPE_2D_ARRAY`.
     #[inline]
     #[must_use]
@@ -377,7 +400,8 @@ impl GpuTexture2d {
         // SAFETY: Querying memory requirements for image
         let reqs = unsafe { device.get_image_memory_requirements(image) };
 
-        let allocation = allocator.allocate("texture_2d", reqs, MemoryLocation::GpuOnly, false)?;
+        let allocation =
+            allocator.allocate_image("texture_2d", image, reqs, MemoryLocation::GpuOnly)?;
 
         // SAFETY: Binding image memory
         unsafe {
