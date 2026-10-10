@@ -121,6 +121,14 @@ pub struct ResolvedBlocks {
     pub brown_mushroom: BlockStateId,
     /// Red mushroom fungus block state ID.
     pub red_mushroom: BlockStateId,
+
+    // Phase 80 Nether Realm Blocks
+    /// Netherrack cavern host rock.
+    pub netherrack: BlockStateId,
+    /// Soul sand shore sediment.
+    pub soul_sand: BlockStateId,
+    /// Glowstone luminescent ceiling cluster.
+    pub glowstone: BlockStateId,
 }
 
 impl ResolvedBlocks {
@@ -196,6 +204,10 @@ impl ResolvedBlocks {
         let brown_mushroom = resolve_block("brown_mushroom", 88);
         let red_mushroom = resolve_block("red_mushroom", 89);
 
+        let netherrack = resolve_block("netherrack", 100);
+        let soul_sand = resolve_block("soul_sand", 101);
+        let glowstone = resolve_block("glowstone", 102);
+
         Self {
             air,
             stone,
@@ -248,6 +260,9 @@ impl ResolvedBlocks {
             oxeye_daisy,
             brown_mushroom,
             red_mushroom,
+            netherrack,
+            soul_sand,
+            glowstone,
         }
     }
 }

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+use telos_worldgen::GeneratorKind;
+
 use crate::multi_world::WorldConfig;
 
 /// Errors arising from configuration loading and serialization.
@@ -73,7 +75,17 @@ const fn default_autosave_interval_ticks() -> u32 {
 }
 
 fn default_worlds() -> Vec<WorldConfig> {
-    vec![WorldConfig::default()]
+    vec![
+        WorldConfig::default(),
+        WorldConfig {
+            name: "nether".to_string(),
+            seed: 1338,
+            generator: GeneratorKind::Nether,
+            save_directory: None,
+            region_compression: true,
+            region_compression_level: 3,
+        },
+    ]
 }
 
 const fn default_region_compression_level() -> u32 {

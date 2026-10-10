@@ -1361,6 +1361,55 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
                 ..Default::default()
             },
         ),
+        // Nether realm blocks (Phase 80)
+        (
+            "netherrack",
+            "Netherrack",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 0.4,
+                blast_resistance: 0.4,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(73),
+                ..Default::default()
+            },
+        ),
+        (
+            "soul_sand",
+            "Soul Sand",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 0.5,
+                blast_resistance: 0.5,
+                tool: Some("telos:shovel".into()),
+                sound: Some("telos:sand".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(74),
+                ..Default::default()
+            },
+        ),
+        (
+            "glowstone",
+            "Glowstone",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 0.3,
+                blast_resistance: 0.3,
+                light_emission: 15,
+                sound: Some("telos:glass".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(75),
+                ..Default::default()
+            },
+        ),
     ]
 }
 
@@ -1733,6 +1782,22 @@ pub fn core_items() -> Vec<(&'static str, ItemDef)> {
             "minecart",
             ItemDef {
                 name: "Minecart".into(),
+                max_stack_size: 1,
+                item_type: ItemTypeDef::Generic,
+            },
+        ),
+        (
+            "flint",
+            ItemDef {
+                name: "Flint".into(),
+                max_stack_size: 64,
+                item_type: ItemTypeDef::Generic,
+            },
+        ),
+        (
+            "flint_and_steel",
+            ItemDef {
+                name: "Flint and Steel".into(),
                 max_stack_size: 1,
                 item_type: ItemTypeDef::Generic,
             },

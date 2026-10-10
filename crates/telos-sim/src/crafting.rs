@@ -641,6 +641,12 @@ impl RecipeRegistry {
             ItemStack::new(crate::inventory::ITEM_ACTIVATOR_RAIL, 6),
         ));
 
+        // Flint and Steel (Shapeless): 1 Iron Ingot (52) + 1 Flint (104) -> Flint and Steel (105)
+        reg.register_shapeless(ShapelessRecipe::new(
+            vec![52, 104],
+            ItemStack::new(crate::inventory::ITEM_FLINT_AND_STEEL, 1),
+        ));
+
         reg
     }
 }
@@ -1285,6 +1291,20 @@ mod tests {
         assert_eq!(
             res.unwrap().result(),
             ItemStack::new(crate::inventory::ITEM_POWERED_RAIL, 6)
+        );
+
+        // 4. Flint and Steel recipe: 1 iron ingot (52) + 1 flint (104) shapeless in 2x2 or 3x3
+        let flint_steel_grid = vec![
+            ItemStack::new(52, 1),
+            ItemStack::new(104, 1),
+            ItemStack::EMPTY,
+            ItemStack::EMPTY,
+        ];
+        let res = reg.find_match(&flint_steel_grid, 2, 2);
+        assert!(res.is_some());
+        assert_eq!(
+            res.unwrap().result(),
+            ItemStack::new(crate::inventory::ITEM_FLINT_AND_STEEL, 1)
         );
     }
 }

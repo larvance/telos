@@ -123,6 +123,10 @@ pub struct PlayerSession {
     pub pending_username: Option<String>,
     /// Active fishing bobber network entity ID cast by this player, if any.
     pub active_fishing_bobber: Option<u32>,
+    /// Continuous ticks standing inside a nether portal block.
+    pub portal_timer: u32,
+    /// Cooldown ticks remaining before next dimensional portal transfer.
+    pub portal_cooldown: u32,
 }
 
 /// Tracks an open container window for a player session.
@@ -227,6 +231,8 @@ impl PlayerSession {
             pending_challenge: None,
             pending_username: None,
             active_fishing_bobber: None,
+            portal_timer: 0,
+            portal_cooldown: 0,
         }
     }
 

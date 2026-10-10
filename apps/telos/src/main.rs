@@ -12313,7 +12313,7 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
     copy_to_layer_at(&mut pixel_data, 5, 0, 0, &inv_bg_img);
 
     // Layer 6: Item Icons Atlas (256x256 holding 16x16 icons for registered items)
-    let item_textures: [(u32, &str, [u8; 4]); 67] = [
+    let item_textures: [(u32, &str, [u8; 4]); 69] = [
         (1, "textures/block/stone.png", [128, 128, 128, 255]),
         (2, "textures/block/dirt.png", [134, 96, 67, 255]),
         (3, "textures/block/grass_block_side.png", [90, 160, 60, 255]),
@@ -12400,6 +12400,12 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
             103,
             "textures/block/activator_rail.png",
             [190, 130, 60, 255],
+        ),
+        (104, "textures/item/flint.png", [50, 50, 50, 255]),
+        (
+            105,
+            "textures/item/flint_and_steel.png",
+            [200, 200, 210, 255],
         ),
     ];
 

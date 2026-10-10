@@ -199,6 +199,12 @@ pub const ITEM_POWERED_RAIL: u32 = 101;
 pub const ITEM_DETECTOR_RAIL: u32 = 102;
 /// Activator trigger rail track item identifier (103).
 pub const ITEM_ACTIVATOR_RAIL: u32 = 103;
+/// Iron ingot metallic crafting resource identifier (52).
+pub const ITEM_IRON_INGOT: u32 = 52;
+/// Flint mineral resource item identifier (104).
+pub const ITEM_FLINT: u32 = 104;
+/// Flint and steel portal ignition tool identifier (105).
+pub const ITEM_FLINT_AND_STEEL: u32 = 105;
 
 /// Returns true if the item is a boat.
 #[must_use]
@@ -210,6 +216,12 @@ pub const fn is_boat(item: u32) -> bool {
 #[must_use]
 pub const fn is_minecart(item: u32) -> bool {
     item == ITEM_MINECART
+}
+
+/// Returns true if the item is flint and steel.
+#[must_use]
+pub const fn is_flint_and_steel(item: u32) -> bool {
+    item == ITEM_FLINT_AND_STEEL
 }
 
 /// Returns true if the item is any type of rail track.
@@ -442,6 +454,8 @@ pub fn item_name(item: u32) -> &'static str {
         101 => "Powered Rail",
         102 => "Detector Rail",
         103 => "Activator Rail",
+        104 => "Flint",
+        105 => "Flint and Steel",
         _ => "Unknown Item",
     }
 }
@@ -1550,5 +1564,15 @@ mod tests {
         assert_eq!(item_name(ITEM_POWERED_RAIL), "Powered Rail");
         assert_eq!(item_name(ITEM_DETECTOR_RAIL), "Detector Rail");
         assert_eq!(item_name(ITEM_ACTIVATOR_RAIL), "Activator Rail");
+    }
+
+    #[test]
+    fn test_flint_and_steel_item_properties() {
+        assert!(is_flint_and_steel(ITEM_FLINT_AND_STEEL));
+        assert!(!is_flint_and_steel(ITEM_FLINT));
+        assert!(!is_flint_and_steel(ITEM_IRON_INGOT));
+
+        assert_eq!(item_name(ITEM_FLINT), "Flint");
+        assert_eq!(item_name(ITEM_FLINT_AND_STEEL), "Flint and Steel");
     }
 }

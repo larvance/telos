@@ -4,7 +4,7 @@ use crate::form::{
     FormHandlerKind, HELP_COMMANDS, PendingForm, build_help_detail_form, build_help_index_form,
 };
 use glam::{DVec3, Vec3};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -46,14 +46,14 @@ use telos_sim::{
     BOW_FULL_CHARGE_TICKS, BOW_MAX_RELEASE_SPEED, BOW_MIN_CHARGE_TICKS, BOW_MIN_RELEASE_SPEED,
     BoatEntity, CombatTracker, DamageType, EffectInstance, EnchantmentKind, EntityType, Experience,
     FishingBobberEntity, GameMode, Health, Hunger, HurtTime, ITEM_ARROW, ITEM_BOW,
-    ITEM_DESPAWN_TICKS, ITEM_FISHING_ROD, ITEM_MERGE_RADIUS, ITEM_MINECART, ITEM_OAK_BOAT,
-    ITEM_PICKUP_RADIUS, Inventory, ItemEntity, ItemStack, MinecartEntity, Mob, MobBundle, MoveMode,
-    NetEntity, PLAYER_DROP_PICKUP_DELAY, PlayerPositions, Position, PotionType, RailKind, Riding,
-    Rotation, SimParams, SimulationFrozen, StatusEffectKind, StatusEffectRegistry, StatusEffects,
-    TargetablePlayer, Velocity, WeatherKind, WeatherState, apply_mitigated_damage,
-    block_to_drop_item, build_sim_schedule, calculate_total_epf, determine_rail_shape, is_boat,
-    is_minecart, merge_item_stacks, roll_fishing_loot, tick_arrow_physics_step,
-    tick_item_physics_step_fluid,
+    ITEM_DESPAWN_TICKS, ITEM_FISHING_ROD, ITEM_FLINT_AND_STEEL, ITEM_MERGE_RADIUS, ITEM_MINECART,
+    ITEM_OAK_BOAT, ITEM_PICKUP_RADIUS, Inventory, ItemEntity, ItemStack, MinecartEntity, Mob,
+    MobBundle, MoveMode, NetEntity, PLAYER_DROP_PICKUP_DELAY, PlayerPositions, Position,
+    PotionType, RailKind, Riding, Rotation, SimParams, SimulationFrozen, StatusEffectKind,
+    StatusEffectRegistry, StatusEffects, TargetablePlayer, Velocity, WeatherKind, WeatherState,
+    apply_mitigated_damage, block_to_drop_item, build_sim_schedule, calculate_total_epf,
+    determine_rail_shape, is_boat, is_flint_and_steel, is_minecart, merge_item_stacks,
+    roll_fishing_loot, tick_arrow_physics_step, tick_item_physics_step_fluid,
 };
 use telos_voxel::fluid::{FluidKind, FluidState, calculate_fluid_flow};
 use telos_voxel::state::BlockStateId;
@@ -180,6 +180,8 @@ pub struct Server {
     pub pending_forms: HashMap<(u64, u32), PendingForm>,
     /// Persistent player identity and TOFU key pinning cache.
     pub usercache: UserCache,
+    /// Cache of active portal block positions keyed by world name.
+    pub portal_cache: HashMap<String, HashSet<BlockPos>>,
     /// Thread-safe signal to request server shutdown.
     shutdown_requested: Arc<AtomicBool>,
 }
@@ -239,9 +241,22 @@ impl Server {
                 ServerWorld::new(seed, registries.block_registry().clone())
             };
             worlds_vec.push(("overworld".to_string(), default_world));
+
+            let nether_world = ServerWorld::with_generator(
+                "nether",
+                seed.wrapping_add(1),
+                registries.block_registry().clone(),
+                telos_worldgen::GeneratorKind::Nether,
+            );
+            worlds_vec.push(("nether".to_string(), nether_world));
         } else {
             for (idx, w_cfg) in config.worlds.iter().enumerate() {
                 let mut resolved_w_cfg = w_cfg.clone();
+                if resolved_w_cfg.name == "overworld" && resolved_w_cfg.seed == 1337 {
+                    resolved_w_cfg.seed = seed;
+                } else if resolved_w_cfg.name == "nether" && resolved_w_cfg.seed == 1338 {
+                    resolved_w_cfg.seed = seed.wrapping_add(1);
+                }
                 if let (None, Some(base_dir)) =
                     (&resolved_w_cfg.save_directory, &config.save_directory)
                 {
@@ -439,6 +454,7 @@ impl Server {
             next_form_id: 1,
             pending_forms: HashMap::new(),
             usercache,
+            portal_cache: HashMap::new(),
             shutdown_requested: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -2409,6 +2425,162 @@ impl Server {
             "Transferred player to world"
         );
         Ok(())
+    }
+
+    /// Ensures that a world with the given name exists, creating it with the specified generator kind if missing.
+    pub fn ensure_world(&mut self, world_name: &str, kind: telos_worldgen::GeneratorKind) {
+        if !self.worlds.contains(world_name) {
+            let seed = self.worlds.default_world().seed().wrapping_add(1);
+            let world = ServerWorld::with_generator(
+                world_name.to_string(),
+                seed,
+                self.registries.block_registry().clone(),
+                kind,
+            );
+            let _ = self.worlds.add_world(world_name, world);
+        }
+    }
+
+    /// Transfers a player between dimensions (e.g. Overworld <-> Nether), translating coordinates
+    /// and resolving or generating linked Nether portal structures.
+    #[allow(clippy::too_many_lines)]
+    pub fn teleport_player_dimension(
+        &mut self,
+        session_id: u64,
+        current_world: &str,
+        current_pos: DVec3,
+    ) {
+        let (dest_world, target_coords) = if current_world == "nether" {
+            (
+                "overworld",
+                telos_sim::nether_to_overworld_coords(current_pos),
+            )
+        } else {
+            ("nether", telos_sim::overworld_to_nether_coords(current_pos))
+        };
+
+        let generator_kind = if dest_world == "nether" {
+            telos_worldgen::GeneratorKind::Nether
+        } else {
+            telos_worldgen::GeneratorKind::Standard
+        };
+        self.ensure_world(dest_world, generator_kind);
+
+        let portal_state = self
+            .registries
+            .block_registry()
+            .get(&telos_core::ident::Identifier::new("telos", "nether_portal").unwrap())
+            .map_or(BlockStateId::new(103), telos_voxel::Block::default_state);
+        let obsidian_state = self
+            .registries
+            .block_registry()
+            .get(&telos_core::ident::Identifier::new("telos", "obsidian").unwrap())
+            .map_or(BlockStateId::new(45), telos_voxel::Block::default_state);
+
+        // Search for closest portal in dest_world within 128 blocks horizontal
+        let closest_portal = self.portal_cache.get(dest_world).and_then(|set| {
+            set.iter()
+                .filter(|p| {
+                    let dx = f64::from(p.x()) - target_coords.x;
+                    let dz = f64::from(p.z()) - target_coords.z;
+                    (dx * dx + dz * dz) <= (128.0 * 128.0)
+                })
+                .min_by(|a, b| {
+                    let da = (f64::from(a.x()) - target_coords.x)
+                        .hypot(f64::from(a.z()) - target_coords.z);
+                    let db = (f64::from(b.x()) - target_coords.x)
+                        .hypot(f64::from(b.z()) - target_coords.z);
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .copied()
+        });
+
+        let spawn_pos = if let Some(portal_pos) = closest_portal {
+            DVec3::new(
+                f64::from(portal_pos.x()) + 0.5,
+                f64::from(portal_pos.y()) + 0.1,
+                f64::from(portal_pos.z()) + 0.5,
+            )
+        } else {
+            // Generate new standard 4x5 portal structure at destination
+            #[allow(clippy::cast_possible_truncation)]
+            let dest_y = if dest_world == "nether" {
+                (target_coords.y.round() as i32).clamp(35, 110)
+            } else {
+                (target_coords.y.round() as i32).clamp(10, 240)
+            };
+            #[allow(clippy::cast_possible_truncation)]
+            let interior_bottom = BlockPos::new(
+                target_coords.x.round() as i32,
+                dest_y,
+                target_coords.z.round() as i32,
+            );
+
+            let (frame_blocks, interior_blocks, platform_blocks) =
+                telos_sim::generate_portal_structure_blocks(
+                    interior_bottom,
+                    telos_sim::PortalAxis::X,
+                );
+
+            if let Some(dest_world_ref) = self.worlds.get_mut(dest_world) {
+                for p in &platform_blocks {
+                    let _ = dest_world_ref.set_block(*p, obsidian_state);
+                }
+                for p in &frame_blocks {
+                    let _ = dest_world_ref.set_block(*p, obsidian_state);
+                }
+                for p in &interior_blocks {
+                    let _ = dest_world_ref.set_block(*p, portal_state);
+                    self.portal_cache
+                        .entry(dest_world.to_string())
+                        .or_default()
+                        .insert(*p);
+                }
+            }
+
+            // Broadcast block updates to players in destination world
+            for s in self.sessions.values_mut() {
+                if s.phase == ConnectionPhase::Play && s.world_name == dest_world {
+                    for p in platform_blocks.iter().chain(&frame_blocks) {
+                        let msg = S2cMessage::BlockUpdate(S2cBlockUpdate {
+                            x: p.x(),
+                            y: p.y(),
+                            z: p.z(),
+                            state_id: obsidian_state,
+                            version: 0,
+                        });
+                        let _ = s.connection.send(Lane::Control, Payload::Msg(msg));
+                    }
+                    for p in &interior_blocks {
+                        let msg = S2cMessage::BlockUpdate(S2cBlockUpdate {
+                            x: p.x(),
+                            y: p.y(),
+                            z: p.z(),
+                            state_id: portal_state,
+                            version: 0,
+                        });
+                        let _ = s.connection.send(Lane::Control, Payload::Msg(msg));
+                    }
+                }
+            }
+
+            DVec3::new(
+                f64::from(interior_bottom.x()) + 0.5,
+                f64::from(interior_bottom.y()) + 0.1,
+                f64::from(interior_bottom.z()) + 0.5,
+            )
+        };
+
+        if let Err(e) = self.transfer_player_world(session_id, dest_world, Some(spawn_pos)) {
+            tracing::error!(
+                session_id,
+                ?e,
+                "Failed to transfer player to portal destination"
+            );
+        } else if let Some(session) = self.sessions.get_mut(&session_id) {
+            session.portal_timer = 0;
+            session.portal_cooldown = 100;
+        }
     }
 
     /// Number of active player sessions.
@@ -5165,6 +5337,73 @@ impl Server {
                     continue;
                 }
 
+                if let BlockActionKind::Place { state_id, .. } = action.action
+                    && (is_flint_and_steel(state_id.as_u32())
+                        || state_id.as_u32() == ITEM_FLINT_AND_STEEL)
+                {
+                    let clicked_pos = BlockPos::new(action.x, action.y, action.z);
+                    let obsidian_id = self
+                        .registries
+                        .block_registry()
+                        .get(&telos_core::ident::Identifier::new("telos", "obsidian").unwrap())
+                        .map_or(BlockStateId::new(45), telos_voxel::Block::default_state);
+                    let portal_id = self
+                        .registries
+                        .block_registry()
+                        .get(&telos_core::ident::Identifier::new("telos", "nether_portal").unwrap())
+                        .map_or(BlockStateId::new(103), telos_voxel::Block::default_state);
+
+                    let mut check_cell = |p: BlockPos| {
+                        let b = world.get_block(p);
+                        if b == obsidian_id {
+                            telos_sim::FrameBlockKind::Obsidian
+                        } else if b == BlockStateId::AIR || b.as_u32() == 31 {
+                            telos_sim::FrameBlockKind::AirOrFire
+                        } else {
+                            telos_sim::FrameBlockKind::Other
+                        }
+                    };
+
+                    let frame = telos_sim::detect_portal_frame(target_pos, &mut check_cell)
+                        .or_else(|| telos_sim::detect_portal_frame(clicked_pos, &mut check_cell));
+
+                    if let Some(frame) = frame {
+                        for &p in &frame.interior_blocks {
+                            let _ = world.set_block(p, portal_id);
+                            self.portal_cache
+                                .entry(session_world_name.clone())
+                                .or_default()
+                                .insert(p);
+                        }
+
+                        // Broadcast portal block updates to all players in this world
+                        for s in self.sessions.values_mut() {
+                            if s.phase == ConnectionPhase::Play
+                                && s.world_name == session_world_name
+                            {
+                                for &p in &frame.interior_blocks {
+                                    let msg = S2cMessage::BlockUpdate(S2cBlockUpdate {
+                                        x: p.x(),
+                                        y: p.y(),
+                                        z: p.z(),
+                                        state_id: portal_id,
+                                        version: 0,
+                                    });
+                                    let _ = s.connection.send(Lane::Control, Payload::Msg(msg));
+                                }
+                            }
+                        }
+                    }
+
+                    let ack_msg = S2cMessage::BlockActionAck(S2cBlockActionAck {
+                        sequence: action.sequence,
+                    });
+                    if let Some(s) = self.sessions.get_mut(&session_id) {
+                        let _ = s.connection.send(Lane::Control, Payload::Msg(ack_msg));
+                    }
+                    continue;
+                }
+
                 if matches!(action.action, BlockActionKind::Break)
                     && !self.js_plugins.dispatch_block_break(
                         session_entity_id,
@@ -5509,6 +5748,44 @@ impl Server {
                             );
                         }
 
+                        if matches!(action.action, BlockActionKind::Break)
+                            && (world.registry().is_obsidian(old_state)
+                                || world.registry().is_nether_portal(old_state))
+                        {
+                            let portal_id = self
+                                .registries
+                                .block_registry()
+                                .get(
+                                    &telos_core::ident::Identifier::new("telos", "nether_portal")
+                                        .unwrap(),
+                                )
+                                .map_or(BlockStateId::new(103), telos_voxel::Block::default_state);
+                            let broken_portals =
+                                telos_sim::find_contiguous_portal_blocks(target_pos, |p| {
+                                    world.get_block(p) == portal_id
+                                });
+                            for p in broken_portals {
+                                let _ = world.set_block(p, BlockStateId::AIR);
+                                if let Some(set) = self.portal_cache.get_mut(&session_world_name) {
+                                    set.remove(&p);
+                                }
+                                for s in self.sessions.values_mut() {
+                                    if s.phase == ConnectionPhase::Play
+                                        && s.world_name == session_world_name
+                                    {
+                                        let msg = S2cMessage::BlockUpdate(S2cBlockUpdate {
+                                            x: p.x(),
+                                            y: p.y(),
+                                            z: p.z(),
+                                            state_id: BlockStateId::AIR,
+                                            version: 0,
+                                        });
+                                        let _ = s.connection.send(Lane::Control, Payload::Msg(msg));
+                                    }
+                                }
+                            }
+                        }
+
                         let update_msg = S2cMessage::BlockUpdate(S2cBlockUpdate {
                             x: target_pos.x(),
                             y: target_pos.y(),
@@ -5797,6 +6074,64 @@ impl Server {
                     }
                 }
             }
+        }
+
+        // 4e. Nether dimension portal standing detection & dimensional transfer
+        let mut portal_transfers = Vec::new();
+        let portal_block_id = self
+            .registries
+            .block_registry()
+            .get(&telos_core::ident::Identifier::new("telos", "nether_portal").unwrap())
+            .map_or(BlockStateId::new(103), telos_voxel::Block::default_state);
+
+        for session in self.sessions.values_mut() {
+            if session.phase != ConnectionPhase::Play {
+                continue;
+            }
+
+            #[allow(clippy::cast_possible_truncation)]
+            let feet_pos = BlockPos::new(
+                session.position.x.floor() as i32,
+                session.position.y.floor() as i32,
+                session.position.z.floor() as i32,
+            );
+            #[allow(clippy::cast_possible_truncation)]
+            let eye_pos = BlockPos::new(
+                session.position.x.floor() as i32,
+                (session.position.y + 1.0).floor() as i32,
+                session.position.z.floor() as i32,
+            );
+
+            let world = self.worlds.get_or_default_mut(&session.world_name);
+            let in_portal = world.get_block(feet_pos) == portal_block_id
+                || world.get_block(eye_pos) == portal_block_id;
+
+            if session.portal_cooldown > 0 {
+                session.portal_cooldown = session.portal_cooldown.saturating_sub(1);
+                session.portal_timer = 0;
+            } else if in_portal {
+                session.portal_timer = session.portal_timer.saturating_add(1);
+                let threshold = if session.game_mode == GameMode::Creative {
+                    1
+                } else {
+                    80
+                };
+                if session.portal_timer >= threshold {
+                    session.portal_timer = 0;
+                    session.portal_cooldown = 100;
+                    portal_transfers.push((
+                        session.session_id,
+                        session.world_name.clone(),
+                        session.position,
+                    ));
+                }
+            } else {
+                session.portal_timer = 0;
+            }
+        }
+
+        for (session_id, current_world, current_pos) in portal_transfers {
+            self.teleport_player_dimension(session_id, &current_world, current_pos);
         }
 
         // 5. Compute movement exhaustion, run ECS simulation tick, and sync stats

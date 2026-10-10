@@ -22,6 +22,8 @@ pub enum GeneratorKind {
     Flat,
     /// Completely empty void world (all air).
     Void,
+    /// Cavernous subterranean Nether dimension with bedrock floor/ceiling, lava ocean, and netherrack.
+    Nether,
 }
 
 /// Deterministic, server-side procedural world generator.
@@ -112,6 +114,9 @@ impl WorldGenerator {
                     state != BlockStateId::AIR && state != water_id && state != lava_id
                 })
             }
+            GeneratorKind::Nether => {
+                crate::nether::generate_nether_chunk(self.seed, pos, &self.blocks)
+            }
             GeneratorKind::Standard => {
                 // 1. Evaluate 405 corner samples on 4x8x4 coarse grid
                 let grid = CoarseGrid::evaluate(self.seed, pos);
@@ -162,5 +167,20 @@ impl WorldGenerator {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_world_generator_nether_kind() {
+        let reg = BlockRegistry::standard();
+        let generator = WorldGenerator::with_kind(9876, &reg, GeneratorKind::Nether);
+        assert_eq!(generator.kind(), GeneratorKind::Nether);
+
+        let chunk = generator.generate_chunk(ChunkPos::new(0, 1, 0));
+        assert!(!chunk.occupancy().is_empty());
     }
 }

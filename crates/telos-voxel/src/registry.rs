@@ -765,6 +765,21 @@ impl BlockRegistry {
             crate::shape::BlockShape::flat_plate(),
         );
 
+        // Nether realm blocks (Phase 80)
+        let netherrack_id = Identifier::new("telos", "netherrack").unwrap();
+        reg.register(netherrack_id, StateFlags::OPAQUE_CUBE);
+
+        let soul_sand_id = Identifier::new("telos", "soul_sand").unwrap();
+        reg.register(soul_sand_id, StateFlags::OPAQUE_CUBE);
+
+        let glowstone_id = Identifier::new("telos", "glowstone").unwrap();
+        reg.register_with_properties(
+            glowstone_id,
+            StateFlags::OPAQUE_CUBE | StateFlags::EMISSIVE,
+            crate::shape::BlockShape::Cube,
+            15,
+        );
+
         reg.freeze();
         reg
     }
@@ -956,6 +971,46 @@ impl BlockRegistry {
     pub fn is_activator_rail(&self, id: BlockStateId) -> bool {
         self.identifier(id)
             .is_some_and(|ident| ident.path() == "activator_rail")
+    }
+
+    /// Returns `true` if the given block state represents an obsidian block.
+    #[inline]
+    #[must_use]
+    pub fn is_obsidian(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "obsidian")
+    }
+
+    /// Returns `true` if the given block state represents a nether portal block.
+    #[inline]
+    #[must_use]
+    pub fn is_nether_portal(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "nether_portal")
+    }
+
+    /// Returns `true` if the given block state represents netherrack stone.
+    #[inline]
+    #[must_use]
+    pub fn is_netherrack(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "netherrack")
+    }
+
+    /// Returns `true` if the given block state represents soul sand.
+    #[inline]
+    #[must_use]
+    pub fn is_soul_sand(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "soul_sand")
+    }
+
+    /// Returns `true` if the given block state represents a glowstone block.
+    #[inline]
+    #[must_use]
+    pub fn is_glowstone(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "glowstone")
     }
 
     /// Returns `true` if the block state at `id` can be freely replaced by flowing fluids.
@@ -1337,5 +1392,45 @@ mod tests {
         assert_eq!(standard.light_emission(lava), 15);
         assert_eq!(standard.light_emission(portal), 11);
         assert_eq!(standard.light_emission(stone), 0);
+    }
+
+    #[test]
+    fn test_standard_registry_nether_blocks() {
+        let reg = BlockRegistry::standard();
+        let obsidian = reg
+            .get(&Identifier::new("telos", "obsidian").unwrap())
+            .unwrap()
+            .default_state();
+        let portal = reg
+            .get(&Identifier::new("telos", "nether_portal").unwrap())
+            .unwrap()
+            .default_state();
+        let netherrack = reg
+            .get(&Identifier::new("telos", "netherrack").unwrap())
+            .unwrap()
+            .default_state();
+        let soul_sand = reg
+            .get(&Identifier::new("telos", "soul_sand").unwrap())
+            .unwrap()
+            .default_state();
+        let glowstone = reg
+            .get(&Identifier::new("telos", "glowstone").unwrap())
+            .unwrap()
+            .default_state();
+
+        assert!(reg.is_obsidian(obsidian));
+        assert!(!reg.is_obsidian(netherrack));
+
+        assert!(reg.is_nether_portal(portal));
+        assert!(!reg.is_nether_portal(obsidian));
+
+        assert!(reg.is_netherrack(netherrack));
+        assert!(!reg.is_netherrack(soul_sand));
+
+        assert!(reg.is_soul_sand(soul_sand));
+        assert!(!reg.is_soul_sand(netherrack));
+
+        assert!(reg.is_glowstone(glowstone));
+        assert_eq!(reg.light_emission(glowstone), 15);
     }
 }

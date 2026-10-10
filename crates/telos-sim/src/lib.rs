@@ -27,6 +27,7 @@ pub mod logic;
 pub mod movement;
 pub mod nav;
 pub mod particle;
+pub mod portal;
 pub mod potion;
 pub mod prediction;
 pub mod rail;
@@ -103,22 +104,24 @@ pub use hunger::{Hunger, HungerTickResult, SimParams, tick_hunger};
 pub use inventory::{
     ARMOR_BOOTS_SLOT, ARMOR_CHESTPLATE_SLOT, ARMOR_HELMET_SLOT, ARMOR_LEGGINGS_SLOT, ARMOR_SLOTS,
     CHEST_CONTAINER_SLOTS, CRAFTING_INPUT_SLOTS, CRAFTING_RESULT_SLOT, ChestInventory, ClickButton,
-    ClickMode, DUAL_CONTAINER_SLOTS, HOTBAR_SLOTS, ITEM_ANVIL, ITEM_ARROW, ITEM_BOOK, ITEM_BOW,
-    ITEM_CHARCOAL, ITEM_CHEST, ITEM_COD, ITEM_COOKED_BEEF, ITEM_COOKED_COD, ITEM_COOKED_PORKCHOP,
-    ITEM_CRAFTING_TABLE, ITEM_ENCHANTED_BOOK, ITEM_FISHING_ROD, ITEM_FURNACE, ITEM_GLASS_BOTTLE,
+    ClickMode, DUAL_CONTAINER_SLOTS, HOTBAR_SLOTS, ITEM_ACTIVATOR_RAIL, ITEM_ANVIL, ITEM_ARROW,
+    ITEM_BOOK, ITEM_BOW, ITEM_CHARCOAL, ITEM_CHEST, ITEM_COD, ITEM_COOKED_BEEF, ITEM_COOKED_COD,
+    ITEM_COOKED_PORKCHOP, ITEM_CRAFTING_TABLE, ITEM_DETECTOR_RAIL, ITEM_ENCHANTED_BOOK,
+    ITEM_FISHING_ROD, ITEM_FLINT, ITEM_FLINT_AND_STEEL, ITEM_FURNACE, ITEM_GLASS_BOTTLE,
     ITEM_GOLDEN_BOOTS, ITEM_GOLDEN_CHESTPLATE, ITEM_GOLDEN_HELMET, ITEM_GOLDEN_LEGGINGS,
     ITEM_INK_SAC, ITEM_IRON_AXE, ITEM_IRON_BOOTS, ITEM_IRON_CHESTPLATE, ITEM_IRON_HELMET,
-    ITEM_IRON_HOE, ITEM_IRON_LEGGINGS, ITEM_IRON_PICKAXE, ITEM_IRON_SHOVEL, ITEM_IRON_SWORD,
-    ITEM_LEATHER_BOOTS, ITEM_LEATHER_CHESTPLATE, ITEM_LEATHER_HELMET, ITEM_LEATHER_LEGGINGS,
-    ITEM_MINECART, ITEM_OAK_BOAT, ITEM_POTION, ITEM_POWERED_RAIL, ITEM_RAIL, ITEM_STONE_AXE,
-    ITEM_STONE_HOE, ITEM_STONE_PICKAXE, ITEM_STONE_SHOVEL, ITEM_STONE_SWORD, ITEM_STRING,
-    ITEM_WOODEN_AXE, ITEM_WOODEN_HOE, ITEM_WOODEN_PICKAXE, ITEM_WOODEN_SHOVEL, ITEM_WOODEN_SWORD,
-    Inventory, InventoryError, ItemStack, MAX_STACK_SIZE, OFFHAND_SLOT, PLAYER_INVENTORY_SLOTS,
-    STORAGE_SLOTS, block_to_drop_item, container_click, inventory_click,
+    ITEM_IRON_HOE, ITEM_IRON_INGOT, ITEM_IRON_LEGGINGS, ITEM_IRON_PICKAXE, ITEM_IRON_SHOVEL,
+    ITEM_IRON_SWORD, ITEM_LEATHER_BOOTS, ITEM_LEATHER_CHESTPLATE, ITEM_LEATHER_HELMET,
+    ITEM_LEATHER_LEGGINGS, ITEM_MINECART, ITEM_OAK_BOAT, ITEM_POTION, ITEM_POWERED_RAIL, ITEM_RAIL,
+    ITEM_STONE_AXE, ITEM_STONE_HOE, ITEM_STONE_PICKAXE, ITEM_STONE_SHOVEL, ITEM_STONE_SWORD,
+    ITEM_STRING, ITEM_WOODEN_AXE, ITEM_WOODEN_HOE, ITEM_WOODEN_PICKAXE, ITEM_WOODEN_SHOVEL,
+    ITEM_WOODEN_SWORD, Inventory, InventoryError, ItemStack, MAX_STACK_SIZE, OFFHAND_SLOT,
+    PLAYER_INVENTORY_SLOTS, STORAGE_SLOTS, block_to_drop_item, container_click, inventory_click,
     inventory_click_with_registry, is_anvil, is_armor, is_arrow, is_axe, is_boat, is_book,
-    is_boots, is_bow, is_chest, is_chestplate, is_enchanted_book, is_fishing_rod, is_furnace,
-    is_helmet, is_hoe, is_leggings, is_minecart, is_pickaxe, is_potion, is_rail, is_shovel,
-    is_slot_valid_for_item, is_sword, is_tool, item_name, matching_armor_slot,
+    is_boots, is_bow, is_chest, is_chestplate, is_enchanted_book, is_fishing_rod,
+    is_flint_and_steel, is_furnace, is_helmet, is_hoe, is_leggings, is_minecart, is_pickaxe,
+    is_potion, is_rail, is_shovel, is_slot_valid_for_item, is_sword, is_tool, item_name,
+    matching_armor_slot,
 };
 pub use logic::{
     LogicChunk, LogicComponent, LogicEngine, LogicKind, MAX_SIGNAL_DISTANCE, ScheduledLogicTick,
@@ -132,6 +135,11 @@ pub use nav::{
     is_passable, is_solid_ground, is_walkable_node, octile_heuristic, update_mob_navigation_paths,
 };
 pub use particle::{Particle, ParticleGpu, ParticleKind, ParticleSystem};
+pub use portal::{
+    FrameBlockKind, OVERWORLD_TO_NETHER_RATIO, PortalAxis, PortalFrame, detect_portal_frame,
+    find_contiguous_portal_blocks, generate_portal_structure_blocks, nether_to_overworld_coords,
+    overworld_to_nether_coords,
+};
 pub use potion::{BrewingRecipe, BrewingRegistry, PotionType, consume_item_effects};
 pub use prediction::{
     PREDICTION_BUFFER_CAPACITY, PredictionBuffer, PredictionEntry, ReconciliationResult,
