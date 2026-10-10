@@ -25,6 +25,9 @@ pub fn is_hazard(id: BlockStateId, registry: &BlockRegistry) -> bool {
     {
         return true;
     }
+    if registry.is_magma_block(id) {
+        return true;
+    }
     false
 }
 

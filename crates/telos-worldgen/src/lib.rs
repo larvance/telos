@@ -26,7 +26,7 @@ pub use climate::ClimatePoint;
 pub use decoration::apply_surface_decorations;
 pub use error::WorldGenError;
 pub use generator::{GeneratorKind, WorldGenerator};
-pub use nether::generate_nether_chunk;
+pub use nether::{NetherBiome, generate_nether_chunk, is_fortress_reserved, sample_nether_biome};
 pub use ore::apply_ores;
 pub use structure::{
     LootItem, LootTableKind, StructureBoundingBox, apply_dungeons, apply_ruins, apply_structures,

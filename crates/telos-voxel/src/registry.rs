@@ -780,6 +780,33 @@ impl BlockRegistry {
             15,
         );
 
+        // Nether realm worldgen blocks (Phase 81)
+        let basalt_id = Identifier::new("telos", "basalt").unwrap();
+        reg.register(basalt_id, StateFlags::OPAQUE_CUBE);
+
+        let blackstone_id = Identifier::new("telos", "blackstone").unwrap();
+        reg.register(blackstone_id, StateFlags::OPAQUE_CUBE);
+
+        let magma_block_id = Identifier::new("telos", "magma_block").unwrap();
+        reg.register_with_properties(
+            magma_block_id,
+            StateFlags::OPAQUE_CUBE | StateFlags::EMISSIVE,
+            crate::shape::BlockShape::Cube,
+            3,
+        );
+
+        let soul_soil_id = Identifier::new("telos", "soul_soil").unwrap();
+        reg.register(soul_soil_id, StateFlags::OPAQUE_CUBE);
+
+        let nether_quartz_ore_id = Identifier::new("telos", "nether_quartz_ore").unwrap();
+        reg.register(nether_quartz_ore_id, StateFlags::OPAQUE_CUBE);
+
+        let nether_gold_ore_id = Identifier::new("telos", "nether_gold_ore").unwrap();
+        reg.register(nether_gold_ore_id, StateFlags::OPAQUE_CUBE);
+
+        let ancient_debris_id = Identifier::new("telos", "ancient_debris").unwrap();
+        reg.register(ancient_debris_id, StateFlags::OPAQUE_CUBE);
+
         reg.freeze();
         reg
     }
@@ -1011,6 +1038,70 @@ impl BlockRegistry {
     pub fn is_glowstone(&self, id: BlockStateId) -> bool {
         self.identifier(id)
             .is_some_and(|ident| ident.path() == "glowstone")
+    }
+
+    /// Returns `true` if the given block state represents basalt stone.
+    #[inline]
+    #[must_use]
+    pub fn is_basalt(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "basalt")
+    }
+
+    /// Returns `true` if the given block state represents blackstone.
+    #[inline]
+    #[must_use]
+    pub fn is_blackstone(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "blackstone")
+    }
+
+    /// Returns `true` if the given block state represents an incandescent magma block.
+    #[inline]
+    #[must_use]
+    pub fn is_magma_block(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "magma_block")
+    }
+
+    /// Returns `true` if the given block state represents soul soil.
+    #[inline]
+    #[must_use]
+    pub fn is_soul_soil(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "soul_soil")
+    }
+
+    /// Returns `true` if the given block state represents nether quartz ore.
+    #[inline]
+    #[must_use]
+    pub fn is_nether_quartz_ore(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "nether_quartz_ore")
+    }
+
+    /// Returns `true` if the given block state represents nether gold ore.
+    #[inline]
+    #[must_use]
+    pub fn is_nether_gold_ore(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "nether_gold_ore")
+    }
+
+    /// Returns `true` if the given block state represents ancient debris.
+    #[inline]
+    #[must_use]
+    pub fn is_ancient_debris(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "ancient_debris")
+    }
+
+    /// Returns `true` if the given block state is netherrack or volcanic rock that can host Nether ores.
+    #[inline]
+    #[must_use]
+    pub fn is_nether_replaceable(&self, id: BlockStateId) -> bool {
+        self.identifier(id)
+            .is_some_and(|ident| matches!(ident.path(), "netherrack" | "basalt" | "blackstone"))
     }
 
     /// Returns `true` if the block state at `id` can be freely replaced by flowing fluids.
@@ -1432,5 +1523,48 @@ mod tests {
 
         assert!(reg.is_glowstone(glowstone));
         assert_eq!(reg.light_emission(glowstone), 15);
+
+        let basalt = reg
+            .get(&Identifier::new("telos", "basalt").unwrap())
+            .unwrap()
+            .default_state();
+        let blackstone = reg
+            .get(&Identifier::new("telos", "blackstone").unwrap())
+            .unwrap()
+            .default_state();
+        let magma = reg
+            .get(&Identifier::new("telos", "magma_block").unwrap())
+            .unwrap()
+            .default_state();
+        let soul_soil = reg
+            .get(&Identifier::new("telos", "soul_soil").unwrap())
+            .unwrap()
+            .default_state();
+        let quartz_ore = reg
+            .get(&Identifier::new("telos", "nether_quartz_ore").unwrap())
+            .unwrap()
+            .default_state();
+        let gold_ore = reg
+            .get(&Identifier::new("telos", "nether_gold_ore").unwrap())
+            .unwrap()
+            .default_state();
+        let debris = reg
+            .get(&Identifier::new("telos", "ancient_debris").unwrap())
+            .unwrap()
+            .default_state();
+
+        assert!(reg.is_basalt(basalt));
+        assert!(reg.is_blackstone(blackstone));
+        assert!(reg.is_magma_block(magma));
+        assert_eq!(reg.light_emission(magma), 3);
+        assert!(reg.is_soul_soil(soul_soil));
+        assert!(reg.is_nether_quartz_ore(quartz_ore));
+        assert!(reg.is_nether_gold_ore(gold_ore));
+        assert!(reg.is_ancient_debris(debris));
+
+        assert!(reg.is_nether_replaceable(netherrack));
+        assert!(reg.is_nether_replaceable(basalt));
+        assert!(reg.is_nether_replaceable(blackstone));
+        assert!(!reg.is_nether_replaceable(magma));
     }
 }

@@ -584,6 +584,20 @@ impl LanguageCatalog {
             ("entity.telos.boat", "Boat"),
             ("entity.telos.fishing_bobber", "Fishing Bobber"),
             ("entity.telos.minecart", "Minecart"),
+            ("block.telos.basalt", "Basalt"),
+            ("block.telos.blackstone", "Blackstone"),
+            ("block.telos.magma_block", "Magma Block"),
+            ("block.telos.soul_soil", "Soul Soil"),
+            ("block.telos.nether_quartz_ore", "Nether Quartz Ore"),
+            ("block.telos.nether_gold_ore", "Nether Gold Ore"),
+            ("block.telos.ancient_debris", "Ancient Debris"),
+            ("item.telos.nether_quartz", "Nether Quartz"),
+            ("item.telos.gold_nugget", "Gold Nugget"),
+            ("biome.telos.nether_wastes", "Nether Wastes"),
+            ("biome.telos.soul_sand_valley", "Soul Sand Valley"),
+            ("biome.telos.basalt_deltas", "Basalt Deltas"),
+            ("biome.telos.crimson_forest", "Crimson Forest"),
+            ("biome.telos.warped_forest", "Warped Forest"),
         ];
 
         for (k, v) in en_pairs {

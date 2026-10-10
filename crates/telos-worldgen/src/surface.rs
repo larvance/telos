@@ -129,6 +129,22 @@ pub struct ResolvedBlocks {
     pub soul_sand: BlockStateId,
     /// Glowstone luminescent ceiling cluster.
     pub glowstone: BlockStateId,
+
+    // Phase 81 Nether Realm Worldgen Blocks
+    /// Basalt column volcanic rock.
+    pub basalt: BlockStateId,
+    /// Blackstone scree and terrace rock.
+    pub blackstone: BlockStateId,
+    /// Incandescent magma block.
+    pub magma_block: BlockStateId,
+    /// Soul soil substrate.
+    pub soul_soil: BlockStateId,
+    /// Nether quartz ore embedded in netherrack.
+    pub nether_quartz_ore: BlockStateId,
+    /// Nether gold ore embedded in netherrack.
+    pub nether_gold_ore: BlockStateId,
+    /// Ancient debris metallic subterranean resource.
+    pub ancient_debris: BlockStateId,
 }
 
 impl ResolvedBlocks {
@@ -204,9 +220,17 @@ impl ResolvedBlocks {
         let brown_mushroom = resolve_block("brown_mushroom", 88);
         let red_mushroom = resolve_block("red_mushroom", 89);
 
-        let netherrack = resolve_block("netherrack", 100);
-        let soul_sand = resolve_block("soul_sand", 101);
-        let glowstone = resolve_block("glowstone", 102);
+        let netherrack = resolve_block("netherrack", 83);
+        let soul_sand = resolve_block("soul_sand", 84);
+        let glowstone = resolve_block("glowstone", 85);
+
+        let basalt = resolve_block("basalt", 86);
+        let blackstone = resolve_block("blackstone", 87);
+        let magma_block = resolve_block("magma_block", 88);
+        let soul_soil = resolve_block("soul_soil", 89);
+        let nether_quartz_ore = resolve_block("nether_quartz_ore", 90);
+        let nether_gold_ore = resolve_block("nether_gold_ore", 91);
+        let ancient_debris = resolve_block("ancient_debris", 92);
 
         Self {
             air,
@@ -263,6 +287,13 @@ impl ResolvedBlocks {
             netherrack,
             soul_sand,
             glowstone,
+            basalt,
+            blackstone,
+            magma_block,
+            soul_soil,
+            nether_quartz_ore,
+            nether_gold_ore,
+            ancient_debris,
         }
     }
 }

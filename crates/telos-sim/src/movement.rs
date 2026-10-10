@@ -109,12 +109,26 @@ pub fn angles_to_direction(yaw_deg: f32, pitch_deg: f32) -> Vec3 {
     .normalize_or_zero()
 }
 
+/// Soul sand movement slowdown damping multiplier (0.4x normal ground speed).
+pub const SOUL_SAND_SPEED_FACTOR: f32 = 0.4;
+
 /// Simulates a single deterministic movement step for the given input frame.
 ///
 /// This function is executed identically on the client during local prediction
 /// and on the authoritative server during tick processing, ensuring exact alignment.
-#[allow(clippy::too_many_lines, clippy::if_not_else)]
 pub fn simulate_movement_step(state: &mut MoveState, input: &InputFrame, mode: MoveMode, dt: f32) {
+    simulate_movement_step_with_speed_factor(state, input, mode, dt, 1.0);
+}
+
+/// Simulates a single deterministic movement step with an optional ground speed factor.
+#[allow(clippy::too_many_lines, clippy::if_not_else)]
+pub fn simulate_movement_step_with_speed_factor(
+    state: &mut MoveState,
+    input: &InputFrame,
+    mode: MoveMode,
+    dt: f32,
+    speed_factor: f32,
+) {
     // 1. Update orientation directly from quantized input angles
     state.yaw = dequantize_yaw(input.yaw);
     state.pitch = dequantize_pitch(input.pitch);
@@ -209,7 +223,7 @@ pub fn simulate_movement_step(state: &mut MoveState, input: &InputFrame, mode: M
                 wish_h -= right_h;
             }
 
-            let speed = if is_sprint { 5.612 } else { 4.317 };
+            let speed = (if is_sprint { 5.612 } else { 4.317 }) * speed_factor;
             if wish_h != Vec3::ZERO {
                 let target_h = wish_h.normalize() * speed;
                 state.vel.x = state.vel.x.lerp(target_h.x, (15.0 * dt).min(1.0));
@@ -280,5 +294,43 @@ mod tests {
 
         assert_eq!(state_a, state_b);
         assert!(state_a.pos.z > 10.0);
+    }
+
+    #[test]
+    fn test_soul_sand_movement_slowness() {
+        let mut normal_state = MoveState::new(DVec3::ZERO, 0.0, 0.0, false);
+        normal_state.on_ground = true;
+        let mut soul_sand_state = MoveState::new(DVec3::ZERO, 0.0, 0.0, false);
+        soul_sand_state.on_ground = true;
+
+        let input = InputFrame {
+            tick: 1,
+            buttons: input_buttons::FORWARD,
+            yaw: quantize_yaw(0.0),
+            pitch: quantize_pitch(0.0),
+            hotbar: 0,
+        };
+
+        for _ in 0..20 {
+            simulate_movement_step_with_speed_factor(
+                &mut normal_state,
+                &input,
+                MoveMode::Walk,
+                0.05,
+                1.0,
+            );
+            simulate_movement_step_with_speed_factor(
+                &mut soul_sand_state,
+                &input,
+                MoveMode::Walk,
+                0.05,
+                SOUL_SAND_SPEED_FACTOR,
+            );
+        }
+
+        assert!(
+            soul_sand_state.pos.x < normal_state.pos.x * 0.5,
+            "Traversing soul sand must slow movement speed down significantly"
+        );
     }
 }

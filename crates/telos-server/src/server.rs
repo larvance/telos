@@ -5897,12 +5897,31 @@ impl Server {
 
                 session.selected_slot = frame.hotbar;
                 if session.awaiting_teleport.is_none() {
-                    telos_sim::simulate_movement_step(
+                    #[allow(clippy::cast_possible_truncation)]
+                    let block_below_pos = BlockPos::new(
+                        session.move_state.pos.x.floor() as i32,
+                        (session.move_state.pos.y - 0.2).floor() as i32,
+                        session.move_state.pos.z.floor() as i32,
+                    );
+                    let block_below_id = self
+                        .worlds
+                        .get_or_default_mut(&session.world_name)
+                        .get_block(block_below_pos)
+                        .0;
+                    let speed_factor = if block_below_id == 84 && session.move_state.on_ground {
+                        telos_sim::SOUL_SAND_SPEED_FACTOR
+                    } else {
+                        1.0
+                    };
+
+                    telos_sim::simulate_movement_step_with_speed_factor(
                         &mut session.move_state,
                         &frame,
                         session.move_mode,
                         0.05,
+                        speed_factor,
                     );
+                    session.last_input_buttons = frame.buttons;
                     session.last_processed_client_tick = frame.tick;
                     processed_any = true;
                 }
@@ -5950,7 +5969,7 @@ impl Server {
                     }
                 }
 
-                // Check fire / lava environmental hazard
+                // Check fire / lava / magma environmental hazard
                 if !session.capabilities.invincible
                     && session.move_mode != MoveMode::NoClipFly
                     && self.tick_count.is_multiple_of(10)
@@ -5967,22 +5986,44 @@ impl Server {
                         .get_block(block_pos)
                         .0;
 
-                    if (block_id == 31 || block_id == 32 || block_id == 33)
+                    #[allow(clippy::cast_possible_truncation)]
+                    let block_below_pos = BlockPos::new(
+                        session.position.x.floor() as i32,
+                        (session.position.y - 0.2).floor() as i32,
+                        session.position.z.floor() as i32,
+                    );
+                    let block_below_id = self
+                        .worlds
+                        .get_or_default_mut(&session.world_name)
+                        .get_block(block_below_pos)
+                        .0;
+
+                    let is_in_fire_or_lava = block_id == 31 || block_id == 32 || block_id == 33;
+                    let is_on_magma = block_below_id == 88;
+
+                    if (is_in_fire_or_lava || is_on_magma)
                         && let Some(entity) = session.ecs_entity
                     {
+                        let is_sneaking = (session.last_input_buttons
+                            & telos_protocol::messages::input_buttons::SNEAK)
+                            != 0;
                         let has_fire_res = self
                             .ecs_world
                             .get::<StatusEffects>(entity)
                             .is_some_and(|eff| eff.has(StatusEffectKind::FireResistance));
 
-                        if !has_fire_res {
+                        if !has_fire_res && (!is_on_magma || !is_sneaking) {
                             let resistance = self
                                 .ecs_world
                                 .get::<StatusEffects>(entity)
                                 .and_then(|eff| eff.amplifier(StatusEffectKind::Resistance))
                                 .map_or(0, |amp| amp + 1);
 
-                            let raw_dmg = if block_id == 33 { 1.0 } else { 4.0 };
+                            let raw_dmg = if block_id == 33 || is_on_magma {
+                                1.0
+                            } else {
+                                4.0
+                            };
                             let mut query =
                                 self.ecs_world.query::<(&mut Health, &mut CombatTracker)>();
                             if let Ok((mut health, mut combat)) =

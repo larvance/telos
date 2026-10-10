@@ -89,6 +89,8 @@ pub struct PlayerSession {
     pub pending_inputs: VecDeque<InputFrame>,
     /// Last client tick simulated and acknowledged.
     pub last_processed_client_tick: u32,
+    /// Last input buttons pressed by the client.
+    pub last_input_buttons: u16,
     /// Sequential counter for server-initiated teleports.
     pub teleport_id_counter: u32,
     /// Pending teleport ID awaiting client `C2sTeleportAck`.
@@ -215,6 +217,7 @@ impl PlayerSession {
             move_state,
             pending_inputs: VecDeque::with_capacity(16),
             last_processed_client_tick: 0,
+            last_input_buttons: 0,
             teleport_id_counter: 0,
             awaiting_teleport: None,
             move_mode: MoveMode::Walk,

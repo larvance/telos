@@ -205,6 +205,10 @@ pub const ITEM_IRON_INGOT: u32 = 52;
 pub const ITEM_FLINT: u32 = 104;
 /// Flint and steel portal ignition tool identifier (105).
 pub const ITEM_FLINT_AND_STEEL: u32 = 105;
+/// Nether quartz mineral resource item identifier (106).
+pub const ITEM_NETHER_QUARTZ: u32 = 106;
+/// Gold nugget mineral resource item identifier (107).
+pub const ITEM_GOLD_NUGGET: u32 = 107;
 
 /// Returns true if the item is a boat.
 #[must_use]
@@ -456,6 +460,8 @@ pub fn item_name(item: u32) -> &'static str {
         103 => "Activator Rail",
         104 => "Flint",
         105 => "Flint and Steel",
+        106 => "Nether Quartz",
+        107 => "Gold Nugget",
         _ => "Unknown Item",
     }
 }
@@ -1034,6 +1040,8 @@ pub const fn block_to_drop_item(block_id: u32) -> Option<ItemStack> {
         81 => Some(ItemStack::new(ITEM_CHEST, 1)), // Chest
         82 | 83 => Some(ItemStack::new(ITEM_FURNACE, 1)), // Furnace / Lit Furnace
         84 => Some(ItemStack::new(ITEM_CRAFTING_TABLE, 1)), // Crafting Table
+        90 => Some(ItemStack::new(ITEM_NETHER_QUARTZ, 1)), // Nether Quartz Ore -> Nether Quartz
+        91 => Some(ItemStack::new(ITEM_GOLD_NUGGET, 4)), // Nether Gold Ore -> 4 Gold Nuggets
         other => Some(ItemStack::new(other, 1)),   // Default self-drop
     }
 }
@@ -1574,5 +1582,25 @@ mod tests {
 
         assert_eq!(item_name(ITEM_FLINT), "Flint");
         assert_eq!(item_name(ITEM_FLINT_AND_STEEL), "Flint and Steel");
+    }
+
+    #[test]
+    fn test_nether_ore_drop_mappings() {
+        assert_eq!(
+            block_to_drop_item(90),
+            Some(ItemStack::new(ITEM_NETHER_QUARTZ, 1))
+        );
+        assert_eq!(
+            block_to_drop_item(91),
+            Some(ItemStack::new(ITEM_GOLD_NUGGET, 4))
+        );
+        assert_eq!(block_to_drop_item(86), Some(ItemStack::new(86, 1))); // Basalt
+        assert_eq!(block_to_drop_item(87), Some(ItemStack::new(87, 1))); // Blackstone
+        assert_eq!(block_to_drop_item(88), Some(ItemStack::new(88, 1))); // Magma block
+        assert_eq!(block_to_drop_item(89), Some(ItemStack::new(89, 1))); // Soul soil
+        assert_eq!(block_to_drop_item(92), Some(ItemStack::new(92, 1))); // Ancient debris
+
+        assert_eq!(item_name(ITEM_NETHER_QUARTZ), "Nether Quartz");
+        assert_eq!(item_name(ITEM_GOLD_NUGGET), "Gold Nugget");
     }
 }

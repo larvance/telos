@@ -647,6 +647,18 @@ impl RecipeRegistry {
             ItemStack::new(crate::inventory::ITEM_FLINT_AND_STEEL, 1),
         ));
 
+        // Gold Ingot from Gold Nuggets (Shapeless): 9 Gold Nuggets (107) -> 1 Gold Ingot (53)
+        reg.register_shapeless(ShapelessRecipe::new(
+            vec![crate::inventory::ITEM_GOLD_NUGGET; 9],
+            ItemStack::new(53, 1),
+        ));
+
+        // Gold Nuggets from Gold Ingot (Shapeless): 1 Gold Ingot (53) -> 9 Gold Nuggets (107)
+        reg.register_shapeless(ShapelessRecipe::new(
+            vec![53],
+            ItemStack::new(crate::inventory::ITEM_GOLD_NUGGET, 9),
+        ));
+
         reg
     }
 }
@@ -1305,6 +1317,25 @@ mod tests {
         assert_eq!(
             res.unwrap().result(),
             ItemStack::new(crate::inventory::ITEM_FLINT_AND_STEEL, 1)
+        );
+
+        // 5. Gold Nugget to Ingot & Ingot to Nuggets
+        let nine_nuggets_grid = vec![ItemStack::new(crate::inventory::ITEM_GOLD_NUGGET, 1); 9];
+        let res = reg.find_match(&nine_nuggets_grid, 3, 3);
+        assert!(res.is_some());
+        assert_eq!(res.unwrap().result(), ItemStack::new(53, 1));
+
+        let one_ingot_grid = vec![
+            ItemStack::new(53, 1),
+            ItemStack::EMPTY,
+            ItemStack::EMPTY,
+            ItemStack::EMPTY,
+        ];
+        let res = reg.find_match(&one_ingot_grid, 2, 2);
+        assert!(res.is_some());
+        assert_eq!(
+            res.unwrap().result(),
+            ItemStack::new(crate::inventory::ITEM_GOLD_NUGGET, 9)
         );
     }
 }

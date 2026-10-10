@@ -11817,6 +11817,15 @@ fn bake_block_textures() -> (telos_assets::BakedTextureArray, AnimatedTextures) 
                 "redstone_lamp_on" => [255, 210, 100, 255],
                 "redstone_dust_line0" => [255, 255, 255, 255],
                 "repeater" | "repeater_on" => [180, 180, 180, 255],
+                "netherrack" => [110, 40, 40, 255],
+                "soul_sand" | "soul_soil" => [80, 60, 50, 255],
+                "glowstone" => [240, 200, 100, 255],
+                "basalt" => [80, 80, 85, 255],
+                "blackstone" => [40, 35, 40, 255],
+                "magma_block" => [190, 80, 30, 255],
+                "nether_quartz_ore" => [130, 65, 65, 255],
+                "nether_gold_ore" => [140, 75, 50, 255],
+                "ancient_debris" => [90, 70, 65, 255],
                 _ => [255, 0, 255, 255],
             };
             for pixel in img.data.as_chunks_mut::<4>().0 {
@@ -11897,6 +11906,25 @@ fn bake_block_textures() -> (telos_assets::BakedTextureArray, AnimatedTextures) 
         load_texture_with_fallback("brown_mushroom"),
     );
     builder.insert("red_mushroom", load_texture_with_fallback("red_mushroom"));
+    builder.insert("netherrack", load_texture_with_fallback("netherrack"));
+    builder.insert("soul_sand", load_texture_with_fallback("soul_sand"));
+    builder.insert("glowstone", load_texture_with_fallback("glowstone"));
+    builder.insert("basalt", load_texture_with_fallback("basalt"));
+    builder.insert("blackstone", load_texture_with_fallback("blackstone"));
+    builder.insert("magma_block", load_texture_with_fallback("magma_block"));
+    builder.insert("soul_soil", load_texture_with_fallback("soul_soil"));
+    builder.insert(
+        "nether_quartz_ore",
+        load_texture_with_fallback("nether_quartz_ore"),
+    );
+    builder.insert(
+        "nether_gold_ore",
+        load_texture_with_fallback("nether_gold_ore"),
+    );
+    builder.insert(
+        "ancient_debris",
+        load_texture_with_fallback("ancient_debris"),
+    );
 
     let mut load_animated = |name: &str,
                              alt_name: Option<&str>,
@@ -12313,7 +12341,7 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
     copy_to_layer_at(&mut pixel_data, 5, 0, 0, &inv_bg_img);
 
     // Layer 6: Item Icons Atlas (256x256 holding 16x16 icons for registered items)
-    let item_textures: [(u32, &str, [u8; 4]); 69] = [
+    let item_textures: [(u32, &str, [u8; 4]); 71] = [
         (1, "textures/block/stone.png", [128, 128, 128, 255]),
         (2, "textures/block/dirt.png", [134, 96, 67, 255]),
         (3, "textures/block/grass_block_side.png", [90, 160, 60, 255]),
@@ -12407,6 +12435,8 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
             "textures/item/flint_and_steel.png",
             [200, 200, 210, 255],
         ),
+        (106, "textures/item/quartz.png", [235, 230, 225, 255]),
+        (107, "textures/item/gold_nugget.png", [245, 215, 60, 255]),
     ];
 
     let copy_icon =

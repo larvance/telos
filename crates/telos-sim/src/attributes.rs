@@ -225,6 +225,37 @@ pub fn apply_mitigated_damage(
     apply_damage(health, tracker, mitigated, damage_type)
 }
 
+/// Returns `true` if an entity standing on an incandescent magma block should take contact damage.
+///
+/// Contact damage is mitigated if the entity is sneaking, has the Fire Resistance effect,
+/// or is invincible.
+#[inline]
+#[must_use]
+pub fn should_take_magma_damage(
+    is_sneaking: bool,
+    has_fire_resistance: bool,
+    is_invincible: bool,
+) -> bool {
+    !is_sneaking && !has_fire_resistance && !is_invincible
+}
+
+/// Applies magma block contact damage (1.0 fire damage) to an entity if eligible.
+///
+/// Returns the amount of damage dealt (1.0 if damaged, 0.0 if mitigated or on cooldown).
+pub fn apply_magma_block_damage(
+    health: &mut Health,
+    tracker: &mut CombatTracker,
+    is_sneaking: bool,
+    has_fire_resistance: bool,
+    is_invincible: bool,
+) -> f32 {
+    if should_take_magma_damage(is_sneaking, has_fire_resistance, is_invincible) {
+        apply_damage(health, tracker, 1.0, DamageType::Fire)
+    } else {
+        0.0
+    }
+}
+
 /// Core attribute types supported on entities and players.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AttributeKind {
@@ -582,5 +613,31 @@ mod tests {
         // Void bypasses armor and resistance
         let d_void = calculate_damage_mitigation(10.0, DamageType::Void, 20.0, 10.0, 2, 20);
         assert!((d_void - 10.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_magma_block_contact_damage() {
+        let mut h = Health::new(20.0);
+        let mut tracker = CombatTracker::default();
+
+        // 1. Standing normally on magma block: takes 1.0 fire damage
+        let dmg1 = apply_magma_block_damage(&mut h, &mut tracker, false, false, false);
+        assert!((dmg1 - 1.0).abs() < f32::EPSILON);
+        assert!((h.cur - 19.0).abs() < f32::EPSILON);
+
+        // 2. Sneaking: 0 damage
+        let dmg_sneak = apply_magma_block_damage(&mut h, &mut tracker, true, false, false);
+        assert!((dmg_sneak - 0.0).abs() < f32::EPSILON);
+        assert!((h.cur - 19.0).abs() < f32::EPSILON);
+
+        // 3. Fire Resistance: 0 damage
+        let dmg_fire_res = apply_magma_block_damage(&mut h, &mut tracker, false, true, false);
+        assert!((dmg_fire_res - 0.0).abs() < f32::EPSILON);
+        assert!((h.cur - 19.0).abs() < f32::EPSILON);
+
+        // 4. Invincible: 0 damage
+        let dmg_inv = apply_magma_block_damage(&mut h, &mut tracker, false, false, true);
+        assert!((dmg_inv - 0.0).abs() < f32::EPSILON);
+        assert!((h.cur - 19.0).abs() < f32::EPSILON);
     }
 }

@@ -1410,6 +1410,120 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
                 ..Default::default()
             },
         ),
+        // Nether realm worldgen blocks (Phase 81)
+        (
+            "basalt",
+            "Basalt",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 1.25,
+                blast_resistance: 4.2,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(76),
+                ..Default::default()
+            },
+        ),
+        (
+            "blackstone",
+            "Blackstone",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 1.5,
+                blast_resistance: 6.0,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(77),
+                ..Default::default()
+            },
+        ),
+        (
+            "magma_block",
+            "Magma Block",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 0.5,
+                blast_resistance: 0.5,
+                light_emission: 3,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(78),
+                ..Default::default()
+            },
+        ),
+        (
+            "soul_soil",
+            "Soul Soil",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 0.5,
+                blast_resistance: 0.5,
+                tool: Some("telos:shovel".into()),
+                sound: Some("telos:sand".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(79),
+                ..Default::default()
+            },
+        ),
+        (
+            "nether_quartz_ore",
+            "Nether Quartz Ore",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 3.0,
+                blast_resistance: 3.0,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(80),
+                ..Default::default()
+            },
+        ),
+        (
+            "nether_gold_ore",
+            "Nether Gold Ore",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 3.0,
+                blast_resistance: 3.0,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(81),
+                ..Default::default()
+            },
+        ),
+        (
+            "ancient_debris",
+            "Ancient Debris",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 30.0,
+                blast_resistance: 1200.0,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:stone".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(82),
+                ..Default::default()
+            },
+        ),
     ]
 }
 
@@ -1799,6 +1913,22 @@ pub fn core_items() -> Vec<(&'static str, ItemDef)> {
             ItemDef {
                 name: "Flint and Steel".into(),
                 max_stack_size: 1,
+                item_type: ItemTypeDef::Generic,
+            },
+        ),
+        (
+            "nether_quartz",
+            ItemDef {
+                name: "Nether Quartz".into(),
+                max_stack_size: 64,
+                item_type: ItemTypeDef::Generic,
+            },
+        ),
+        (
+            "gold_nugget",
+            ItemDef {
+                name: "Gold Nugget".into(),
+                max_stack_size: 64,
                 item_type: ItemTypeDef::Generic,
             },
         ),
