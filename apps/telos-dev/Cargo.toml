@@ -1,0 +1,23 @@
+[package]
+name = "telos-dev"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Telos Developer Build Progress Launcher & Concurrency Coordinator"
+
+[[bin]]
+name = "telos-dev"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.31", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+rustix = { version = "0.38", features = ["fs"] }
+
+[lints]
+workspace = true

@@ -2,7 +2,7 @@
 # ==============================================================================
 # Telos Local Development Launcher
 # Directly connected to local workspace at /home/usr/Projects/voxel
-# Automatically ensures the latest build is executed.
+# Automatically ensures the latest build is executed with splash & lock coordination.
 # ==============================================================================
 set -e
 
@@ -23,12 +23,28 @@ fi
 
 cd "$REPO_DIR"
 
+DEV_BIN="$REPO_DIR/target/release/telos-dev"
 TARGET_BIN="$REPO_DIR/target/release/telos"
 if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
+    DEV_BIN="$REPO_DIR/target/debug/telos-dev"
     TARGET_BIN="$REPO_DIR/target/debug/telos"
 fi
 
-# Rebuild incrementally if cargo is available and TELOS_NO_BUILD is not set
+# Ensure dev launcher binary exists if cargo is available
+if [[ ! -x "$DEV_BIN" && -z "${TELOS_NO_DEV:-}" && -z "${TELOS_NO_BUILD:-}" ]] && command -v cargo >/dev/null 2>&1; then
+    if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
+        cargo build -p telos-dev --quiet || true
+    else
+        cargo build --release -p telos-dev --quiet || true
+    fi
+fi
+
+# If dev launcher is available and enabled, delegate build progress & lock coordination to it
+if [[ -z "${TELOS_NO_DEV:-}" && -x "$DEV_BIN" && -z "${TELOS_NO_BUILD:-}" ]]; then
+    exec "$DEV_BIN" "$@"
+fi
+
+# Direct build fallback if TELOS_NO_DEV=1
 if [[ -z "${TELOS_NO_BUILD:-}" ]] && command -v cargo >/dev/null 2>&1; then
     if [ -t 1 ]; then
         if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
@@ -37,7 +53,6 @@ if [[ -z "${TELOS_NO_BUILD:-}" ]] && command -v cargo >/dev/null 2>&1; then
             cargo build --release --bin telos
         fi
     else
-        # GUI launcher: build quietly in background
         if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
             cargo build --bin telos --quiet 2>/dev/null || true
         else
