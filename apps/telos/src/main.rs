@@ -1553,6 +1553,7 @@ struct App {
     active_modal_form: Option<ModalFormScreen>,
     game_settings: GameSettings,
     settings_path: PathBuf,
+    servers_path: PathBuf,
     worlds_dir: PathBuf,
     physics: PlayerPhysicsController,
     last_frame_start: Instant,
@@ -1651,6 +1652,7 @@ impl App {
         };
 
         let settings_path = app_dirs.config_dir().join("settings.toml");
+        let servers_path = app_dirs.config_dir().join("servers.json");
         let mut game_settings = GameSettings::load_or_create(&settings_path);
 
         let creds_path = app_dirs.config_dir().join("credentials.json");
@@ -1815,6 +1817,8 @@ impl App {
         let world_create = WorldCreateWizard::new();
         let settings_screen = SettingsScreen::new(game_settings.clone());
         let pause_menu = PauseMenuScreen::new();
+        let mut server_list = ServerListScreen::new();
+        let _ = server_list.load_from_file(&servers_path);
 
         let mut advancements_screen = AdvancementsScreen::new();
         for adv in telos_sim::AdvancementRegistry::standard().all() {
@@ -2065,7 +2069,7 @@ impl App {
             settings_screen,
             pause_menu,
             is_paused: false,
-            server_list: ServerListScreen::new(),
+            server_list,
             server_listener_tx: None,
             lan_opened_port: None,
             last_invite_link: None,
@@ -2075,6 +2079,7 @@ impl App {
             active_modal_form: None,
             game_settings,
             settings_path,
+            servers_path,
             worlds_dir,
             physics,
             last_frame_start: Instant::now(),
@@ -2091,6 +2096,12 @@ impl App {
             gl_renderer: None,
             credentials,
             player_uuid,
+        }
+    }
+
+    fn save_server_list(&self) {
+        if let Err(e) = self.server_list.save_to_file(&self.servers_path) {
+            tracing::warn!("Failed to save server list to {}: {e}", self.servers_path.display());
         }
     }
 
@@ -6743,7 +6754,8 @@ impl App {
                     AppScreen::MainMenu => {
                         self.main_menu
                             .update_layout_i18n(width_gui, height_gui, &self.catalog);
-                        self.main_menu.render(
+                        self.main_menu.render_with_layers(
+                            &self.ui_layers,
                             font,
                             width_gui,
                             height_gui,
@@ -7333,7 +7345,8 @@ impl App {
             AppScreen::MainMenu => {
                 self.main_menu
                     .update_layout_i18n(width_gui, height_gui, &self.catalog);
-                self.main_menu.render(
+                self.main_menu.render_with_layers(
+                    &self.ui_layers,
                     font,
                     width_gui,
                     height_gui,
@@ -9688,6 +9701,7 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => {
                 info!("Close requested, exiting application");
+                self.save_server_list();
                 event_loop.exit();
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -9810,6 +9824,11 @@ impl ApplicationHandler for App {
                                 .direct_buttons
                                 .iter()
                                 .any(|b| b.hovered && b.enabled)
+                        } else if self.server_list.add_server_mode {
+                            self.server_list
+                                .add_buttons
+                                .iter()
+                                .any(|b| b.hovered && b.enabled)
                         } else {
                             self.server_list
                                 .buttons
@@ -9905,6 +9924,13 @@ impl ApplicationHandler for App {
                     if self.advancements_open {
                         self.advancements_screen.handle_mouse_up();
                         return;
+                    }
+                    if self.current_screen == AppScreen::Multiplayer {
+                        if let Some(ServerListAction::ServersModified) =
+                            self.server_list.handle_mouse_release()
+                        {
+                            self.save_server_list();
+                        }
                     }
                     if self.current_screen == AppScreen::InGame
                         && button == MouseButton::Right
@@ -10100,6 +10126,9 @@ impl ApplicationHandler for App {
                                 }
                                 ServerListAction::Cancel => {
                                     self.current_screen = AppScreen::MainMenu;
+                                }
+                                ServerListAction::ServersModified => {
+                                    self.save_server_list();
                                 }
                             }
                         }
@@ -10709,8 +10738,22 @@ impl ApplicationHandler for App {
                                     if self.server_list.direct_connect_mode {
                                         self.server_list.direct_connect_mode = false;
                                         self.server_list.direct_connect_focused = false;
+                                    } else if self.server_list.add_server_mode {
+                                        self.server_list.add_server_mode = false;
                                     } else {
                                         self.current_screen = AppScreen::MainMenu;
+                                    }
+                                }
+                                KeyCode::Tab if self.server_list.add_server_mode => {
+                                    if self.server_list.add_name_input.focused {
+                                        self.server_list.add_name_input.focused = false;
+                                        self.server_list.add_address_input.focused = true;
+                                    } else if self.server_list.add_address_input.focused {
+                                        self.server_list.add_address_input.focused = false;
+                                        self.server_list.add_group_input.focused = true;
+                                    } else {
+                                        self.server_list.add_group_input.focused = false;
+                                        self.server_list.add_name_input.focused = true;
                                     }
                                 }
                                 KeyCode::Enter => {
@@ -10721,6 +10764,9 @@ impl ApplicationHandler for App {
                                             }
                                             ServerListAction::Cancel => {
                                                 self.current_screen = AppScreen::MainMenu;
+                                            }
+                                            ServerListAction::ServersModified => {
+                                                self.save_server_list();
                                             }
                                         }
                                     }
@@ -12081,7 +12127,7 @@ fn load_and_upload_textures_gl(
 #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
     const UI_RES: u32 = 256;
-    const LAYER_COUNT: u32 = 12;
+    const LAYER_COUNT: u32 = 13;
 
     let mut stack = ResourcePackStack::new();
     mount_asset_roots(&mut stack);
@@ -12810,6 +12856,35 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
     let slider_handle_highlighted_img = ensure_size(slider_handle_highlighted_img, 8, 20);
     copy_to_layer_at(&mut pixel_data, 11, 8, 100, &slider_handle_highlighted_img);
 
+    // Layer 12: Main Menu Long Logo Banner (256x64 on 256x256 canvas)
+    let logo_img = if let Some(img) = stack
+        .find_texture("textures/gui/title/telos.png")
+        .and_then(|p| telos_assets::RgbaImage::from_file_exact(&p).ok())
+    {
+        ensure_size(img, 256, 64)
+    } else {
+        let mut img = telos_assets::RgbaImage::new(256, 64);
+        for y in 10..54 {
+            for x in 20..236 {
+                let idx = ((y * 256 + x) * 4) as usize;
+                let is_border = y == 10 || y == 53 || x == 20 || x == 235;
+                if is_border {
+                    img.data[idx] = 40;
+                    img.data[idx + 1] = 30;
+                    img.data[idx + 2] = 10;
+                    img.data[idx + 3] = 255;
+                } else {
+                    img.data[idx] = 255;
+                    img.data[idx + 1] = 215;
+                    img.data[idx + 2] = 0;
+                    img.data[idx + 3] = 255;
+                }
+            }
+        }
+        img
+    };
+    copy_to_layer_at(&mut pixel_data, 12, 0, 0, &logo_img);
+
     let regions: Vec<TextureMipRegion> = (0..LAYER_COUNT)
         .map(|layer| TextureMipRegion {
             buffer_offset: u64::from(layer * UI_RES * UI_RES * 4),
@@ -12825,13 +12900,13 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
 
 fn load_and_upload_ui_textures(gpu_context: &GpuContext) -> Result<(GpuTextureArray, BitmapFont)> {
     const UI_RES: u32 = 256;
-    const LAYER_COUNT: u32 = 12;
+    const LAYER_COUNT: u32 = 13;
     let (pixel_data, regions, font) = bake_ui_textures();
     let texture_array =
         gpu_context.create_texture_array(UI_RES, LAYER_COUNT, 1, &pixel_data, &regions)?;
 
     info!(
-        "UI texture array loaded (12 layers, 256x256, font baked, survival icons, inventory background, item icons, furnace GUI, crafting table GUI, advancements window, toast banner, widget buttons & sliders)"
+        "UI texture array loaded (13 layers, 256x256, font baked, survival icons, inventory background, item icons, furnace GUI, crafting table GUI, advancements window, toast banner, widget buttons & sliders, main menu logo)"
     );
 
     Ok((texture_array, font))
@@ -12841,7 +12916,7 @@ fn load_and_upload_ui_textures_gl(
     gl: &Arc<glow::Context>,
 ) -> Result<(telos_gpu::opengl::GlTextureArray, BitmapFont)> {
     const UI_RES: u32 = 256;
-    const LAYER_COUNT: u32 = 12;
+    const LAYER_COUNT: u32 = 13;
     let (pixel_data, regions, font) = bake_ui_textures();
     let gl_array =
         telos_gpu::opengl::GlTextureArray::new(gl.clone(), UI_RES, UI_RES, LAYER_COUNT, 1)?;

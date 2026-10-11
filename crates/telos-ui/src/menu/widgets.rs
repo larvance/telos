@@ -76,7 +76,7 @@ impl MenuButton {
     /// Renders the button to the `UiQuad` output draw list using default UI asset layers.
     #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
     pub fn render(&self, font: &BitmapFont, scale: u32, out: &mut Vec<UiQuad>) {
-        self.render_with_layers(&UiLayers::default(), font, scale, out);
+        self.render_animated(&UiLayers::default(), font, scale, 0, out);
     }
 
     /// Renders the button using 9-slice scalable sprite assets and text to `out`.
@@ -86,6 +86,19 @@ impl MenuButton {
         layers: &UiLayers,
         font: &BitmapFont,
         scale: u32,
+        out: &mut Vec<UiQuad>,
+    ) {
+        self.render_animated(layers, font, scale, 0, out);
+    }
+
+    /// Renders the button with dynamic hover animations (visual elevation, sheen sweep, pulsing glow).
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+    pub fn render_animated(
+        &self,
+        layers: &UiLayers,
+        font: &BitmapFont,
+        scale: u32,
+        tick: u64,
         out: &mut Vec<UiQuad>,
     ) {
         let px_x = snap_to_physical(self.x, scale);
@@ -102,13 +115,27 @@ impl MenuButton {
             layers.button_normal_uv
         };
 
+        let pulse = if self.hovered && tick > 0 {
+            ((tick as f32 * 0.15).sin() * 12.0).round() as i32
+        } else {
+            0
+        };
+
         let tint_col = match self.style {
-            ButtonStyle::Default => UiQuad::rgba(255, 255, 255, 255),
+            ButtonStyle::Default => {
+                if self.hovered && self.enabled {
+                    let b = (245 + pulse).clamp(210, 255) as u8;
+                    UiQuad::rgba(255, 255, b, 255)
+                } else {
+                    UiQuad::rgba(255, 255, 255, 255)
+                }
+            }
             ButtonStyle::Primary => {
                 if !self.enabled {
                     UiQuad::rgba(140, 160, 180, 200)
                 } else if self.hovered {
-                    UiQuad::rgba(200, 245, 255, 255)
+                    let r = (200 + pulse).clamp(180, 240) as u8;
+                    UiQuad::rgba(r, 245, 255, 255)
                 } else {
                     UiQuad::rgba(180, 230, 255, 255)
                 }
@@ -117,7 +144,8 @@ impl MenuButton {
                 if !self.enabled {
                     UiQuad::rgba(160, 140, 140, 200)
                 } else if self.hovered {
-                    UiQuad::rgba(255, 210, 210, 255)
+                    let g = (210 + pulse).clamp(190, 240) as u8;
+                    UiQuad::rgba(255, g, g, 255)
                 } else {
                     UiQuad::rgba(255, 180, 180, 255)
                 }
@@ -147,6 +175,27 @@ impl MenuButton {
             tint_col,
         ));
 
+        // Animated sliding sheen beam across button surface
+        if self.hovered && self.enabled && tick > 0 {
+            let sheen_cycle = 75u64;
+            let phase = (tick % sheen_cycle) as f32 / sheen_cycle as f32;
+            let sheen_center_x = self.x - 24.0 + phase * (self.width + 48.0);
+            let sheen_w = 20.0f32;
+            let sheen_min_x = sheen_center_x.max(self.x + 2.0);
+            let sheen_max_x = (sheen_center_x + sheen_w).min(self.x + self.width - 2.0);
+            if sheen_max_x > sheen_min_x {
+                let sx = snap_to_physical(sheen_min_x, scale);
+                let sy = snap_to_physical(self.y + 2.0, scale);
+                let sw = snap_to_physical(sheen_max_x - sheen_min_x, scale) as u16;
+                let sh = snap_to_physical(self.height - 4.0, scale) as u16;
+                out.push(UiQuad::solid(
+                    [sx, sy],
+                    [sw, sh],
+                    UiQuad::rgba(255, 255, 255, 45),
+                ));
+            }
+        }
+
         // Label text styling: classic Minecraft white/yellow hover text with drop shadows
         let text_col = if !self.enabled {
             UiQuad::rgba(160, 160, 160, 255)
@@ -166,7 +215,7 @@ impl MenuButton {
 
         let (text_w, text_h) = font.measure_text(&self.label);
         let text_x = self.x + (self.width - text_w) * 0.5;
-        let text_y = self.y + (self.height - text_h) * 0.5;
+        let text_y = self.y + (self.height - text_h) * 0.5 - if self.hovered { 0.5 } else { 0.0 };
 
         font.layout_text(&self.label, text_x, text_y, text_col, true, scale, out);
     }

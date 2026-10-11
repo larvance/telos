@@ -4470,6 +4470,7 @@ dependencies = [
  "image",
  "proptest",
  "serde",
+ "serde_json",
  "slotmap",
  "taffy",
  "telos-assets",

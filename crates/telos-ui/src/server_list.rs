@@ -1,12 +1,38 @@
-//! Multiplayer server browser screen, LAN server discovery cards, and direct connect.
+//! Multiplayer server browser screen, collapsible groups, drag-and-drop reordering, and direct connect.
+
+use std::path::Path;
 
 use crate::font::BitmapFont;
 use crate::menu::widgets::{ButtonStyle, MenuButton, MenuTextInput};
 use crate::quad::UiQuad;
 use crate::scale::snap_to_physical;
 
+fn default_group_name() -> String {
+    "Custom Servers".to_string()
+}
+
+/// A collapsible group organizing server entries.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ServerGroup {
+    /// Group display name (e.g. "Favorites", "Custom Servers", "LAN Worlds").
+    pub name: String,
+    /// Whether this group is collapsed in the UI.
+    pub collapsed: bool,
+}
+
+impl ServerGroup {
+    /// Creates a new server group.
+    #[must_use]
+    pub fn new(name: impl Into<String>, collapsed: bool) -> Self {
+        Self {
+            name: name.into(),
+            collapsed,
+        }
+    }
+}
+
 /// Information for a single server shown in the server list.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ServerEntry {
     /// Server display name.
     pub name: String,
@@ -22,6 +48,9 @@ pub struct ServerEntry {
     pub ping_ms: Option<u32>,
     /// Whether this server was discovered via local LAN broadcast/multicast.
     pub is_lan: bool,
+    /// Group this server belongs to.
+    #[serde(default = "default_group_name")]
+    pub group: String,
 }
 
 impl ServerEntry {
@@ -35,6 +64,12 @@ impl ServerEntry {
         max_players: u16,
         is_lan: bool,
     ) -> Self {
+        let is_lan_val = is_lan;
+        let group = if is_lan_val {
+            "LAN Worlds".to_string()
+        } else {
+            "Custom Servers".to_string()
+        };
         Self {
             name: name.into(),
             address: address.into(),
@@ -42,9 +77,26 @@ impl ServerEntry {
             current_players,
             max_players,
             ping_ms: None,
-            is_lan,
+            is_lan: is_lan_val,
+            group,
         }
     }
+
+    /// Sets the group name for this server entry.
+    #[must_use]
+    pub fn with_group(mut self, group: impl Into<String>) -> Self {
+        self.group = group.into();
+        self
+    }
+}
+
+/// Serialized schema for saving custom servers and groups to disk.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SavedServerList {
+    /// Saved groups.
+    pub groups: Vec<ServerGroup>,
+    /// Saved custom servers.
+    pub servers: Vec<ServerEntry>,
 }
 
 /// Action produced by user interaction with the server list screen.
@@ -54,6 +106,37 @@ pub enum ServerListAction {
     Connect(String),
     /// Return to main menu.
     Cancel,
+    /// Server entries or groups were modified or reordered (trigger save to disk).
+    ServersModified,
+}
+
+/// Item in the visual list layout for hit-testing and rendering.
+#[derive(Debug, Clone)]
+pub enum ServerListItem {
+    /// A collapsible group header row.
+    GroupHeader {
+        /// Index into `groups`.
+        group_idx: usize,
+        /// Name of the group.
+        name: String,
+        /// Whether group is currently collapsed.
+        collapsed: bool,
+        /// Number of servers in this group.
+        count: usize,
+        /// Top Y in GUI pixels.
+        y: f32,
+        /// Height in GUI pixels.
+        height: f32,
+    },
+    /// A single server card row.
+    ServerCard {
+        /// Global index into `servers`.
+        server_idx: usize,
+        /// Top Y in GUI pixels.
+        y: f32,
+        /// Height in GUI pixels.
+        height: f32,
+    },
 }
 
 /// Interactive state and card layout for the multiplayer server browser.
@@ -61,6 +144,8 @@ pub enum ServerListAction {
 pub struct ServerListScreen {
     /// Registered and discovered servers.
     pub servers: Vec<ServerEntry>,
+    /// Server groups.
+    pub groups: Vec<ServerGroup>,
     /// Index of selected server in `servers`, if any.
     pub selected_index: Option<usize>,
     /// Direct connect address input buffer.
@@ -77,6 +162,26 @@ pub struct ServerListScreen {
     pub buttons: Vec<MenuButton>,
     /// Navigation buttons for direct connect view.
     pub direct_buttons: Vec<MenuButton>,
+
+    // Add server dialog mode
+    /// Whether the Add Server dialog is currently open.
+    pub add_server_mode: bool,
+    /// Add server name input widget.
+    pub add_name_input: MenuTextInput,
+    /// Add server address input widget.
+    pub add_address_input: MenuTextInput,
+    /// Add server group input widget.
+    pub add_group_input: MenuTextInput,
+    /// Navigation buttons for Add Server view.
+    pub add_buttons: Vec<MenuButton>,
+
+    // Drag-and-drop state
+    /// Global server index currently being dragged, if any.
+    pub dragging_index: Option<usize>,
+    /// Mouse Y coordinate where dragging began.
+    pub drag_start_y: f32,
+    /// Current mouse Y coordinate during drag.
+    pub drag_mouse_y: f32,
 }
 
 impl Default for ServerListScreen {
@@ -86,7 +191,7 @@ impl Default for ServerListScreen {
 }
 
 impl ServerListScreen {
-    /// Creates a new empty `ServerListScreen`.
+    /// Creates a new empty `ServerListScreen` with default groups.
     #[must_use]
     pub fn new() -> Self {
         let direct_input = MenuTextInput::new(
@@ -98,8 +203,21 @@ impl ServerListScreen {
             "Enter host:port or telos://connect/<ticket>",
         );
 
+        let add_name_input = MenuTextInput::new(21, 0.0, 0.0, 300.0, 24.0, "Server Name");
+        let add_address_input =
+            MenuTextInput::new(22, 0.0, 0.0, 300.0, 24.0, "Server Address (host:port)");
+        let add_group_input =
+            MenuTextInput::new(23, 0.0, 0.0, 300.0, 24.0, "Group Name (e.g. Favorites)");
+
+        let groups = vec![
+            ServerGroup::new("Favorites", false),
+            ServerGroup::new("Custom Servers", false),
+            ServerGroup::new("LAN Worlds", false),
+        ];
+
         Self {
             servers: Vec::new(),
+            groups,
             selected_index: None,
             direct_connect_address: String::new(),
             direct_connect_focused: false,
@@ -108,16 +226,107 @@ impl ServerListScreen {
             direct_input,
             buttons: Vec::new(),
             direct_buttons: Vec::new(),
+            add_server_mode: false,
+            add_name_input,
+            add_address_input,
+            add_group_input,
+            add_buttons: Vec::new(),
+            dragging_index: None,
+            drag_start_y: 0.0,
+            drag_mouse_y: 0.0,
         }
+    }
+
+    /// Computes the visual layout of group headers and server cards given the current scroll offset.
+    #[must_use]
+    pub fn compute_list_layout(&self, list_top: f32) -> Vec<ServerListItem> {
+        let header_h = 20.0f32;
+        let card_h = 36.0f32;
+        let spacing = 4.0f32;
+
+        let mut items = Vec::new();
+        let mut cur_y = list_top - self.scroll_offset;
+
+        // Ensure all servers have a group represented in groups
+        for (g_idx, group) in self.groups.iter().enumerate() {
+            let matching_servers: Vec<usize> = self
+                .servers
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.group == group.name)
+                .map(|(i, _)| i)
+                .collect();
+
+            // Always display groups that have servers, or default groups
+            if !matching_servers.is_empty()
+                || group.name == "Favorites"
+                || group.name == "Custom Servers"
+                || (group.name == "LAN Worlds" && self.servers.iter().any(|s| s.is_lan))
+            {
+                items.push(ServerListItem::GroupHeader {
+                    group_idx: g_idx,
+                    name: group.name.clone(),
+                    collapsed: group.collapsed,
+                    count: matching_servers.len(),
+                    y: cur_y,
+                    height: header_h,
+                });
+                cur_y += header_h + spacing;
+
+                if !group.collapsed {
+                    for s_idx in matching_servers {
+                        items.push(ServerListItem::ServerCard {
+                            server_idx: s_idx,
+                            y: cur_y,
+                            height: card_h,
+                        });
+                        cur_y += card_h + spacing;
+                    }
+                }
+            }
+        }
+
+        // Servers that don't match any known group
+        let known_group_names: Vec<&str> = self.groups.iter().map(|g| g.name.as_str()).collect();
+        let orphan_servers: Vec<usize> = self
+            .servers
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| !known_group_names.contains(&s.group.as_str()))
+            .map(|(i, _)| i)
+            .collect();
+
+        if !orphan_servers.is_empty() {
+            items.push(ServerListItem::GroupHeader {
+                group_idx: usize::MAX,
+                name: "Other Servers".to_string(),
+                collapsed: false,
+                count: orphan_servers.len(),
+                y: cur_y,
+                height: header_h,
+            });
+            cur_y += header_h + spacing;
+            for s_idx in orphan_servers {
+                items.push(ServerListItem::ServerCard {
+                    server_idx: s_idx,
+                    y: cur_y,
+                    height: card_h,
+                });
+                cur_y += card_h + spacing;
+            }
+        }
+
+        items
     }
 
     /// Updates layout of buttons and input widgets based on current GUI dimensions.
     pub fn update_layout(&mut self, width_gui: f32, height_gui: f32) {
         let btn_y = height_gui - 36.0;
-        let btn_w = 90.0f32;
+        let btn_w = 76.0f32;
         let btn_h = 20.0f32;
+        let spacing = 6.0f32;
 
-        let total_btns_w = (btn_w * 3.0) + (8.0 * 2.0);
+        let total_btns_w = (btn_w * 4.0) + (spacing * 3.0);
         let start_btn_x = (width_gui - total_btns_w) / 2.0;
 
         let has_sel = self.selected_index.is_some();
@@ -127,23 +336,32 @@ impl ServerListScreen {
 
         let direct_btn = MenuButton::new(
             2,
-            start_btn_x + btn_w + 8.0,
+            start_btn_x + btn_w + spacing,
             btn_y,
             btn_w,
             btn_h,
             "Direct Connect",
         );
 
-        let cancel_btn = MenuButton::new(
+        let add_btn = MenuButton::new(
             3,
-            start_btn_x + (btn_w + 8.0) * 2.0,
+            start_btn_x + (btn_w + spacing) * 2.0,
+            btn_y,
+            btn_w,
+            btn_h,
+            "Add Server",
+        );
+
+        let cancel_btn = MenuButton::new(
+            4,
+            start_btn_x + (btn_w + spacing) * 3.0,
             btn_y,
             btn_w,
             btn_h,
             "Cancel",
         );
 
-        self.buttons = vec![join_btn, direct_btn, cancel_btn];
+        self.buttons = vec![join_btn, direct_btn, add_btn, cancel_btn];
 
         // Direct connect mode layout
         let input_w = 320.0f32.min(width_gui - 32.0);
@@ -163,20 +381,107 @@ impl ServerListScreen {
         let back_btn = MenuButton::new(12, d_start_x + btn_w + 8.0, d_btn_y, btn_w, btn_h, "Back");
 
         self.direct_buttons = vec![conn_btn, back_btn];
+
+        // Add server mode layout
+        let add_input_w = 300.0f32.min(width_gui - 32.0);
+        let add_input_x = (width_gui - add_input_w) / 2.0;
+
+        let add_y1 = height_gui * 0.28;
+        let add_y2 = add_y1 + 38.0;
+        let add_y3 = add_y2 + 38.0;
+
+        self.add_name_input.x = add_input_x;
+        self.add_name_input.y = add_y1;
+        self.add_name_input.width = add_input_w;
+
+        self.add_address_input.x = add_input_x;
+        self.add_address_input.y = add_y2;
+        self.add_address_input.width = add_input_w;
+
+        self.add_group_input.x = add_input_x;
+        self.add_group_input.y = add_y3;
+        self.add_group_input.width = add_input_w;
+
+        let add_btn_w = 90.0f32;
+        let add_actions_total_w = (add_btn_w * 2.0) + 12.0;
+        let add_actions_start_x = (width_gui - add_actions_total_w) / 2.0;
+        let add_actions_y = add_y3 + 40.0;
+
+        let confirm_add_btn = MenuButton::new(
+            21,
+            add_actions_start_x,
+            add_actions_y,
+            add_btn_w,
+            btn_h,
+            "Add Server",
+        )
+        .with_style(ButtonStyle::Primary);
+
+        let cancel_add_btn = MenuButton::new(
+            22,
+            add_actions_start_x + add_btn_w + 12.0,
+            add_actions_y,
+            add_btn_w,
+            btn_h,
+            "Cancel",
+        );
+
+        self.add_buttons = vec![confirm_add_btn, cancel_add_btn];
     }
 
-    /// Handles mouse motion in GUI pixels.
+    /// Handles mouse motion in GUI pixels and processes drag reordering.
     pub fn handle_mouse_move(&mut self, mouse_x: f32, mouse_y: f32) {
         if self.direct_connect_mode {
             self.direct_input.hovered = self.direct_input.contains(mouse_x, mouse_y);
             for btn in &mut self.direct_buttons {
                 btn.hovered = btn.contains(mouse_x, mouse_y);
             }
-        } else {
-            for btn in &mut self.buttons {
+            return;
+        }
+
+        if self.add_server_mode {
+            self.add_name_input.hovered = self.add_name_input.contains(mouse_x, mouse_y);
+            self.add_address_input.hovered = self.add_address_input.contains(mouse_x, mouse_y);
+            self.add_group_input.hovered = self.add_group_input.contains(mouse_x, mouse_y);
+            for btn in &mut self.add_buttons {
                 btn.hovered = btn.contains(mouse_x, mouse_y);
             }
+            return;
         }
+
+        for btn in &mut self.buttons {
+            btn.hovered = btn.contains(mouse_x, mouse_y);
+        }
+
+        // Handle drag-and-drop server card reordering
+        if let Some(drag_idx) = self.dragging_index {
+            self.drag_mouse_y = mouse_y;
+            let dy = mouse_y - self.drag_start_y;
+            let threshold = 36.0 + 4.0; // card height + spacing
+
+            if dy > threshold && drag_idx + 1 < self.servers.len() {
+                // Dragged downward past next server
+                self.servers.swap(drag_idx, drag_idx + 1);
+                self.dragging_index = Some(drag_idx + 1);
+                self.selected_index = Some(drag_idx + 1);
+                self.drag_start_y += threshold;
+            } else if dy < -threshold && drag_idx > 0 {
+                // Dragged upward past previous server
+                self.servers.swap(drag_idx, drag_idx - 1);
+                self.dragging_index = Some(drag_idx - 1);
+                self.selected_index = Some(drag_idx - 1);
+                self.drag_start_y -= threshold;
+            }
+        }
+    }
+
+    /// Finalizes drag-and-drop on mouse release and returns whether the server order changed.
+    pub fn handle_mouse_release(&mut self) -> Option<ServerListAction> {
+        if self.dragging_index.is_some() {
+            self.dragging_index = None;
+            return Some(ServerListAction::ServersModified);
+        }
+        None
     }
 
     /// Handles mouse clicks in GUI pixels, returning an action if triggered.
@@ -215,11 +520,60 @@ impl ServerListScreen {
             return None;
         }
 
-        // 1. Check card list clicks
+        if self.add_server_mode {
+            self.add_name_input.focused = self.add_name_input.contains(mouse_x, mouse_y);
+            self.add_address_input.focused = self.add_address_input.contains(mouse_x, mouse_y);
+            self.add_group_input.focused = self.add_group_input.contains(mouse_x, mouse_y);
+
+            for btn in &self.add_buttons {
+                if btn.enabled && btn.contains(mouse_x, mouse_y) {
+                    match btn.id {
+                        21 => {
+                            let addr = self.add_address_input.text.trim().to_string();
+                            if !addr.is_empty() {
+                                let mut name = self.add_name_input.text.trim().to_string();
+                                if name.is_empty() {
+                                    name = "Voxel Server".to_string();
+                                }
+                                let mut group = self.add_group_input.text.trim().to_string();
+                                if group.is_empty() {
+                                    group = "Custom Servers".to_string();
+                                }
+
+                                if !self.groups.iter().any(|g| g.name == group) {
+                                    self.groups.push(ServerGroup::new(&group, false));
+                                }
+
+                                let new_server = ServerEntry::new(
+                                    name,
+                                    addr,
+                                    "Custom Server",
+                                    0,
+                                    0,
+                                    false,
+                                )
+                                .with_group(group);
+
+                                self.servers.push(new_server);
+                                self.selected_index = Some(self.servers.len() - 1);
+                                self.add_server_mode = false;
+                                return Some(ServerListAction::ServersModified);
+                            }
+                        }
+                        22 => {
+                            self.add_server_mode = false;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            return None;
+        }
+
+        // 1. Check card list clicks and group header toggles
         let list_top_gui = 32.0f32;
         let list_bottom_gui = height_gui - 52.0f32;
         let card_w_gui = 300.0f32.min(width_gui - 20.0);
-        let card_h_gui = 36.0f32;
         let card_x_gui = (width_gui - card_w_gui) / 2.0;
 
         if mouse_x >= card_x_gui
@@ -227,13 +581,38 @@ impl ServerListScreen {
             && mouse_y >= list_top_gui
             && mouse_y <= list_bottom_gui
         {
-            let mut current_y = list_top_gui - self.scroll_offset;
-            for i in 0..self.servers.len() {
-                if mouse_y >= current_y && mouse_y <= current_y + card_h_gui {
-                    self.select_server(i);
-                    break;
+            let layout_items = self.compute_list_layout(list_top_gui);
+            for item in layout_items {
+                match item {
+                    ServerListItem::GroupHeader {
+                        group_idx,
+                        y,
+                        height,
+                        ..
+                    } => {
+                        if mouse_y >= y && mouse_y <= y + height {
+                            if let Some(group) = self.groups.get_mut(group_idx) {
+                                group.collapsed = !group.collapsed;
+                                return Some(ServerListAction::ServersModified);
+                            }
+                            break;
+                        }
+                    }
+                    ServerListItem::ServerCard {
+                        server_idx,
+                        y,
+                        height,
+                    } => {
+                        if mouse_y >= y && mouse_y <= y + height {
+                            self.select_server(server_idx);
+                            // Initiate drag state
+                            self.dragging_index = Some(server_idx);
+                            self.drag_start_y = mouse_y;
+                            self.drag_mouse_y = mouse_y;
+                            break;
+                        }
+                    }
                 }
-                current_y += card_h_gui + 4.0;
             }
         }
 
@@ -252,6 +631,16 @@ impl ServerListScreen {
                         self.direct_connect_focused = true;
                     }
                     3 => {
+                        self.add_server_mode = true;
+                        self.add_name_input.text.clear();
+                        self.add_name_input.cursor_pos = 0;
+                        self.add_name_input.focused = true;
+                        self.add_address_input.text.clear();
+                        self.add_address_input.cursor_pos = 0;
+                        self.add_group_input.text = "Custom Servers".to_string();
+                        self.add_group_input.cursor_pos = self.add_group_input.text.len();
+                    }
+                    4 => {
                         return Some(ServerListAction::Cancel);
                     }
                     _ => {}
@@ -262,28 +651,68 @@ impl ServerListScreen {
         None
     }
 
-    /// Handles typed characters into the direct connect input box.
+    /// Handles typed characters into active input boxes.
     pub fn handle_char(&mut self, ch: char) {
         if self.direct_connect_mode && self.direct_input.focused {
             self.direct_input.insert_char(ch);
             self.direct_connect_address = self.direct_input.text.clone();
+        } else if self.add_server_mode {
+            if self.add_name_input.focused {
+                self.add_name_input.insert_char(ch);
+            } else if self.add_address_input.focused {
+                self.add_address_input.insert_char(ch);
+            } else if self.add_group_input.focused {
+                self.add_group_input.insert_char(ch);
+            }
         }
     }
 
-    /// Handles backspace in the direct connect input box.
+    /// Handles backspace in active input boxes.
     pub fn handle_backspace(&mut self) {
         if self.direct_connect_mode && self.direct_input.focused {
             self.direct_input.backspace();
             self.direct_connect_address = self.direct_input.text.clone();
+        } else if self.add_server_mode {
+            if self.add_name_input.focused {
+                self.add_name_input.backspace();
+            } else if self.add_address_input.focused {
+                self.add_address_input.backspace();
+            } else if self.add_group_input.focused {
+                self.add_group_input.backspace();
+            }
         }
     }
 
-    /// Handles Enter key, connecting to selected server or direct input.
+    /// Handles Enter key, confirming connection or adding server.
     pub fn handle_enter(&mut self) -> Option<ServerListAction> {
         if self.direct_connect_mode {
             let text = self.direct_input.text.trim().to_string();
             if !text.is_empty() {
                 return Some(ServerListAction::Connect(text));
+            }
+        } else if self.add_server_mode {
+            let addr = self.add_address_input.text.trim().to_string();
+            if !addr.is_empty() {
+                let mut name = self.add_name_input.text.trim().to_string();
+                if name.is_empty() {
+                    name = "Voxel Server".to_string();
+                }
+                let mut group = self.add_group_input.text.trim().to_string();
+                if group.is_empty() {
+                    group = "Custom Servers".to_string();
+                }
+
+                if !self.groups.iter().any(|g| g.name == group) {
+                    self.groups.push(ServerGroup::new(&group, false));
+                }
+
+                let new_server =
+                    ServerEntry::new(name, addr, "Custom Server", 0, 0, false).with_group(group);
+
+                self.servers.push(new_server);
+                self.selected_index = Some(self.servers.len() - 1);
+                self.add_server_mode = false;
+                return Some(ServerListAction::ServersModified);
             }
         } else if let Some(server) = self.selected_server() {
             return Some(ServerListAction::Connect(server.address.clone()));
@@ -299,7 +728,12 @@ impl ServerListScreen {
             existing.max_players = entry.max_players;
             existing.ping_ms = entry.ping_ms;
         } else {
-            self.servers.push(entry);
+            let mut new_entry = entry;
+            new_entry.group = "LAN Worlds".to_string();
+            if !self.groups.iter().any(|g| g.name == "LAN Worlds") {
+                self.groups.push(ServerGroup::new("LAN Worlds", false));
+            }
+            self.servers.push(new_entry);
             if self.selected_index.is_none() {
                 self.selected_index = Some(0);
             }
@@ -328,6 +762,45 @@ impl ServerListScreen {
             self.selected_index = self.servers.len().checked_sub(1);
         }
     }
+
+    /// Loads custom servers and group configurations from a JSON file.
+    pub fn load_from_file(&mut self, path: impl AsRef<Path>) -> Result<(), std::io::Error> {
+        let path_ref = path.as_ref();
+        if !path_ref.is_file() {
+            return Ok(());
+        }
+        let content = std::fs::read_to_string(path_ref)?;
+        if let Ok(data) = serde_json::from_str::<SavedServerList>(&content) {
+            if !data.groups.is_empty() {
+                self.groups = data.groups;
+            }
+            let lan_servers: Vec<ServerEntry> =
+                self.servers.drain(..).filter(|s| s.is_lan).collect();
+            self.servers = data.servers;
+            self.servers.extend(lan_servers);
+            if !self.servers.is_empty() && self.selected_index.is_none() {
+                self.selected_index = Some(0);
+            }
+        }
+        Ok(())
+    }
+
+    /// Saves custom (non-LAN) servers and group states to a JSON file.
+    pub fn save_to_file(&self, path: impl AsRef<Path>) -> Result<(), std::io::Error> {
+        let path_ref = path.as_ref();
+        let custom_servers: Vec<ServerEntry> =
+            self.servers.iter().filter(|s| !s.is_lan).cloned().collect();
+        let store = SavedServerList {
+            groups: self.groups.clone(),
+            servers: custom_servers,
+        };
+        let json = serde_json::to_string_pretty(&store)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        if let Some(parent) = path_ref.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(path_ref, json)
+    }
 }
 
 /// Renders the multiplayer server list screen into the output `UiQuad` buffer.
@@ -355,6 +828,64 @@ pub fn render_server_list(
         [screen_w as u16, screen_h as u16],
         UiQuad::rgba(16, 16, 16, 235),
     ));
+
+    if screen.add_server_mode {
+        // Add Server Mode View
+        let title = "Add Server";
+        let (title_w, _) = font.measure_text(title);
+        let title_x = (screen_w_gui - title_w) / 2.0;
+        font.layout_text(
+            title,
+            title_x,
+            screen_h_gui * 0.16,
+            UiQuad::rgba(255, 255, 255, 255),
+            true,
+            scale,
+            out,
+        );
+
+        let lbl1 = "Server Name:";
+        font.layout_text(
+            lbl1,
+            screen.add_name_input.x,
+            screen.add_name_input.y - 12.0,
+            UiQuad::rgba(180, 180, 180, 255),
+            true,
+            scale,
+            out,
+        );
+        screen.add_name_input.render(font, scale, 0, out);
+
+        let lbl2 = "Server Address:";
+        font.layout_text(
+            lbl2,
+            screen.add_address_input.x,
+            screen.add_address_input.y - 12.0,
+            UiQuad::rgba(180, 180, 180, 255),
+            true,
+            scale,
+            out,
+        );
+        screen.add_address_input.render(font, scale, 0, out);
+
+        let lbl3 = "Server Group:";
+        font.layout_text(
+            lbl3,
+            screen.add_group_input.x,
+            screen.add_group_input.y - 12.0,
+            UiQuad::rgba(180, 180, 180, 255),
+            true,
+            scale,
+            out,
+        );
+        screen.add_group_input.render(font, scale, 0, out);
+
+        for btn in &screen.add_buttons {
+            btn.render(font, scale, out);
+        }
+
+        return;
+    }
 
     if screen.direct_connect_mode {
         // Direct Connect View
@@ -411,12 +942,11 @@ pub fn render_server_list(
     let list_top_gui = 32.0f32;
     let list_bottom_gui = screen_h_gui - 52.0f32;
     let card_w_gui = 300.0f32.min(screen_w_gui - 20.0);
-    let card_h_gui = 36.0f32;
     let card_x_gui = (screen_w_gui - card_w_gui) / 2.0;
 
-    let mut current_y = list_top_gui - screen.scroll_offset;
+    let layout_items = screen.compute_list_layout(list_top_gui);
 
-    if screen.servers.is_empty() {
+    if layout_items.is_empty() {
         let msg = "Scanning for LAN games...";
         let (msg_w, _) = font.measure_text(msg);
         let msg_x = (screen_w_gui - msg_w) / 2.0;
@@ -430,150 +960,192 @@ pub fn render_server_list(
             out,
         );
     } else {
-        for (i, server) in screen.servers.iter().enumerate() {
-            if current_y + card_h_gui < list_top_gui {
-                current_y += card_h_gui + 4.0;
-                continue;
+        for item in layout_items {
+            match item {
+                ServerListItem::GroupHeader {
+                    name,
+                    collapsed,
+                    count,
+                    y,
+                    height,
+                    ..
+                } => {
+                    if y + height < list_top_gui || y > list_bottom_gui {
+                        continue;
+                    }
+                    let phys_x = snap_to_physical(card_x_gui, scale);
+                    let phys_y = snap_to_physical(y, scale);
+                    let phys_w = (card_w_gui * scale as f32).round() as u16;
+                    let phys_h = (height * scale as f32).round() as u16;
+
+                    // Group header bar
+                    out.push(UiQuad::solid(
+                        [phys_x, phys_y],
+                        [phys_w, phys_h],
+                        UiQuad::rgba(35, 42, 58, 220),
+                    ));
+                    out.push(UiQuad::solid(
+                        [phys_x, phys_y],
+                        [phys_w, scale as u16],
+                        UiQuad::rgba(60, 75, 100, 255),
+                    ));
+
+                    let icon = if collapsed { "▶ " } else { "▼ " };
+                    let header_text = format!("{icon}{name} ({count})");
+                    font.layout_text(
+                        &header_text,
+                        card_x_gui + 6.0,
+                        y + 5.0,
+                        UiQuad::rgba(220, 230, 255, 255),
+                        true,
+                        scale,
+                        out,
+                    );
+
+                    let toggle_hint = if collapsed { "Click to expand" } else { "Click to collapse" };
+                    let (th_w, _) = font.measure_text(toggle_hint);
+                    font.layout_text(
+                        toggle_hint,
+                        card_x_gui + card_w_gui - th_w - 6.0,
+                        y + 5.0,
+                        UiQuad::rgba(130, 140, 165, 255),
+                        true,
+                        scale,
+                        out,
+                    );
+                }
+                ServerListItem::ServerCard {
+                    server_idx,
+                    y,
+                    height,
+                } => {
+                    let Some(server) = screen.servers.get(server_idx) else {
+                        continue;
+                    };
+
+                    let is_being_dragged = screen.dragging_index == Some(server_idx);
+                    let effective_y = if is_being_dragged {
+                        y + (screen.drag_mouse_y - screen.drag_start_y)
+                    } else {
+                        y
+                    };
+
+                    if effective_y + height < list_top_gui || effective_y > list_bottom_gui {
+                        continue;
+                    }
+
+                    let is_selected = screen.selected_index == Some(server_idx);
+
+                    let phys_x = snap_to_physical(card_x_gui, scale);
+                    let phys_y = snap_to_physical(effective_y, scale);
+                    let phys_w = (card_w_gui * scale as f32).round() as u16;
+                    let phys_h = (height * scale as f32).round() as u16;
+
+                    // If dragged, draw elevated shadow underneath
+                    if is_being_dragged {
+                        out.push(UiQuad::solid(
+                            [phys_x + (3 * scale as i32), phys_y + (4 * scale as i32)],
+                            [phys_w, phys_h],
+                            UiQuad::rgba(0, 0, 0, 90),
+                        ));
+                    }
+
+                    // Card background
+                    let bg_color = if is_being_dragged {
+                        UiQuad::rgba(55, 75, 120, 240)
+                    } else if is_selected {
+                        UiQuad::rgba(40, 50, 80, 220)
+                    } else {
+                        UiQuad::rgba(25, 25, 25, 200)
+                    };
+                    out.push(UiQuad::solid([phys_x, phys_y], [phys_w, phys_h], bg_color));
+
+                    if is_selected || is_being_dragged {
+                        let border_col = if is_being_dragged {
+                            UiQuad::rgba(255, 230, 100, 255)
+                        } else {
+                            UiQuad::rgba(255, 255, 255, 255)
+                        };
+                        out.push(UiQuad::solid([phys_x, phys_y], [phys_w, scale as u16], border_col));
+                        out.push(UiQuad::solid(
+                            [phys_x, phys_y + i32::from(phys_h) - scale.cast_signed()],
+                            [phys_w, scale as u16],
+                            border_col,
+                        ));
+                    }
+
+                    // Drag grip handle icon "≡"
+                    let grip = if is_being_dragged { "§6≡" } else { "§7≡" };
+                    font.layout_text(
+                        grip,
+                        card_x_gui + 4.0,
+                        effective_y + 10.0,
+                        UiQuad::rgba(200, 200, 200, 255),
+                        true,
+                        scale,
+                        out,
+                    );
+
+                    // Server title + LAN badge
+                    let mut name_text = server.name.clone();
+                    if server.is_lan {
+                        name_text.push_str(" §a[LAN]");
+                    }
+                    font.layout_text(
+                        &name_text,
+                        card_x_gui + 14.0,
+                        effective_y + 4.0,
+                        UiQuad::rgba(255, 255, 255, 255),
+                        true,
+                        scale,
+                        out,
+                    );
+
+                    // Server MOTD
+                    font.layout_text(
+                        &server.motd,
+                        card_x_gui + 14.0,
+                        effective_y + 16.0,
+                        UiQuad::rgba(180, 180, 180, 255),
+                        true,
+                        scale,
+                        out,
+                    );
+
+                    // Player count (right aligned)
+                    let player_text = format!("{}/{}", server.current_players, server.max_players);
+                    let (pw, _) = font.measure_text(&player_text);
+                    font.layout_text(
+                        &player_text,
+                        card_x_gui + card_w_gui - pw - 6.0,
+                        effective_y + 4.0,
+                        UiQuad::rgba(180, 180, 180, 255),
+                        true,
+                        scale,
+                        out,
+                    );
+
+                    // Ping text
+                    let ping_text = server
+                        .ping_ms
+                        .map_or_else(|| "---".to_string(), |p| format!("{p}ms"));
+                    let (ping_w, _) = font.measure_text(&ping_text);
+                    font.layout_text(
+                        &ping_text,
+                        card_x_gui + card_w_gui - ping_w - 6.0,
+                        effective_y + 16.0,
+                        UiQuad::rgba(85, 255, 85, 255),
+                        true,
+                        scale,
+                        out,
+                    );
+                }
             }
-            if current_y > list_bottom_gui {
-                break;
-            }
-
-            let is_selected = screen.selected_index == Some(i);
-
-            let phys_x = snap_to_physical(card_x_gui, scale);
-            let phys_y = snap_to_physical(current_y, scale);
-            let phys_w = (card_w_gui * scale as f32).round() as u16;
-            let phys_h = (card_h_gui * scale as f32).round() as u16;
-
-            // Card background and selection border
-            let bg_color = if is_selected {
-                UiQuad::rgba(40, 50, 80, 220)
-            } else {
-                UiQuad::rgba(25, 25, 25, 200)
-            };
-            out.push(UiQuad::solid([phys_x, phys_y], [phys_w, phys_h], bg_color));
-
-            if is_selected {
-                out.push(UiQuad::solid(
-                    [phys_x, phys_y],
-                    [phys_w, scale as u16],
-                    UiQuad::rgba(255, 255, 255, 255),
-                ));
-                out.push(UiQuad::solid(
-                    [phys_x, phys_y + i32::from(phys_h) - scale.cast_signed()],
-                    [phys_w, scale as u16],
-                    UiQuad::rgba(255, 255, 255, 255),
-                ));
-            }
-
-            // Server title + LAN badge
-            let mut name_text = server.name.clone();
-            if server.is_lan {
-                name_text.push_str(" §a[LAN]");
-            }
-            font.layout_text(
-                &name_text,
-                card_x_gui + 4.0,
-                current_y + 4.0,
-                UiQuad::rgba(255, 255, 255, 255),
-                true,
-                scale,
-                out,
-            );
-
-            // Server MOTD
-            font.layout_text(
-                &server.motd,
-                card_x_gui + 4.0,
-                current_y + 16.0,
-                UiQuad::rgba(180, 180, 180, 255),
-                true,
-                scale,
-                out,
-            );
-
-            // Player count (right aligned)
-            let player_text = format!("{}/{}", server.current_players, server.max_players);
-            let (pw, _) = font.measure_text(&player_text);
-            font.layout_text(
-                &player_text,
-                card_x_gui + card_w_gui - pw - 6.0,
-                current_y + 4.0,
-                UiQuad::rgba(180, 180, 180, 255),
-                true,
-                scale,
-                out,
-            );
-
-            // Ping text
-            let ping_text = server
-                .ping_ms
-                .map_or_else(|| "---".to_string(), |p| format!("{p}ms"));
-            let (ping_w, _) = font.measure_text(&ping_text);
-            font.layout_text(
-                &ping_text,
-                card_x_gui + card_w_gui - ping_w - 6.0,
-                current_y + 16.0,
-                UiQuad::rgba(85, 255, 85, 255),
-                true,
-                scale,
-                out,
-            );
-
-            current_y += card_h_gui + 4.0;
         }
     }
 
     // 4. Bottom action buttons
-    if screen.buttons.is_empty() {
-        // Fallback default buttons if update_layout wasn't called before render
-        let btn_y = screen_h_gui - 36.0;
-        let btn_w = 90.0f32;
-        let btn_h = 20.0f32;
-        let total_btns_w = (btn_w * 3.0) + (8.0 * 2.0);
-        let start_btn_x = (screen_w_gui - total_btns_w) / 2.0;
-
-        let buttons = ["Join Server", "Direct Connect", "Cancel"];
-        for (i, btn_label) in buttons.iter().enumerate() {
-            let bx = start_btn_x + (i as f32 * (btn_w + 8.0));
-            let phys_bx = snap_to_physical(bx, scale);
-            let phys_by = snap_to_physical(btn_y, scale);
-            let phys_bw = (btn_w * scale as f32).round() as u16;
-            let phys_bh = (btn_h * scale as f32).round() as u16;
-
-            let has_sel = screen.selected_index.is_some() || i > 0;
-            let btn_bg = if has_sel {
-                UiQuad::rgba(60, 60, 60, 255)
-            } else {
-                UiQuad::rgba(35, 35, 35, 255)
-            };
-
-            out.push(UiQuad::solid(
-                [phys_bx, phys_by],
-                [phys_bw, phys_bh],
-                btn_bg,
-            ));
-            out.push(UiQuad::solid(
-                [phys_bx, phys_by],
-                [phys_bw, scale as u16],
-                UiQuad::rgba(120, 120, 120, 255),
-            ));
-
-            let (lw, _) = font.measure_text(btn_label);
-            let tx = bx + ((btn_w - lw) / 2.0);
-            let ty = btn_y + ((btn_h - 9.0) / 2.0);
-            let text_color = if has_sel {
-                UiQuad::rgba(255, 255, 255, 255)
-            } else {
-                UiQuad::rgba(120, 120, 120, 255)
-            };
-
-            font.layout_text(btn_label, tx, ty, text_color, true, scale, out);
-        }
-    } else {
-        for btn in &screen.buttons {
-            btn.render(font, scale, out);
-        }
+    for btn in &screen.buttons {
+        btn.render(font, scale, out);
     }
 }

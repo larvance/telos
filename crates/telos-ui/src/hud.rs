@@ -86,6 +86,10 @@ pub struct UiLayers {
     pub slider_handle_uv: [f32; 4],
     /// Slider handle highlighted sprite UV bounds `[u0, v0, u1, v1]`.
     pub slider_handle_highlighted_uv: [f32; 4],
+    /// Main menu long logo banner texture layer.
+    pub logo: u32,
+    /// Main menu long logo banner UV bounds `[u0, v0, u1, v1]`.
+    pub logo_uv: [f32; 4],
 }
 
 impl Default for UiLayers {
@@ -130,6 +134,8 @@ impl Default for UiLayers {
             slider_handle_highlighted_uv: [8.0 / 256.0, 100.0 / 256.0, 16.0 / 256.0, 120.0 / 256.0],
             anvil_bg: 12,
             anvil_bg_uv: [0.0, 0.0, 176.0 / 256.0, 166.0 / 256.0],
+            logo: 12,
+            logo_uv: [0.0, 0.0, 1.0, 64.0 / 256.0],
         }
     }
 }

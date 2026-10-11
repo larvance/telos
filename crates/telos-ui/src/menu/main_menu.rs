@@ -1,8 +1,10 @@
 //! Title main menu screen with logo banner, animated splash text, and navigation buttons.
 
 use crate::font::BitmapFont;
+use crate::hud::UiLayers;
 use crate::menu::widgets::MenuButton;
 use crate::quad::UiQuad;
+use crate::scale::snap_to_physical;
 use telos_core::i18n::LanguageCatalog;
 
 /// Action triggered by user clicking a button on the main menu.
@@ -132,9 +134,32 @@ impl MainMenuScreen {
         None
     }
 
-    /// Renders the title banner, animated splash, buttons, and version footer to `out`.
+    /// Renders the title banner, animated splash, buttons, and version footer using default layers.
     pub fn render(
         &self,
+        font: &BitmapFont,
+        width_gui: f32,
+        height_gui: f32,
+        scale: u32,
+        tick: u64,
+        out: &mut Vec<UiQuad>,
+    ) {
+        self.render_with_layers(
+            &UiLayers::default(),
+            font,
+            width_gui,
+            height_gui,
+            scale,
+            tick,
+            out,
+        );
+    }
+
+    /// Renders the title banner, animated splash, buttons, and version footer to `out`.
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+    pub fn render_with_layers(
+        &self,
+        layers: &UiLayers,
         font: &BitmapFont,
         width_gui: f32,
         height_gui: f32,
@@ -151,20 +176,25 @@ impl MainMenuScreen {
             UiQuad::rgba(0, 0, 0, 75),
         ));
 
-        // Large stylized title "TELOS"
-        let title = "§6§lT E L O S";
-        let (tw, th) = font.measure_text(title);
-        let title_x = (width_gui - tw) * 0.5;
-        let title_y = height_gui * 0.22;
-        font.layout_text(
-            title,
-            title_x,
-            title_y,
-            UiQuad::rgba(255, 215, 0, 255),
-            true,
-            scale,
-            out,
-        );
+        // Long stylized logo banner "TELOS"
+        let logo_w = 260.0f32.min(width_gui - 32.0);
+        let logo_h = logo_w * (64.0 / 256.0);
+        let logo_x = (width_gui - logo_w) * 0.5;
+        let logo_y = height_gui * 0.14;
+
+        let phys_lx = snap_to_physical(logo_x, scale);
+        let phys_ly = snap_to_physical(logo_y, scale);
+        let phys_lw = (logo_w * scale as f32).round() as u16;
+        let phys_lh = (logo_h * scale as f32).round() as u16;
+
+        out.push(UiQuad::sprite(
+            [phys_lx, phys_ly],
+            [phys_lw, phys_lh],
+            [layers.logo_uv[0], layers.logo_uv[1]],
+            [layers.logo_uv[2], layers.logo_uv[3]],
+            layers.logo,
+            UiQuad::rgba(255, 255, 255, 255),
+        ));
 
         // Subtitle
         let subtitle = "§7Rust & Vulkan 1.3 Voxel Engine";
@@ -172,7 +202,7 @@ impl MainMenuScreen {
         font.layout_text(
             subtitle,
             (width_gui - sw) * 0.5,
-            title_y + th + 4.0,
+            logo_y + logo_h + 4.0,
             UiQuad::rgba(180, 180, 190, 255),
             true,
             scale,
@@ -182,20 +212,19 @@ impl MainMenuScreen {
         // Animated pulsing splash text
         let pulse = ((tick as f32 * 0.1).sin() * 2.0).round();
         let splash = format!("§e* {} *", self.splash_text);
-        let (_sp_w, _) = font.measure_text(&splash);
         font.layout_text(
             &splash,
-            title_x + tw - 20.0,
-            title_y + th + 18.0 + pulse,
+            logo_x + logo_w - 32.0,
+            logo_y + logo_h - 4.0 + pulse,
             UiQuad::rgba(255, 255, 80, 255),
             true,
             scale,
             out,
         );
 
-        // Render buttons
+        // Render buttons with texture and hover animation
         for btn in &self.buttons {
-            btn.render(font, scale, out);
+            btn.render_animated(layers, font, scale, tick, out);
         }
 
         // Version & platform footer
