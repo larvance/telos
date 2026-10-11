@@ -70,6 +70,22 @@ pub struct UiLayers {
     pub anvil_bg: u32,
     /// Anvil container background UV bounds `[u0, v0, u1, v1]`.
     pub anvil_bg_uv: [f32; 4],
+    /// Standard widget buttons and sliders texture layer.
+    pub button: u32,
+    /// Button normal sprite UV bounds `[u0, v0, u1, v1]`.
+    pub button_normal_uv: [f32; 4],
+    /// Button highlighted (hovered) sprite UV bounds `[u0, v0, u1, v1]`.
+    pub button_highlighted_uv: [f32; 4],
+    /// Button disabled sprite UV bounds `[u0, v0, u1, v1]`.
+    pub button_disabled_uv: [f32; 4],
+    /// Slider track sprite UV bounds `[u0, v0, u1, v1]`.
+    pub slider_track_uv: [f32; 4],
+    /// Slider track highlighted sprite UV bounds `[u0, v0, u1, v1]`.
+    pub slider_track_highlighted_uv: [f32; 4],
+    /// Slider handle sprite UV bounds `[u0, v0, u1, v1]`.
+    pub slider_handle_uv: [f32; 4],
+    /// Slider handle highlighted sprite UV bounds `[u0, v0, u1, v1]`.
+    pub slider_handle_highlighted_uv: [f32; 4],
 }
 
 impl Default for UiLayers {
@@ -104,7 +120,15 @@ impl Default for UiLayers {
             advancement_window_uv: [0.0, 0.0, 252.0 / 256.0, 140.0 / 256.0],
             toast_bg: 10,
             toast_bg_uv: [0.0, 0.0, 160.0 / 256.0, 32.0 / 256.0],
-            anvil_bg: 11,
+            button: 11,
+            button_normal_uv: [0.0 / 256.0, 0.0 / 256.0, 200.0 / 256.0, 20.0 / 256.0],
+            button_highlighted_uv: [0.0 / 256.0, 20.0 / 256.0, 200.0 / 256.0, 40.0 / 256.0],
+            button_disabled_uv: [0.0 / 256.0, 40.0 / 256.0, 200.0 / 256.0, 60.0 / 256.0],
+            slider_track_uv: [0.0 / 256.0, 60.0 / 256.0, 200.0 / 256.0, 80.0 / 256.0],
+            slider_track_highlighted_uv: [0.0 / 256.0, 80.0 / 256.0, 200.0 / 256.0, 100.0 / 256.0],
+            slider_handle_uv: [0.0 / 256.0, 100.0 / 256.0, 8.0 / 256.0, 120.0 / 256.0],
+            slider_handle_highlighted_uv: [8.0 / 256.0, 100.0 / 256.0, 16.0 / 256.0, 120.0 / 256.0],
+            anvil_bg: 12,
             anvil_bg_uv: [0.0, 0.0, 176.0 / 256.0, 166.0 / 256.0],
         }
     }

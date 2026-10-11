@@ -12044,11 +12044,12 @@ fn load_and_upload_textures_gl(
 #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
     const UI_RES: u32 = 256;
+    const LAYER_COUNT: u32 = 12;
 
     let mut stack = ResourcePackStack::new();
     mount_asset_roots(&mut stack);
 
-    let mut pixel_data = vec![0u8; (UI_RES * UI_RES * 4 * 11) as usize];
+    let mut pixel_data = vec![0u8; (UI_RES * UI_RES * 4 * LAYER_COUNT) as usize];
 
     // Helper to copy a sub-image into a 256x256 layer at specified offset
     let copy_to_layer_at = |dest: &mut [u8],
@@ -12637,7 +12638,142 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
     };
     copy_to_layer_at(&mut pixel_data, 10, 0, 0, &toast_bg_img);
 
-    let regions: Vec<TextureMipRegion> = (0..11)
+    // Layer 11: Widget Buttons and Sliders (200x20 sprites and 8x20 handles)
+    let button_img = stack.load_gui_sprite("widget/button").unwrap_or_else(|_| {
+        let mut img = telos_assets::RgbaImage::new(200, 20);
+        for y in 0..20 {
+            for x in 0..200 {
+                let idx = ((y * 200 + x) * 4) as usize;
+                let is_outer = x == 0 || x == 199 || y == 0 || y == 19;
+                let is_top_left = x == 1 || y == 1;
+                let is_bottom_right = x == 198 || y == 18;
+                let (r, g, b) = if is_outer {
+                    (0, 0, 0)
+                } else if is_top_left {
+                    (170, 170, 170)
+                } else if is_bottom_right {
+                    (82, 82, 82)
+                } else {
+                    (112, 112, 112)
+                };
+                img.data[idx] = r;
+                img.data[idx + 1] = g;
+                img.data[idx + 2] = b;
+                img.data[idx + 3] = 255;
+            }
+        }
+        img
+    });
+    let button_img = ensure_size(button_img, 200, 20);
+    copy_to_layer_at(&mut pixel_data, 11, 0, 0, &button_img);
+
+    let button_highlighted_img = stack
+        .load_gui_sprite("widget/button_highlighted")
+        .unwrap_or_else(|_| {
+            let mut img = telos_assets::RgbaImage::new(200, 20);
+            for y in 0..20 {
+                for x in 0..200 {
+                    let idx = ((y * 200 + x) * 4) as usize;
+                    let is_outer = x == 0 || x == 199 || y == 0 || y == 19;
+                    let is_top_left = x == 1 || y == 1;
+                    let is_bottom_right = x == 198 || y == 18;
+                    let (r, g, b) = if is_outer {
+                        (255, 255, 255)
+                    } else if is_top_left {
+                        (190, 190, 210)
+                    } else if is_bottom_right {
+                        (90, 90, 100)
+                    } else {
+                        (130, 130, 140)
+                    };
+                    img.data[idx] = r;
+                    img.data[idx + 1] = g;
+                    img.data[idx + 2] = b;
+                    img.data[idx + 3] = 255;
+                }
+            }
+            img
+        });
+    let button_highlighted_img = ensure_size(button_highlighted_img, 200, 20);
+    copy_to_layer_at(&mut pixel_data, 11, 0, 20, &button_highlighted_img);
+
+    let button_disabled_img = stack
+        .load_gui_sprite("widget/button_disabled")
+        .unwrap_or_else(|_| {
+            let mut img = telos_assets::RgbaImage::new(200, 20);
+            for y in 0..20 {
+                for x in 0..200 {
+                    let idx = ((y * 200 + x) * 4) as usize;
+                    let is_outer = x == 0 || x == 199 || y == 0 || y == 19;
+                    let (r, g, b) = if is_outer { (20, 20, 20) } else { (50, 50, 50) };
+                    img.data[idx] = r;
+                    img.data[idx + 1] = g;
+                    img.data[idx + 2] = b;
+                    img.data[idx + 3] = 255;
+                }
+            }
+            img
+        });
+    let button_disabled_img = ensure_size(button_disabled_img, 200, 20);
+    copy_to_layer_at(&mut pixel_data, 11, 0, 40, &button_disabled_img);
+
+    let slider_img = stack
+        .load_gui_sprite("widget/slider")
+        .unwrap_or_else(|_| button_img.clone());
+    let slider_img = ensure_size(slider_img, 200, 20);
+    copy_to_layer_at(&mut pixel_data, 11, 0, 60, &slider_img);
+
+    let slider_highlighted_img = stack
+        .load_gui_sprite("widget/slider_highlighted")
+        .unwrap_or_else(|_| button_highlighted_img.clone());
+    let slider_highlighted_img = ensure_size(slider_highlighted_img, 200, 20);
+    copy_to_layer_at(&mut pixel_data, 11, 0, 80, &slider_highlighted_img);
+
+    let slider_handle_img = stack
+        .load_gui_sprite("widget/slider_handle")
+        .unwrap_or_else(|_| {
+            let mut img = telos_assets::RgbaImage::new(8, 20);
+            for y in 0..20 {
+                for x in 0..8 {
+                    let idx = ((y * 8 + x) * 4) as usize;
+                    let is_outer = x == 0 || x == 7 || y == 0 || y == 19;
+                    let (r, g, b) = if is_outer { (0, 0, 0) } else { (180, 180, 180) };
+                    img.data[idx] = r;
+                    img.data[idx + 1] = g;
+                    img.data[idx + 2] = b;
+                    img.data[idx + 3] = 255;
+                }
+            }
+            img
+        });
+    let slider_handle_img = ensure_size(slider_handle_img, 8, 20);
+    copy_to_layer_at(&mut pixel_data, 11, 0, 100, &slider_handle_img);
+
+    let slider_handle_highlighted_img = stack
+        .load_gui_sprite("widget/slider_handle_highlighted")
+        .unwrap_or_else(|_| {
+            let mut img = telos_assets::RgbaImage::new(8, 20);
+            for y in 0..20 {
+                for x in 0..8 {
+                    let idx = ((y * 8 + x) * 4) as usize;
+                    let is_outer = x == 0 || x == 7 || y == 0 || y == 19;
+                    let (r, g, b) = if is_outer {
+                        (255, 255, 255)
+                    } else {
+                        (220, 220, 220)
+                    };
+                    img.data[idx] = r;
+                    img.data[idx + 1] = g;
+                    img.data[idx + 2] = b;
+                    img.data[idx + 3] = 255;
+                }
+            }
+            img
+        });
+    let slider_handle_highlighted_img = ensure_size(slider_handle_highlighted_img, 8, 20);
+    copy_to_layer_at(&mut pixel_data, 11, 8, 100, &slider_handle_highlighted_img);
+
+    let regions: Vec<TextureMipRegion> = (0..LAYER_COUNT)
         .map(|layer| TextureMipRegion {
             buffer_offset: u64::from(layer * UI_RES * UI_RES * 4),
             layer,
@@ -12652,11 +12788,13 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
 
 fn load_and_upload_ui_textures(gpu_context: &GpuContext) -> Result<(GpuTextureArray, BitmapFont)> {
     const UI_RES: u32 = 256;
+    const LAYER_COUNT: u32 = 12;
     let (pixel_data, regions, font) = bake_ui_textures();
-    let texture_array = gpu_context.create_texture_array(UI_RES, 11, 1, &pixel_data, &regions)?;
+    let texture_array =
+        gpu_context.create_texture_array(UI_RES, LAYER_COUNT, 1, &pixel_data, &regions)?;
 
     info!(
-        "UI texture array loaded (11 layers, 256x256, font baked, survival icons, inventory background, item icons, furnace GUI, crafting table GUI, advancements window, toast banner)"
+        "UI texture array loaded (12 layers, 256x256, font baked, survival icons, inventory background, item icons, furnace GUI, crafting table GUI, advancements window, toast banner, widget buttons & sliders)"
     );
 
     Ok((texture_array, font))
@@ -12666,8 +12804,10 @@ fn load_and_upload_ui_textures_gl(
     gl: &Arc<glow::Context>,
 ) -> Result<(telos_gpu::opengl::GlTextureArray, BitmapFont)> {
     const UI_RES: u32 = 256;
+    const LAYER_COUNT: u32 = 12;
     let (pixel_data, regions, font) = bake_ui_textures();
-    let gl_array = telos_gpu::opengl::GlTextureArray::new(gl.clone(), UI_RES, UI_RES, 11, 1)?;
+    let gl_array =
+        telos_gpu::opengl::GlTextureArray::new(gl.clone(), UI_RES, UI_RES, LAYER_COUNT, 1)?;
 
     for r in &regions {
         let start = r.buffer_offset as usize;

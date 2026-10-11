@@ -1,6 +1,7 @@
 //! Reusable pure-CPU menu widgets for title, settings, and modal screens.
 
 use crate::font::BitmapFont;
+use crate::hud::UiLayers;
 use crate::quad::UiQuad;
 use crate::scale::snap_to_physical;
 
@@ -72,112 +73,97 @@ impl MenuButton {
             && mouse_y <= self.y + self.height
     }
 
-    /// Renders the button to the `UiQuad` output draw list.
+    /// Renders the button to the `UiQuad` output draw list using default UI asset layers.
     #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
     pub fn render(&self, font: &BitmapFont, scale: u32, out: &mut Vec<UiQuad>) {
+        self.render_with_layers(&UiLayers::default(), font, scale, out);
+    }
+
+    /// Renders the button using 9-slice scalable sprite assets and text to `out`.
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+    pub fn render_with_layers(
+        &self,
+        layers: &UiLayers,
+        font: &BitmapFont,
+        scale: u32,
+        out: &mut Vec<UiQuad>,
+    ) {
         let px_x = snap_to_physical(self.x, scale);
         let px_y = snap_to_physical(self.y, scale);
         let px_w = snap_to_physical(self.width, scale) as u16;
         let px_h = snap_to_physical(self.height, scale) as u16;
-        let border_th = scale.max(1) as u16;
+        let gui_scale = scale.max(1);
 
-        let (bg_col, border_col, text_col) = match self.style {
-            ButtonStyle::Default => {
-                let bg = if !self.enabled {
-                    UiQuad::rgba(30, 30, 30, 200)
-                } else if self.hovered {
-                    UiQuad::rgba(70, 70, 75, 240)
-                } else {
-                    UiQuad::rgba(45, 45, 50, 220)
-                };
-                let border = if !self.enabled {
-                    UiQuad::rgba(20, 20, 20, 255)
-                } else if self.hovered {
-                    UiQuad::rgba(255, 255, 255, 255)
-                } else {
-                    UiQuad::rgba(15, 15, 15, 255)
-                };
-                let text = if !self.enabled {
-                    UiQuad::rgba(140, 140, 140, 255)
-                } else if self.hovered {
-                    UiQuad::rgba(255, 255, 160, 255)
-                } else {
-                    UiQuad::rgba(240, 240, 240, 255)
-                };
-                (bg, border, text)
-            }
+        let uv = if !self.enabled {
+            layers.button_disabled_uv
+        } else if self.hovered {
+            layers.button_highlighted_uv
+        } else {
+            layers.button_normal_uv
+        };
+
+        let tint_col = match self.style {
+            ButtonStyle::Default => UiQuad::rgba(255, 255, 255, 255),
             ButtonStyle::Primary => {
-                let bg = if !self.enabled {
-                    UiQuad::rgba(22, 32, 45, 180)
+                if !self.enabled {
+                    UiQuad::rgba(140, 160, 180, 200)
                 } else if self.hovered {
-                    UiQuad::rgba(14, 116, 144, 245)
+                    UiQuad::rgba(200, 245, 255, 255)
                 } else {
-                    UiQuad::rgba(15, 60, 85, 230)
-                };
-                let border = if !self.enabled {
-                    UiQuad::rgba(35, 50, 70, 200)
-                } else if self.hovered {
-                    UiQuad::rgba(103, 232, 249, 255)
-                } else {
-                    UiQuad::rgba(56, 189, 248, 240)
-                };
-                let text = if !self.enabled {
-                    UiQuad::rgba(100, 125, 145, 255)
-                } else if self.hovered {
-                    UiQuad::rgba(255, 255, 255, 255)
-                } else {
-                    UiQuad::rgba(224, 242, 254, 255)
-                };
-                (bg, border, text)
+                    UiQuad::rgba(180, 230, 255, 255)
+                }
             }
             ButtonStyle::Danger => {
-                let bg = if !self.enabled {
-                    UiQuad::rgba(35, 25, 25, 180)
+                if !self.enabled {
+                    UiQuad::rgba(160, 140, 140, 200)
                 } else if self.hovered {
-                    UiQuad::rgba(153, 27, 27, 245)
+                    UiQuad::rgba(255, 210, 210, 255)
                 } else {
-                    UiQuad::rgba(65, 20, 25, 225)
-                };
-                let border = if !self.enabled {
-                    UiQuad::rgba(55, 30, 30, 200)
-                } else if self.hovered {
-                    UiQuad::rgba(248, 113, 113, 255)
-                } else {
-                    UiQuad::rgba(185, 28, 28, 235)
-                };
-                let text = if !self.enabled {
-                    UiQuad::rgba(125, 100, 100, 255)
-                } else if self.hovered {
-                    UiQuad::rgba(255, 255, 255, 255)
-                } else {
-                    UiQuad::rgba(252, 165, 165, 255)
-                };
-                (bg, border, text)
+                    UiQuad::rgba(255, 180, 180, 255)
+                }
             }
         };
 
-        // Border quads (top, bottom, left, right)
-        out.push(UiQuad::solid([px_x, px_y], [px_w, border_th], border_col));
-        out.push(UiQuad::solid(
-            [px_x, px_y + i32::from(px_h) - i32::from(border_th)],
-            [px_w, border_th],
-            border_col,
-        ));
-        out.push(UiQuad::solid([px_x, px_y], [border_th, px_h], border_col));
-        out.push(UiQuad::solid(
-            [px_x + i32::from(px_w) - i32::from(border_th), px_y],
-            [border_th, px_h],
-            border_col,
+        // Nine-slice scalable button quad matching Minecraft widget buttons (border: 3 GUI px)
+        let borders = [
+            (3u32 * gui_scale).min(255) as u8,
+            (3u32 * gui_scale).min(255) as u8,
+            (3u32 * gui_scale).min(255) as u8,
+            (3u32 * gui_scale).min(255) as u8,
+        ];
+        let src_size = [
+            (200u32 * gui_scale).min(65535) as u16,
+            (20u32 * gui_scale).min(65535) as u16,
+        ];
+
+        out.push(UiQuad::nine_slice(
+            [px_x, px_y],
+            [px_w, px_h],
+            [uv[0], uv[1]],
+            [uv[2], uv[3]],
+            layers.button,
+            borders,
+            src_size,
+            tint_col,
         ));
 
-        // Center fill panel
-        let in_x = px_x + i32::from(border_th);
-        let in_y = px_y + i32::from(border_th);
-        let in_w = px_w.saturating_sub(border_th * 2);
-        let in_h = px_h.saturating_sub(border_th * 2);
-        out.push(UiQuad::solid([in_x, in_y], [in_w, in_h], bg_col));
+        // Label text styling: classic Minecraft white/yellow hover text with drop shadows
+        let text_col = if !self.enabled {
+            UiQuad::rgba(160, 160, 160, 255)
+        } else if self.hovered {
+            match self.style {
+                ButtonStyle::Default => UiQuad::rgba(255, 255, 160, 255),
+                ButtonStyle::Primary => UiQuad::rgba(103, 232, 249, 255),
+                ButtonStyle::Danger => UiQuad::rgba(248, 113, 113, 255),
+            }
+        } else {
+            match self.style {
+                ButtonStyle::Default => UiQuad::rgba(224, 224, 224, 255),
+                ButtonStyle::Primary => UiQuad::rgba(56, 189, 248, 255),
+                ButtonStyle::Danger => UiQuad::rgba(252, 165, 165, 255),
+            }
+        };
 
-        // Centered label text
         let (text_w, text_h) = font.measure_text(&self.label);
         let text_x = self.x + (self.width - text_w) * 0.5;
         let text_y = self.y + (self.height - text_h) * 0.5;
@@ -295,72 +281,96 @@ impl MenuSlider {
         }
     }
 
-    /// Renders track, fill, handle, and text to `out`.
+    /// Renders track, fill, handle, and text to `out` using default UI asset layers.
     #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
     pub fn render(&self, font: &BitmapFont, scale: u32, out: &mut Vec<UiQuad>) {
+        self.render_with_layers(&UiLayers::default(), font, scale, out);
+    }
+
+    /// Renders track, fill, handle, and text to `out` using authentic widget assets.
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+    pub fn render_with_layers(
+        &self,
+        layers: &UiLayers,
+        font: &BitmapFont,
+        scale: u32,
+        out: &mut Vec<UiQuad>,
+    ) {
         let px_x = snap_to_physical(self.x, scale);
         let px_y = snap_to_physical(self.y, scale);
         let px_w = snap_to_physical(self.width, scale) as u16;
         let px_h = snap_to_physical(self.height, scale) as u16;
-        let border_th = scale.max(1) as u16;
+        let gui_scale = scale.max(1);
 
-        // Background track
-        out.push(UiQuad::solid(
+        let track_uv = if self.hovered || self.dragging {
+            layers.slider_track_highlighted_uv
+        } else {
+            layers.slider_track_uv
+        };
+
+        // Slider track 9-slice background
+        let borders = [
+            (3u32 * gui_scale).min(255) as u8,
+            (3u32 * gui_scale).min(255) as u8,
+            (3u32 * gui_scale).min(255) as u8,
+            (3u32 * gui_scale).min(255) as u8,
+        ];
+        let src_size = [
+            (200u32 * gui_scale).min(65535) as u16,
+            (20u32 * gui_scale).min(65535) as u16,
+        ];
+
+        out.push(UiQuad::nine_slice(
             [px_x, px_y],
             [px_w, px_h],
-            UiQuad::rgba(30, 30, 35, 230),
-        ));
-        // Border
-        let border_col = if self.hovered || self.dragging {
-            UiQuad::rgba(255, 255, 255, 255)
-        } else {
-            UiQuad::rgba(15, 15, 15, 255)
-        };
-        out.push(UiQuad::solid([px_x, px_y], [px_w, border_th], border_col));
-        out.push(UiQuad::solid(
-            [px_x, px_y + i32::from(px_h) - i32::from(border_th)],
-            [px_w, border_th],
-            border_col,
-        ));
-        out.push(UiQuad::solid([px_x, px_y], [border_th, px_h], border_col));
-        out.push(UiQuad::solid(
-            [px_x + i32::from(px_w) - i32::from(border_th), px_y],
-            [border_th, px_h],
-            border_col,
+            [track_uv[0], track_uv[1]],
+            [track_uv[2], track_uv[3]],
+            layers.button,
+            borders,
+            src_size,
+            UiQuad::rgba(255, 255, 255, 255),
         ));
 
-        // Active fill bar
+        // Slider handle
         let frac = if (self.max - self.min).abs() > 1e-4 {
             ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
         } else {
             0.0
         };
-        let fill_w = (f32::from(px_w) * frac).round() as u16;
-        if fill_w > border_th * 2 {
-            out.push(UiQuad::solid(
-                [px_x + i32::from(border_th), px_y + i32::from(border_th)],
-                [
-                    fill_w.saturating_sub(border_th * 2),
-                    px_h.saturating_sub(border_th * 2),
-                ],
-                UiQuad::rgba(50, 70, 120, 180),
-            ));
-        }
 
-        // Draggable handle indicator
         let handle_w = 8.0f32;
         let scrub_w = (self.width - handle_w).max(1.0);
         let handle_x_gui = self.x + frac * scrub_w;
         let h_px_x = snap_to_physical(handle_x_gui, scale);
         let h_px_w = snap_to_physical(handle_w, scale) as u16;
-        let handle_col = if self.dragging {
-            UiQuad::rgba(255, 255, 200, 255)
-        } else if self.hovered {
-            UiQuad::rgba(220, 220, 220, 255)
+
+        let handle_uv = if self.dragging || self.hovered {
+            layers.slider_handle_highlighted_uv
         } else {
-            UiQuad::rgba(180, 180, 180, 255)
+            layers.slider_handle_uv
         };
-        out.push(UiQuad::solid([h_px_x, px_y], [h_px_w, px_h], handle_col));
+
+        let handle_borders = [
+            (2u32 * gui_scale).min(255) as u8,
+            (3u32 * gui_scale).min(255) as u8,
+            (2u32 * gui_scale).min(255) as u8,
+            (3u32 * gui_scale).min(255) as u8,
+        ];
+        let handle_src_size = [
+            (8u32 * gui_scale).min(65535) as u16,
+            (20u32 * gui_scale).min(65535) as u16,
+        ];
+
+        out.push(UiQuad::nine_slice(
+            [h_px_x, px_y],
+            [h_px_w, px_h],
+            [handle_uv[0], handle_uv[1]],
+            [handle_uv[2], handle_uv[3]],
+            layers.button,
+            handle_borders,
+            handle_src_size,
+            UiQuad::rgba(255, 255, 255, 255),
+        ));
 
         // Label
         let label = self.display_text();
@@ -368,9 +378,9 @@ impl MenuSlider {
         let tx = self.x + (self.width - tw) * 0.5;
         let ty = self.y + (self.height - th) * 0.5;
         let t_col = if self.hovered || self.dragging {
-            UiQuad::rgba(255, 255, 180, 255)
+            UiQuad::rgba(255, 255, 160, 255)
         } else {
-            UiQuad::rgba(240, 240, 240, 255)
+            UiQuad::rgba(224, 224, 224, 255)
         };
         font.layout_text(&label, tx, ty, t_col, true, scale, out);
     }

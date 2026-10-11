@@ -48,6 +48,25 @@ fn test_menu_button_hit_test() {
 }
 
 #[test]
+fn test_menu_button_render_nine_slice() {
+    use telos_ui::font::BitmapFont;
+    use telos_ui::hud::UiLayers;
+    use telos_ui::quad::QuadKind;
+
+    let font = BitmapFont::new_fallback(3);
+    let layers = UiLayers::default();
+    let btn = MenuButton::new(1, 100.0, 50.0, 200.0, 20.0, "Play");
+    let mut quads = Vec::new();
+    btn.render(&font, 2, &mut quads);
+
+    assert!(!quads.is_empty());
+    let bg_quad = &quads[0];
+    assert_eq!(bg_quad.kind(), QuadKind::NineSlice);
+    assert_eq!(bg_quad.uv[2], layers.button);
+    assert_eq!(bg_quad.nine_slice_borders(), [6, 6, 6, 6]);
+}
+
+#[test]
 fn test_slider_scrubbing() {
     let mut slider = MenuSlider::new(
         1, 100.0, 50.0, 100.0, 20.0, "Volume", 0.0, 1.0, 0.5, "%", false,
