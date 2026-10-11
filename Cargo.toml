@@ -21,7 +21,7 @@ members = [
     "apps/telos-server",
     "apps/telos",
     "apps/telos-web",
-    "apps/telos-dev",
+    "apps/telos-launcher",
     "xtask",
 ]
 exclude = [

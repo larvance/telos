@@ -4256,17 +4256,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "telos-dev"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "eframe",
- "rustix 0.38.44",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "telos-gpu"
 version = "0.1.0"
 dependencies = [
@@ -4283,6 +4272,20 @@ dependencies = [
  "thiserror 2.0.21",
  "tracing",
  "winit",
+]
+
+[[package]]
+name = "telos-launcher"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "eframe",
+ "image",
+ "rustix 0.38.44",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

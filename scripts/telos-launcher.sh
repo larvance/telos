@@ -23,23 +23,23 @@ fi
 
 cd "$REPO_DIR"
 
-DEV_BIN="$REPO_DIR/target/release/telos-dev"
+DEV_BIN="$REPO_DIR/target/release/telos-launcher"
 TARGET_BIN="$REPO_DIR/target/release/telos"
 if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
-    DEV_BIN="$REPO_DIR/target/debug/telos-dev"
+    DEV_BIN="$REPO_DIR/target/debug/telos-launcher"
     TARGET_BIN="$REPO_DIR/target/debug/telos"
 fi
 
-# Ensure dev launcher binary exists if cargo is available
+# Ensure launcher binary exists if cargo is available
 if [[ ! -x "$DEV_BIN" && -z "${TELOS_NO_DEV:-}" && -z "${TELOS_NO_BUILD:-}" ]] && command -v cargo >/dev/null 2>&1; then
     if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
-        cargo build -p telos-dev --quiet || true
+        cargo build -p telos-launcher --bin telos-launcher --quiet || true
     else
-        cargo build --release -p telos-dev --quiet || true
+        cargo build --release -p telos-launcher --bin telos-launcher --quiet || true
     fi
 fi
 
-# If dev launcher is available and enabled, delegate build progress & lock coordination to it
+# If launcher is available and enabled, delegate to it
 if [[ -z "${TELOS_NO_DEV:-}" && -x "$DEV_BIN" && -z "${TELOS_NO_BUILD:-}" ]]; then
     exec "$DEV_BIN" "$@"
 fi
