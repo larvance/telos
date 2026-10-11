@@ -2408,8 +2408,7 @@ impl Server {
             pos
         } else {
             let world = self.worlds.get_mut(target_world).unwrap();
-            let surface_y = f64::from(world.get_surface_y(128, 160));
-            DVec3::new(128.0, surface_y + 1.0, 160.0)
+            world.find_safe_spawn(128, 160)
         };
 
         // 4. Teleport player
@@ -2620,13 +2619,45 @@ impl Server {
 
     /// Registers a new incoming connection and returns its unique `session_id`.
     pub fn add_connection(&mut self, conn: Box<dyn Connection<S2cMessage, C2sMessage>>) -> u64 {
+        self.add_connection_with_spawn(conn, None)
+    }
+
+    /// Registers a new incoming connection with an optional custom spawn point override.
+    pub fn add_connection_with_spawn(
+        &mut self,
+        conn: Box<dyn Connection<S2cMessage, C2sMessage>>,
+        custom_spawn: Option<DVec3>,
+    ) -> u64 {
         let session_id = self.next_session_id;
         self.next_session_id += 1;
 
         let entity_id = self.next_entity_id;
         self.next_entity_id += 1;
 
-        let spawn_pos = DVec3::new(128.0, 45.0, 160.0);
+        let spawn_pos = if let Some(sp) = custom_spawn.or_else(|| self.config.default_spawn_dvec3()) {
+            sp
+        } else {
+            self.worlds.default_world_mut().find_safe_spawn(128, 160)
+        };
+
+        // Pre-generate the 3x3x3 cubic chunk neighborhood around spawn
+        let spawn_chunk = ChunkPos::new(
+            (spawn_pos.x.floor() as i32) >> 5,
+            (spawn_pos.y.floor() as i32) >> 5,
+            (spawn_pos.z.floor() as i32) >> 5,
+        );
+        for dy in -1..=1 {
+            for dz in -1..=1 {
+                for dx in -1..=1 {
+                    let p = ChunkPos::new(
+                        spawn_chunk.x() + dx,
+                        spawn_chunk.y() + dy,
+                        spawn_chunk.z() + dz,
+                    );
+                    self.worlds.default_world_mut().get_or_generate_chunk(p);
+                }
+            }
+        }
 
         let session =
             PlayerSession::new_with_spawn(session_id, entity_id, conn, &self.config, spawn_pos);

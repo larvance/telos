@@ -187,6 +187,7 @@ fn test_player_movement_and_chunk_eviction() {
         view_distance: 2,
         vertical_view_distance: 2,
         chunks_per_tick_per_player: 100,
+        default_spawn: Some([128.0, 45.0, 160.0]),
         ..Default::default()
     };
     let mut server = Server::new(42, config);
@@ -1661,7 +1662,10 @@ fn test_decoupled_simulation_distance_and_mob_freezing() {
     let mut server = Server::new(7777, config);
 
     let (server_conn, client_conn) = MemoryConnection::pair_default();
-    let _session_id = server.add_connection(Box::new(server_conn));
+    let _session_id = server.add_connection_with_spawn(
+        Box::new(server_conn),
+        Some(DVec3::new(128.0, 45.0, 160.0)),
+    );
 
     // Fast-forward handshake: Hello -> LoginStart -> KnownRegistries -> ClientSettings -> ConfigAck
     client_conn
@@ -2132,4 +2136,115 @@ fn test_server_minecart_spawning_rail_tracking_and_riding() {
     );
     let cart_unmounted = server.ecs_world().get::<MinecartEntity>(cart_ent).unwrap();
     assert_eq!(cart_unmounted.passenger_id, None);
+}
+
+#[test]
+fn test_server_safe_spawn_ground_search_and_unloaded_chunk_pregeneration() {
+    let config = ServerConfig {
+        tps: 20,
+        view_distance: 4,
+        simulation_distance: 2,
+        ..Default::default()
+    };
+    let mut server = Server::new(9999, config);
+
+    // 1. Verify find_safe_spawn finds solid surface ground with clear headroom
+    let spawn_pos = server.world_mut().find_safe_spawn(128, 160);
+    assert!(spawn_pos.y.is_finite());
+    assert!(spawn_pos.y > -64.0 && spawn_pos.y < 350.0);
+
+    let ground_y = (spawn_pos.y - 1.0).round() as i32;
+    let ground_block = server.world_mut().get_block(BlockPos::new(
+        spawn_pos.x.floor() as i32,
+        ground_y,
+        spawn_pos.z.floor() as i32,
+    ));
+    assert!(!ground_block.is_air(), "Ground block below player feet must not be air");
+    assert!(
+        !server.world().registry().is_fluid(ground_block),
+        "Ground block must not be fluid"
+    );
+
+    let feet_block = server.world_mut().get_block(BlockPos::new(
+        spawn_pos.x.floor() as i32,
+        ground_y + 1,
+        spawn_pos.z.floor() as i32,
+    ));
+    assert!(feet_block.is_air() || !server.world().registry().is_fluid(feet_block));
+
+    // Also verify find_safe_spawn works at origin (0, 0)
+    let origin_spawn = server.world_mut().find_safe_spawn(0, 0);
+    assert!(origin_spawn.y.is_finite());
+
+    // 2. Add connection and verify spawn_pos is propagated to JoinGame
+    let (server_conn, client_conn) = MemoryConnection::pair_default();
+    let session_id = server.add_connection(Box::new(server_conn));
+    assert_eq!(session_id, 1);
+
+    // Verify chunk containing spawn was pre-generated
+    let spawn_chunk = ChunkPos::new(
+        (spawn_pos.x.floor() as i32) >> 5,
+        (spawn_pos.y.floor() as i32) >> 5,
+        (spawn_pos.z.floor() as i32) >> 5,
+    );
+    assert!(server.world().contains_chunk(spawn_chunk));
+    assert!(server.world().cached_chunk_count() > 0);
+
+    // Fast-forward handshake
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::Hello(C2sHello {
+                protocol: 1,
+                build: BoundedString::new("0.1.0").unwrap(),
+                features: 0,
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::LoginStart(C2sLoginStart {
+                username: BoundedString::new("SafeSpawnPlayer").unwrap(),
+                mode: AuthMode::Offline,
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::ClientSettings(C2sClientSettings {
+                view_distance: 4,
+                simulation_distance: 2,
+                locale: BoundedString::new("en_US").unwrap(),
+            })),
+        )
+        .unwrap();
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::ConfigAck(
+                telos_protocol::messages::C2sConfigAck,
+            )),
+        )
+        .unwrap();
+    server.tick();
+
+    // Drain messages until JoinGame is reached
+    let mut received_join = None;
+    while let Ok(Some(incoming)) = client_conn.try_recv() {
+        if let Some(S2cMessage::JoinGame(join)) = incoming.into_msg() {
+            received_join = Some(join);
+            break;
+        }
+    }
+
+    let join = received_join.expect("JoinGame packet must be received");
+    assert_eq!(join.spawn_x, spawn_pos.x);
+    assert_eq!(join.spawn_y, spawn_pos.y);
+    assert_eq!(join.spawn_z, spawn_pos.z);
 }

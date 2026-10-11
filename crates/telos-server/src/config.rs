@@ -1,5 +1,6 @@
 //! Server configuration parameters and file I/O.
 
+use glam::DVec3;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -160,6 +161,9 @@ pub struct ServerConfig {
     /// Trusted Account Authority Ed25519 public keys for certificate verification (default: empty).
     #[serde(default)]
     pub trusted_authority_keys: Vec<[u8; 32]>,
+    /// Optional default spawn position override `[x, y, z]`. If `None`, safe surface ground is dynamically computed around (0, 0).
+    #[serde(default)]
+    pub default_spawn: Option<[f64; 3]>,
 }
 
 impl Default for ServerConfig {
@@ -186,11 +190,17 @@ impl Default for ServerConfig {
             online_mode: false,
             enforce_tofu: true,
             trusted_authority_keys: Vec::new(),
+            default_spawn: None,
         }
     }
 }
 
 impl ServerConfig {
+    /// Returns the configured default spawn position as `DVec3` if present.
+    #[must_use]
+    pub fn default_spawn_dvec3(&self) -> Option<DVec3> {
+        self.default_spawn.map(|[x, y, z]| DVec3::new(x, y, z))
+    }
     /// Loads server configuration from a TOML file.
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
         let p = path.as_ref();

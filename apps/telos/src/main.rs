@@ -1595,16 +1595,16 @@ impl App {
             if parts.len() == 3 {
                 Vec3::new(parts[0], parts[1], parts[2])
             } else {
-                let climate = telos_worldgen::ClimatePoint::sample(args.seed, 0.0, 0.0);
-                let h = telos_worldgen::density::base_terrain_height(args.seed, 0.0, 0.0, &climate);
+                let climate = telos_worldgen::ClimatePoint::sample(args.seed, 128.0, 160.0);
+                let h = telos_worldgen::density::base_terrain_height(args.seed, 128.0, 160.0, &climate);
                 let y = (h.max(1.0).ceil() + 2.0).max(25.0);
-                Vec3::new(0.5, y, 0.5)
+                Vec3::new(128.5, y, 160.5)
             }
         } else {
-            let climate = telos_worldgen::ClimatePoint::sample(args.seed, 0.0, 0.0);
-            let h = telos_worldgen::density::base_terrain_height(args.seed, 0.0, 0.0, &climate);
+            let climate = telos_worldgen::ClimatePoint::sample(args.seed, 128.0, 160.0);
+            let h = telos_worldgen::density::base_terrain_height(args.seed, 128.0, 160.0, &climate);
             let y = (h.max(1.0).ceil() + 2.0).max(25.0);
-            Vec3::new(0.5, y, 0.5)
+            Vec3::new(128.5, y, 160.5)
         };
         let mut camera = Camera::new(spawn_pos);
         if let Some(yaw_deg) = args.yaw {
@@ -1684,6 +1684,11 @@ impl App {
         let server_conn: Box<dyn Connection<S2cMessage, C2sMessage>> = Box::new(server_conn);
         let client_conn: Box<dyn Connection<C2sMessage, S2cMessage>> = Box::new(client_conn);
 
+        let custom_spawn = args.pos.as_ref().map(|_| [
+            f64::from(spawn_pos.x),
+            f64::from(spawn_pos.y),
+            f64::from(spawn_pos.z),
+        ]);
         let server_handle = if is_direct_ingame {
             let s_registries = Arc::clone(&server_registries);
             let handle = std::thread::Builder::new()
@@ -1696,6 +1701,7 @@ impl App {
                         simulation_distance,
                         chunks_per_tick_per_player: 16,
                         save_directory: Some(default_save_dir),
+                        default_spawn: custom_spawn,
                         ..Default::default()
                     };
                     let mut server =
@@ -3020,6 +3026,7 @@ impl App {
                         self.physics.pos = spawn_dvec;
                         self.physics.vel = Vec3::ZERO;
                         self.physics.on_ground = false;
+                        self.physics.waiting_for_chunks = true;
                         self.camera.position = self.physics.eye_pos();
                         self.client_phase = ConnectionPhase::Play;
                     }
@@ -3820,7 +3827,7 @@ impl App {
     }
 
     fn tick_movement_prediction(&mut self) {
-        if self.client_phase != ConnectionPhase::Play {
+        if self.client_phase != ConnectionPhase::Play || self.physics.waiting_for_chunks {
             return;
         }
 
@@ -4498,36 +4505,51 @@ impl App {
                     sneak: self.controller.down && self.controller.mouse_captured,
                     sprint: self.controller.sprint && self.controller.mouse_captured,
                 };
-                let reg = &self.block_registry;
-                let chunks = &self.chunks;
-                self.physics.update(
-                    dt,
-                    self.camera.yaw.to_degrees(),
-                    &input_state,
-                    |bx, by, bz, out| {
-                        let (cpos, lidx) =
-                            telos_voxel::coords::split_block_pos(BlockPos::new(bx, by, bz));
-                        let block = if let Some(snap) = chunks.get(&cpos) {
-                            snap.blocks().get(lidx)
-                        } else {
-                            BlockStateId::AIR
-                        };
-                        if block == BlockStateId::AIR {
-                            return;
-                        }
-                        match reg.shape(block) {
-                            BlockShape::Cube => {
+                let player_chunk = telos_core::coords::BlockPos::new(
+                    self.physics.pos.x.floor() as i32,
+                    self.physics.pos.y.floor() as i32,
+                    self.physics.pos.z.floor() as i32,
+                ).chunk();
+                let is_chunk_loaded = self.chunks.contains_key(&player_chunk);
+
+                if !is_chunk_loaded {
+                    self.physics.waiting_for_chunks = true;
+                    self.physics.vel = Vec3::ZERO;
+                } else {
+                    self.physics.waiting_for_chunks = false;
+                    let reg = &self.block_registry;
+                    let chunks = &self.chunks;
+                    self.physics.update(
+                        dt,
+                        self.camera.yaw.to_degrees(),
+                        &input_state,
+                        |bx, by, bz, out| {
+                            let (cpos, lidx) =
+                                telos_voxel::coords::split_block_pos(BlockPos::new(bx, by, bz));
+                            if let Some(snap) = chunks.get(&cpos) {
+                                let block = snap.blocks().get(lidx);
+                                if block == BlockStateId::AIR {
+                                    return;
+                                }
+                                match reg.shape(block) {
+                                    BlockShape::Cube => {
+                                        out.push(Aabb::from_block(bx, by, bz));
+                                    }
+                                    BlockShape::Boxes(boxes) => {
+                                        for b in boxes {
+                                            out.push(Aabb::from_sub_box(bx, by, bz, b.min, b.max));
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            } else {
+                                // Unloaded chunk barrier: treat blocks in unloaded chunks as solid
+                                // boundaries so the player cannot walk or drop into ungenerated void.
                                 out.push(Aabb::from_block(bx, by, bz));
                             }
-                            BlockShape::Boxes(boxes) => {
-                                for b in boxes {
-                                    out.push(Aabb::from_sub_box(bx, by, bz, b.min, b.max));
-                                }
-                            }
-                            _ => {}
-                        }
-                    },
-                );
+                        },
+                    );
+                }
                 self.camera.position = self.physics.eye_pos();
                 let mode_key = self.physics.game_mode.translation_key();
                 self.hud_state.game_mode = self.catalog.translate(mode_key).to_string();
@@ -7648,34 +7670,49 @@ impl App {
             };
             let reg = &self.block_registry;
             let chunks = &self.chunks;
-            self.physics.update(
-                dt,
-                self.camera.yaw.to_degrees(),
-                &input_state,
-                |bx, by, bz, out| {
-                    let (cpos, lidx) =
-                        telos_voxel::coords::split_block_pos(BlockPos::new(bx, by, bz));
-                    let block = if let Some(snap) = chunks.get(&cpos) {
-                        snap.blocks().get(lidx)
-                    } else {
-                        BlockStateId::AIR
-                    };
-                    if block == BlockStateId::AIR {
-                        return;
-                    }
-                    match reg.shape(block) {
-                        BlockShape::Cube => {
+            let player_chunk = telos_core::coords::BlockPos::new(
+                self.physics.pos.x.floor() as i32,
+                self.physics.pos.y.floor() as i32,
+                self.physics.pos.z.floor() as i32,
+            ).chunk();
+            let is_chunk_loaded = chunks.contains_key(&player_chunk);
+
+            if !is_chunk_loaded {
+                self.physics.waiting_for_chunks = true;
+                self.physics.vel = Vec3::ZERO;
+            } else {
+                self.physics.waiting_for_chunks = false;
+                self.physics.update(
+                    dt,
+                    self.camera.yaw.to_degrees(),
+                    &input_state,
+                    |bx, by, bz, out| {
+                        let (cpos, lidx) =
+                            telos_voxel::coords::split_block_pos(BlockPos::new(bx, by, bz));
+                        if let Some(snap) = chunks.get(&cpos) {
+                            let block = snap.blocks().get(lidx);
+                            if block == BlockStateId::AIR {
+                                return;
+                            }
+                            match reg.shape(block) {
+                                BlockShape::Cube => {
+                                    out.push(Aabb::from_block(bx, by, bz));
+                                }
+                                BlockShape::Boxes(boxes) => {
+                                    for b in boxes {
+                                        out.push(Aabb::from_sub_box(bx, by, bz, b.min, b.max));
+                                    }
+                                }
+                                _ => {}
+                            }
+                        } else {
+                            // Unloaded chunk barrier: treat blocks in unloaded chunks as solid
+                            // boundaries so the player cannot walk or drop into ungenerated void.
                             out.push(Aabb::from_block(bx, by, bz));
                         }
-                        BlockShape::Boxes(boxes) => {
-                            for b in boxes {
-                                out.push(Aabb::from_sub_box(bx, by, bz, b.min, b.max));
-                            }
-                        }
-                        _ => {}
-                    }
-                },
-            );
+                    },
+                );
+            }
 
             self.camera.position = self.physics.eye_pos();
 

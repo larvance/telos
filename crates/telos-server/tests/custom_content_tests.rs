@@ -112,6 +112,7 @@ fn test_custom_content_handshake_sync_placement_and_drops() {
         view_distance: 3,
         vertical_view_distance: 2,
         chunks_per_tick_per_player: 10,
+        default_spawn: Some([128.0, 45.0, 160.0]),
         ..Default::default()
     };
     let mut server = Server::with_registries(42, config, registries);

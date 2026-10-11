@@ -1,5 +1,6 @@
 //! Server-authoritative world management, terrain generation, lighting caching, and persistence.
 
+use glam::DVec3;
 use hashbrown::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use telos_lod::{
 };
 use telos_voxel::{
     chunk::{Chunk, ChunkSnapshot},
-    coords::split_block_pos,
+    coords::{LocalIdx, split_block_pos},
     light::{ChunkHeightmap, ChunkLight, ColumnHeights, LightBfs},
     registry::BlockRegistry,
     state::{BlockStateId, StateFlags},
@@ -790,6 +791,12 @@ impl ServerWorld {
         self.chunks.len()
     }
 
+    /// Returns `true` if the chunk at `pos` is already generated or loaded in memory.
+    #[must_use]
+    pub fn contains_chunk(&self, pos: ChunkPos) -> bool {
+        self.chunks.contains_key(&pos)
+    }
+
     /// Returns the number of currently cached LOD nodes.
     #[must_use]
     pub fn cached_lod_count(&self) -> usize {
@@ -882,6 +889,83 @@ impl ServerWorld {
             }
         }
         64
+    }
+
+    /// Discovers the highest safe surface ground at or around `(target_x, target_z)`.
+    ///
+    /// Searches the column and nearby spiral coordinates, evaluating cubic chunks from mountain
+    /// peaks down to bedrock, finding the highest solid, non-hazardous surface block
+    /// with at least 2 blocks of clear headroom above it.
+    #[allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
+    pub fn find_safe_spawn(&mut self, target_x: i32, target_z: i32) -> DVec3 {
+        // Spiral offsets around target_x, target_z (center first, then expanding outward)
+        let search_offsets: [(i32, i32); 17] = [
+            (0, 0),
+            (0, 4), (4, 0), (0, -4), (-4, 0),
+            (4, 4), (-4, 4), (4, -4), (-4, -4),
+            (0, 8), (8, 0), (0, -8), (-8, 0),
+            (8, 8), (-8, 8), (8, -8), (-8, -8),
+        ];
+
+        for (dx, dz) in search_offsets {
+            let x = target_x + dx;
+            let z = target_z + dz;
+            let cx = x.div_euclid(32);
+            let cz = z.div_euclid(32);
+            let lx = x.rem_euclid(32) as usize;
+            let lz = z.rem_euclid(32) as usize;
+
+            // Scan vertically from mountain heights (Y ~ 320, cy = 10) down to sea level/underground (cy = -2, Y = -64)
+            for cy in (-2..=10).rev() {
+                let snap = self.get_or_generate_chunk(ChunkPos::new(cx, cy, cz));
+                let blocks = snap.blocks();
+
+                // Scan within this 32-block chunk from top down to 0
+                for ly in (0..32usize).rev() {
+                    let idx = LocalIdx::from_coords_unchecked(lx as u32, ly as u32, lz as u32);
+                    let block = blocks.get(idx);
+
+                    if block.is_air() {
+                        continue;
+                    }
+
+                    // If fluid (water or lava) is encountered at the top of the column, this column isn't dry land
+                    if self.registry.is_fluid(block) {
+                        break;
+                    }
+
+                    // Must be a solid block (e.g. grass, dirt, stone, sand)
+                    let flags = self.registry.flags(block);
+                    let is_solid = flags.contains(StateFlags::OPAQUE_FULL)
+                        || *self.registry.shape(block) == telos_voxel::shape::BlockShape::Cube;
+
+                    if !is_solid {
+                        continue;
+                    }
+
+                    let wy = cy * 32 + ly as i32;
+
+                    // Verify 2 blocks of clear headroom above (wy + 1, wy + 2)
+                    let headroom_1 = self.get_block(BlockPos::new(x, wy + 1, z));
+                    let headroom_2 = self.get_block(BlockPos::new(x, wy + 2, z));
+
+                    let h1_passable = headroom_1.is_air()
+                        || (!self.registry.is_fluid(headroom_1)
+                            && !self.registry.flags(headroom_1).contains(StateFlags::OPAQUE_FULL));
+                    let h2_passable = headroom_2.is_air()
+                        || (!self.registry.is_fluid(headroom_2)
+                            && !self.registry.flags(headroom_2).contains(StateFlags::OPAQUE_FULL));
+
+                    if h1_passable && h2_passable {
+                        let spawn_y = f64::from(wy) + 1.0;
+                        return DVec3::new(f64::from(x) + 0.5, spawn_y, f64::from(z) + 0.5);
+                    }
+                }
+            }
+        }
+
+        // Fallback for void or empty worlds where search did not find standard terrain
+        DVec3::new(f64::from(target_x) + 0.5, 65.0, f64::from(target_z) + 0.5)
     }
 
     /// Returns (`sky_light`, `block_light`) at pos.

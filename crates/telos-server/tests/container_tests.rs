@@ -20,6 +20,7 @@ fn setup_server_and_player() -> (Server, MemoryConnection<C2sMessage, S2cMessage
         view_distance: 3,
         vertical_view_distance: 2,
         chunks_per_tick_per_player: 10,
+        default_spawn: Some([128.0, 45.0, 160.0]),
         ..Default::default()
     };
     let mut server = Server::new(12345, config);

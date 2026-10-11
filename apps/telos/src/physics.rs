@@ -129,6 +129,8 @@ pub struct PlayerPhysicsController {
     pub flying: bool,
     /// Whether player has firm contact with solid ground.
     pub on_ground: bool,
+    /// Whether physics simulation is currently suspended waiting for chunk loading.
+    pub waiting_for_chunks: bool,
     /// Double-tap Space timer for flight toggling (in seconds).
     pub space_tap_timer: f32,
     /// Space key state in previous frame.
@@ -164,6 +166,7 @@ impl PlayerPhysicsController {
             capabilities,
             flying,
             on_ground: false,
+            waiting_for_chunks: false,
             space_tap_timer: 0.0,
             space_was_down: false,
             width: PLAYER_WIDTH,
