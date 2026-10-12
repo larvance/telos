@@ -11,8 +11,10 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime};
 
+use serde::{Deserialize, Serialize};
+
 /// Event sent from the background compilation/lock worker to the launcher UI.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BuildEvent {
     /// Update status message with current activity.
     Status(String),

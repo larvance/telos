@@ -6115,8 +6115,8 @@ impl App {
             }
 
             if self.current_screen == AppScreen::InGame {
-                // Late Pass 5: Translucent (Water)
-                if let Some(trans_pipeline) = &self.translucent_pipeline {
+                // Late Pass 5: Translucent (Water) - omitted when camera is underwater
+                if !self.is_underwater && let Some(trans_pipeline) = &self.translucent_pipeline {
                     let trans_pc = TranslucentMdiPushConstants {
                         view_proj,
                         draw_info_buffer_address: mdi.translucent_draw_late.device_address(),
@@ -6168,8 +6168,8 @@ impl App {
                     );
                 }
 
-                // Late Pass 5b: Translucent T2 (Sloped fluids & waterlogging)
-                if let Some(t2_trans_pipeline) = &self.t2_translucent_pipeline {
+                // Late Pass 5b: Translucent T2 (Sloped fluids & waterlogging) - omitted when camera is underwater
+                if !self.is_underwater && let Some(t2_trans_pipeline) = &self.t2_translucent_pipeline {
                     device.cmd_bind_pipeline(
                         cmd,
                         vk::PipelineBindPoint::GRAPHICS,
@@ -7391,6 +7391,54 @@ impl App {
                 );
             }
             AppScreen::InGame => {
+                if self.is_underwater {
+                    let tile_size = 64i32;
+                    let tick = self.frame_tick as f32;
+                    let offset_x1 = ((tick * 1.2) % 64.0) as i32;
+                    let offset_y1 = ((tick * 0.8) % 64.0) as i32;
+                    let offset_x2 = (64.0 - ((tick * 0.9) % 64.0)) as i32;
+                    let offset_y2 = ((tick * 1.4) % 64.0) as i32;
+
+                    // Layer 1: Forward scrolling flow
+                    for y in -1..=(height as i32 / tile_size + 1) {
+                        for x in -1..=(width as i32 / tile_size + 1) {
+                            let px = x * tile_size + offset_x1 - 64;
+                            let py = y * tile_size + offset_y1 - 64;
+                            ui_quads.push(UiQuad::sprite(
+                                [px, py],
+                                [tile_size as u16, tile_size as u16],
+                                [0.0, 0.0],
+                                [1.0, 1.0],
+                                self.ui_layers.water_overlay,
+                                UiQuad::rgba(40, 100, 220, 130),
+                            ));
+                        }
+                    }
+
+                    // Layer 2: Counter-flow shimmering water ripple
+                    for y in -1..=(height as i32 / tile_size + 1) {
+                        for x in -1..=(width as i32 / tile_size + 1) {
+                            let px = x * tile_size + offset_x2 - 64;
+                            let py = y * tile_size + offset_y2 - 64;
+                            ui_quads.push(UiQuad::sprite(
+                                [px, py],
+                                [tile_size as u16, tile_size as u16],
+                                [0.0, 0.0],
+                                [1.0, 1.0],
+                                self.ui_layers.water_overlay,
+                                UiQuad::rgba(20, 130, 240, 85),
+                            ));
+                        }
+                    }
+
+                    // Subtle deep aquatic wash
+                    ui_quads.push(UiQuad::solid(
+                        [0, 0],
+                        [width as u16, height as u16],
+                        UiQuad::rgba(15, 45, 110, 70),
+                    ));
+                }
+
                 if self.is_paused {
                     self.pause_menu
                         .update_layout_i18n(width_gui, height_gui, &self.catalog);
@@ -7839,6 +7887,10 @@ impl App {
                 &gl_ui_verts,
                 width,
                 height,
+                self.is_underwater,
+                self.frame_tick,
+                self.anim_textures.water_still.base_layer,
+                self.anim_textures.water_still.frame_count,
             );
         }
 
@@ -7947,6 +7999,7 @@ impl App {
         // Bake block textures and upload
         match load_and_upload_textures_gl(gl_context.gl()) {
             Ok((gl_array, anim)) => {
+                gl_renderer.sync_registry_mappings(&self.block_registry, &anim);
                 gl_renderer.set_terrain_textures(gl_array);
                 self.anim_textures = anim;
             }
@@ -12127,7 +12180,7 @@ fn load_and_upload_textures_gl(
 #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
     const UI_RES: u32 = 256;
-    const LAYER_COUNT: u32 = 13;
+    const LAYER_COUNT: u32 = 14;
 
     let mut stack = ResourcePackStack::new();
     mount_asset_roots(&mut stack);
@@ -12885,6 +12938,46 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
     };
     copy_to_layer_at(&mut pixel_data, 12, 0, 0, &logo_img);
 
+    // Layer 13: Underwater 2D Overlay (256x256 tiled)
+    let water_overlay_img = stack
+        .find_texture("textures/misc/underwater.png")
+        .or_else(|| stack.find_texture("textures/block/water_overlay.png"))
+        .and_then(|p| telos_assets::RgbaImage::from_file(&p).ok());
+
+    let mut overlay_layer = telos_assets::RgbaImage::new(UI_RES, UI_RES);
+    if let Some(src) = water_overlay_img {
+        let tile_w = (src.width as usize).max(1);
+        let tile_h = (src.height as usize).max(1);
+        for y in 0..UI_RES as usize {
+            for x in 0..UI_RES as usize {
+                let sx = x % tile_w;
+                let sy = y % tile_h;
+                let src_idx = (sy * tile_w + sx) * 4;
+                let dst_idx = (y * UI_RES as usize + x) * 4;
+                let r = src.data[src_idx];
+                let g = src.data[src_idx + 1];
+                let b = src.data[src_idx + 2];
+                let a = src.data[src_idx + 3];
+                // Aquatic blue tint
+                overlay_layer.data[dst_idx] = ((r as f32) * 0.25) as u8;
+                overlay_layer.data[dst_idx + 1] = ((g as f32) * 0.55) as u8;
+                overlay_layer.data[dst_idx + 2] = ((b as f32) * 0.95) as u8;
+                overlay_layer.data[dst_idx + 3] = a.max(210);
+            }
+        }
+    } else {
+        for y in 0..UI_RES as usize {
+            for x in 0..UI_RES as usize {
+                let dst_idx = (y * UI_RES as usize + x) * 4;
+                overlay_layer.data[dst_idx] = 25;
+                overlay_layer.data[dst_idx + 1] = 85;
+                overlay_layer.data[dst_idx + 2] = 195;
+                overlay_layer.data[dst_idx + 3] = 210;
+            }
+        }
+    }
+    copy_to_layer_at(&mut pixel_data, 13, 0, 0, &overlay_layer);
+
     let regions: Vec<TextureMipRegion> = (0..LAYER_COUNT)
         .map(|layer| TextureMipRegion {
             buffer_offset: u64::from(layer * UI_RES * UI_RES * 4),
@@ -12900,13 +12993,13 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
 
 fn load_and_upload_ui_textures(gpu_context: &GpuContext) -> Result<(GpuTextureArray, BitmapFont)> {
     const UI_RES: u32 = 256;
-    const LAYER_COUNT: u32 = 13;
+    const LAYER_COUNT: u32 = 14;
     let (pixel_data, regions, font) = bake_ui_textures();
     let texture_array =
         gpu_context.create_texture_array(UI_RES, LAYER_COUNT, 1, &pixel_data, &regions)?;
 
     info!(
-        "UI texture array loaded (13 layers, 256x256, font baked, survival icons, inventory background, item icons, furnace GUI, crafting table GUI, advancements window, toast banner, widget buttons & sliders, main menu logo)"
+        "UI texture array loaded (14 layers, 256x256, font baked, survival icons, inventory background, item icons, furnace GUI, crafting table GUI, advancements window, toast banner, widget buttons & sliders, main menu logo, underwater overlay)"
     );
 
     Ok((texture_array, font))
@@ -12916,7 +13009,7 @@ fn load_and_upload_ui_textures_gl(
     gl: &Arc<glow::Context>,
 ) -> Result<(telos_gpu::opengl::GlTextureArray, BitmapFont)> {
     const UI_RES: u32 = 256;
-    const LAYER_COUNT: u32 = 13;
+    const LAYER_COUNT: u32 = 14;
     let (pixel_data, regions, font) = bake_ui_textures();
     let gl_array =
         telos_gpu::opengl::GlTextureArray::new(gl.clone(), UI_RES, UI_RES, LAYER_COUNT, 1)?;

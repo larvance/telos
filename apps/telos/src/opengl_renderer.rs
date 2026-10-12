@@ -401,6 +401,94 @@ impl OpenGlRenderer {
         clippy::too_many_lines,
         clippy::cast_possible_wrap
     )]
+    /// Dynamically syncs texture array layers and tints for all registered block states.
+    pub fn sync_registry_mappings(
+        &mut self,
+        registry: &telos_voxel::registry::BlockRegistry,
+        anim_textures: &crate::AnimatedTextures,
+    ) {
+        self.custom_layers.clear();
+        self.custom_tints.clear();
+
+        let water_base = anim_textures.water_still.base_layer as f32;
+        let lava_base = anim_textures.lava_still.base_layer as f32;
+        let fire_base = anim_textures.fire.base_layer as f32;
+
+        for state_idx in 1..registry.total_states() {
+            let id = telos_voxel::state::BlockStateId::new(state_idx as u32);
+            let Some(ident) = registry.identifier(id) else {
+                continue;
+            };
+            let path = ident.path();
+            let state_u16 = state_idx as u16;
+
+            let (layer, tint) = match path {
+                "stone" => (0.0, [1.0, 1.0, 1.0, 1.0]),
+                "dirt" => (1.0, [1.0, 1.0, 1.0, 1.0]),
+                "grass_block" => (3.0, [1.0, 1.0, 1.0, 1.0]),
+                "bedrock" => (4.0, [1.0, 1.0, 1.0, 1.0]),
+                "sand" => (5.0, [1.0, 1.0, 1.0, 1.0]),
+                "oak_planks" => (6.0, [1.0, 1.0, 1.0, 1.0]),
+                "oak_leaves" => (7.0, [0.298, 0.600, 0.129, 1.0]),
+                "glass" => (8.0, [1.0, 1.0, 1.0, 1.0]),
+                "stone_slab" => (0.0, [1.0, 1.0, 1.0, 1.0]),
+                "oak_stairs" => (6.0, [1.0, 1.0, 1.0, 1.0]),
+                "poppy" => (9.0, [1.0, 1.0, 1.0, 1.0]),
+                "dandelion" => (10.0, [1.0, 1.0, 1.0, 1.0]),
+                "torch" => (11.0, [1.0, 1.0, 1.0, 1.0]),
+                "short_grass" => (12.0, [0.474, 0.753, 0.353, 1.0]),
+                "fern" => (13.0, [0.474, 0.753, 0.353, 1.0]),
+                "dead_bush" => (14.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_torch" => (15.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_torch_off" => (16.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_block" => (17.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_lamp" => (18.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_lamp_lit" | "logic_lamp_lit" => (19.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_dust_line0" | "logic_wire" | "logic_wire_powered" => {
+                    (20.0, [1.0, 1.0, 1.0, 1.0])
+                }
+                "repeater" | "repeater_on" | "logic_repeater" | "logic_repeater_powered" => {
+                    (21.0, [1.0, 1.0, 1.0, 1.0])
+                }
+                "lever" | "logic_lever" | "logic_lever_on" => (23.0, [1.0, 1.0, 1.0, 1.0]),
+                "oak_log" => (24.0, [1.0, 1.0, 1.0, 1.0]),
+                "birch_log" => (26.0, [1.0, 1.0, 1.0, 1.0]),
+                "spruce_log" => (28.0, [1.0, 1.0, 1.0, 1.0]),
+                "birch_leaves" => (30.0, [0.502, 0.655, 0.333, 1.0]),
+                "spruce_leaves" => (31.0, [0.380, 0.600, 0.380, 1.0]),
+                "tall_grass" => (32.0, [0.474, 0.753, 0.353, 1.0]),
+                "cornflower" => (33.0, [1.0, 1.0, 1.0, 1.0]),
+                "oxeye_daisy" => (34.0, [1.0, 1.0, 1.0, 1.0]),
+                "brown_mushroom" => (35.0, [1.0, 1.0, 1.0, 1.0]),
+                "red_mushroom" => (36.0, [1.0, 1.0, 1.0, 1.0]),
+                "netherrack" => (37.0, [1.0, 1.0, 1.0, 1.0]),
+                "soul_sand" => (38.0, [1.0, 1.0, 1.0, 1.0]),
+                "glowstone" => (39.0, [1.0, 1.0, 1.0, 1.0]),
+                "basalt" => (40.0, [1.0, 1.0, 1.0, 1.0]),
+                "blackstone" => (41.0, [1.0, 1.0, 1.0, 1.0]),
+                "magma_block" => (42.0, [1.0, 1.0, 1.0, 1.0]),
+                "soul_soil" => (43.0, [1.0, 1.0, 1.0, 1.0]),
+                "nether_quartz_ore" => (44.0, [1.0, 1.0, 1.0, 1.0]),
+                "nether_gold_ore" => (45.0, [1.0, 1.0, 1.0, 1.0]),
+                "ancient_debris" => (46.0, [1.0, 1.0, 1.0, 1.0]),
+                "water" | "flowing_water" | "falling_water" => {
+                    (water_base, [0.247, 0.463, 0.894, 0.72])
+                }
+                "lava" | "flowing_lava" | "falling_lava" => (lava_base, [1.0, 0.9, 0.7, 1.0]),
+                "fire" => (fire_base, [1.0, 1.0, 1.0, 1.0]),
+                _ => (0.0, [1.0, 1.0, 1.0, 1.0]),
+            };
+            self.custom_layers.insert(state_u16, layer);
+            self.custom_tints.insert(state_u16, tint);
+        }
+    }
+
+    /// Renders a full frame forward through OpenGL.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        clippy::cast_possible_wrap
+    )]
     pub fn render_frame(
         &mut self,
         view_proj: &Mat4,
@@ -413,6 +501,10 @@ impl OpenGlRenderer {
         ui_quads: &[GlUiVertex],
         width: u32,
         height: u32,
+        is_underwater: bool,
+        frame_tick: u32,
+        water_base_layer: u32,
+        water_frame_count: u32,
     ) {
         let gl = &self.gl;
 
@@ -487,6 +579,21 @@ impl OpenGlRenderer {
                 self.chunk_program
                     .set_int(&loc, i32::from(self.terrain_textures.is_some()));
             }
+            if let Some(loc) = self.chunk_program.get_uniform_location("u_frame_tick") {
+                self.chunk_program.set_int(&loc, frame_tick as i32);
+            }
+            if let Some(loc) = self
+                .chunk_program
+                .get_uniform_location("u_water_base_layer")
+            {
+                self.chunk_program.set_float(&loc, water_base_layer as f32);
+            }
+            if let Some(loc) = self
+                .chunk_program
+                .get_uniform_location("u_water_frame_count")
+            {
+                self.chunk_program.set_int(&loc, water_frame_count as i32);
+            }
 
             // Draw opaque layers
             for mesh in self.meshes.values() {
@@ -505,22 +612,24 @@ impl OpenGlRenderer {
                 }
             }
 
-            // Draw translucent layers (blended)
-            gl.enable(glow::BLEND);
-            gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
-            gl.depth_mask(false);
-            for mesh in self.meshes.values() {
-                if mesh.translucent_count > 0 {
-                    gl.bind_vertex_array(Some(mesh.vao));
-                    gl.draw_arrays(
-                        glow::TRIANGLES,
-                        mesh.translucent_offset,
-                        mesh.translucent_count,
-                    );
+            // Draw translucent layers (blended) - only when camera is not underwater!
+            if !is_underwater {
+                gl.enable(glow::BLEND);
+                gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+                gl.depth_mask(false);
+                for mesh in self.meshes.values() {
+                    if mesh.translucent_count > 0 {
+                        gl.bind_vertex_array(Some(mesh.vao));
+                        gl.draw_arrays(
+                            glow::TRIANGLES,
+                            mesh.translucent_offset,
+                            mesh.translucent_count,
+                        );
+                    }
                 }
+                gl.depth_mask(true);
+                gl.disable(glow::BLEND);
             }
-            gl.depth_mask(true);
-            gl.disable(glow::BLEND);
             gl.enable(glow::CULL_FACE);
 
             // 3. Selection wireframe highlight
@@ -853,12 +962,29 @@ fn get_gl_texture_layer(mat: u16, dir: FaceDir, custom_layers: &HashMap<u16, f32
         },
         4 => 4.0,   // Bedrock
         5 => 5.0,   // Sand
+        6 | 15 | 37 => 47.0, // Water
         7 => 6.0,   // Oak Planks
         8 => 7.0,   // Oak Leaves
         9 => 8.0,   // Glass
+        10 => 0.0,  // Stone slab
+        11 => 6.0,  // Oak stairs
+        12 => 9.0,  // Poppy
+        13 => 10.0, // Dandelion
+        14 => 11.0, // Torch
+        16 => 12.0, // Short grass
+        17 => 13.0, // Fern
+        18 | 20 => 14.0, // Dead bush
         21 => 17.0, // logic_power_block
         24 => 18.0, // logic_lamp
         25 => 19.0, // logic_lamp_lit
+        31 | 32 | 38 => 49.0, // Lava
+        33 => 51.0, // Fire
+        34 => 52.0, // Nether portal
+        40 | 69 | 85 => 32.0, // tall_grass
+        41 | 70 | 86 => 33.0, // cornflower
+        42 | 71 | 87 => 34.0, // oxeye_daisy
+        43 | 72 | 88 => 35.0, // brown_mushroom
+        44 | 73 | 89 => 36.0, // red_mushroom
         74 => match dir {
             FaceDir::PosY | FaceDir::NegY => 25.0, // oak_log_top
             _ => 24.0,                             // oak_log
@@ -873,12 +999,7 @@ fn get_gl_texture_layer(mat: u16, dir: FaceDir, custom_layers: &HashMap<u16, f32
         },
         77 => 30.0,      // birch_leaves
         78 => 31.0,      // spruce_leaves
-        85 | 69 => 32.0, // tall_grass
-        86 | 70 => 33.0, // cornflower
-        87 | 71 => 34.0, // oxeye_daisy
-        88 | 72 => 35.0, // brown_mushroom
-        89 | 73 => 36.0, // red_mushroom
-        _ => f32::from(mat),
+        _ => 0.0,
     }
 }
 
@@ -890,17 +1011,17 @@ fn get_material_tint(mat: u16, dir: FaceDir, custom_tints: &HashMap<u16, [f32; 4
         3 => {
             // Grass
             if dir == FaceDir::PosY {
-                [0.55, 0.78, 0.35, 1.0]
+                [0.474, 0.753, 0.353, 1.0]
             } else {
                 [1.0, 1.0, 1.0, 1.0]
             }
         }
-        85 | 69 => [0.55, 0.78, 0.35, 1.0],          // Tall grass
+        16 | 17 | 40 | 69 | 73 | 85 => [0.474, 0.753, 0.353, 1.0], // Short grass, fern, tall grass
         8 => [0.298, 0.600, 0.129, 1.0],             // Oak Leaves
         77 => [0.502, 0.655, 0.333, 1.0],            // Birch Leaves
         78 => [0.380, 0.600, 0.380, 1.0],            // Spruce Leaves
-        6 | 37..=43 => [0.20, 0.45, 0.85, 0.65],     // Water
-        31 | 32 | 44..=50 => [1.0, 0.45, 0.05, 1.0], // Lava
+        6 | 15 | 37 => [0.247, 0.463, 0.894, 0.72],  // Water
+        31 | 32 | 38 => [1.0, 0.9, 0.7, 1.0],        // Lava
         _ => [1.0, 1.0, 1.0, 1.0],
     }
 }

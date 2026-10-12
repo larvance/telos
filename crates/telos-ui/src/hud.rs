@@ -90,6 +90,10 @@ pub struct UiLayers {
     pub logo: u32,
     /// Main menu long logo banner UV bounds `[u0, v0, u1, v1]`.
     pub logo_uv: [f32; 4],
+    /// Underwater animated 2D overlay texture layer.
+    pub water_overlay: u32,
+    /// Underwater animated 2D overlay UV bounds `[u0, v0, u1, v1]`.
+    pub water_overlay_uv: [f32; 4],
 }
 
 impl Default for UiLayers {
@@ -136,6 +140,8 @@ impl Default for UiLayers {
             anvil_bg_uv: [0.0, 0.0, 176.0 / 256.0, 166.0 / 256.0],
             logo: 12,
             logo_uv: [0.0, 0.0, 1.0, 64.0 / 256.0],
+            water_overlay: 13,
+            water_overlay_uv: [0.0, 0.0, 1.0, 1.0],
         }
     }
 }

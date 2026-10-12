@@ -12,6 +12,9 @@ uniform sampler2D u_lightmap;
 uniform vec3 u_sun_dir;
 uniform float u_daylight;
 uniform int u_use_textures;
+uniform int u_frame_tick;
+uniform float u_water_base_layer;
+uniform int u_water_frame_count;
 
 layout(location = 0) out vec4 frag_color;
 
@@ -19,7 +22,12 @@ void main() {
     vec4 base_color = v_tint;
 
     if (u_use_textures != 0 && v_layer >= 0.0) {
-        vec4 tex_color = texture(u_terrain_textures, vec3(v_uv, v_layer));
+        float sample_layer = v_layer;
+        if (u_water_frame_count > 1 && v_layer >= u_water_base_layer - 0.1 && v_layer < u_water_base_layer + 0.9) {
+            int frame = (u_frame_tick / 3) % u_water_frame_count;
+            sample_layer = u_water_base_layer + float(frame);
+        }
+        vec4 tex_color = texture(u_terrain_textures, vec3(v_uv, sample_layer));
         base_color = tex_color * v_tint;
     }
 

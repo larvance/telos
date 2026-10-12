@@ -64,24 +64,8 @@ void main() {
 
     vec4 tex_color = texture(u_textures, vec3(v_uv, float(layer)));
 
-    // Procedural wave normal perturbation for fluid surfaces
+    // Fluid surface normal matches voxel geometry face
     vec3 normal = v_normal;
-    if (v_material != 31u && v_material != 32u) {
-        float wave_time = float(pc.frame_tick) * 0.05;
-        vec2 p = v_world_pos.xz;
-        if (v_normal.y > 0.5) {
-            float dx = cos(p.x * 1.5 + wave_time * 1.2) * 1.5 * cos(p.y * 1.2 + wave_time * 0.9) * 0.035
-                     + cos((p.x + p.y) * 2.3 + wave_time * 1.8) * 2.3 * 0.02
-                     + cos(p.x * 3.8 - wave_time * 2.4) * 3.8 * 0.01;
-            float dz = -sin(p.x * 1.5 + wave_time * 1.2) * sin(p.y * 1.2 + wave_time * 0.9) * 1.2 * 0.035
-                     + cos((p.x + p.y) * 2.3 + wave_time * 1.8) * 2.3 * 0.02
-                     + cos(p.y * 3.6 + wave_time * 2.1) * 3.6 * 0.01;
-            normal = normalize(vec3(-dx * 1.6, 1.0, -dz * 1.6));
-        } else if (abs(v_normal.y) <= 0.5) {
-            float ripple = sin(v_world_pos.y * 4.0 + wave_time * 2.0) * 0.12;
-            normal = normalize(v_normal + vec3(0.0, ripple, 0.0));
-        }
-    }
 
     // Directional face shading factor
     float face_shade = 0.80;

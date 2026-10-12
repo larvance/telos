@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telos Launcher</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- =======================================================================
+       Ubuntu GNOME Custom Window Titlebar
+       ======================================================================= -->
+  <header id="titlebar">
+    <div class="titlebar-drag" data-tauri-drag-region>
+      <div class="titlebar-brand" data-tauri-drag-region>
+        <img src="assets/telos.png" alt="Telos" data-tauri-drag-region>
+        <span data-tauri-drag-region>Telos Launcher</span>
+      </div>
+    </div>
+    <div class="titlebar-controls">
+      <button class="window-btn" id="btn-minimize" title="Minimize">−</button>
+      <button class="window-btn" id="btn-maximize" title="Maximize">□</button>
+      <button class="window-btn close" id="btn-close" title="Close">✕</button>
+    </div>
+  </header>
+
+  <!-- =======================================================================
+       Application Main Container
+       ======================================================================= -->
+  <main id="app-container">
+    
+    <!-- =====================================================================
+         Screen 1: Sign-In View (Image 2 Match)
+         ===================================================================== -->
+    <section id="login-screen" class="screen active">
+      <div class="login-card-container">
+        <div class="login-logo-wrapper">
+          <img src="assets/telos.png" alt="Telos Logo" class="login-logo">
+        </div>
+        <div class="login-card">
+          <h2 class="login-title">Sign In With Telos</h2>
+          <form class="login-form" id="login-form" onsubmit="return false;">
+            <div class="input-group">
+              <label class="input-label" for="login-username">Telos Username</label>
+              <input type="text" id="login-username" class="text-input" placeholder="e.g. Larvance" value="Larvance" required>
+            </div>
+            <button type="submit" id="btn-login-submit" class="btn-green-3d">
+              Sign In With Telos
+            </button>
+          </form>
+          <div class="login-links">
+            <a href="#" id="link-guest-login" class="login-link">Play Offline as Guest</a>
+            <span style="color: #555;">•</span>
+            <a href="#" class="login-link">Sign Up ↗</a>
+          </div>
+        </div>
+      </div>
+
+      <footer class="login-footer">
+        <div class="lang-picker" id="lang-picker" title="Change Language">
+          <img src="assets/us_flag.svg" alt="United States Flag" class="lang-flag">
+          <span>English (US)</span>
+          <span style="font-size: 10px; color: #888;">▾</span>
+        </div>
+        <div class="login-footer-links">
+          <a href="#" class="footer-link">Help</a>
+          <a href="#" class="footer-link">Privacy</a>
+        </div>
+      </footer>
+    </section>
+
+    <!-- =====================================================================
+         Screen 2: Main Launcher View (Image 4 & 3 Match)
+         ===================================================================== -->
+    <section id="main-screen" class="screen">
+      <!-- Left Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="sidebar-header">
+            <img src="assets/telos.png" alt="Telos" class="sidebar-logo-icon">
+            <span class="sidebar-title">TELOS</span>
+          </div>
+          <nav class="game-list">
+            <div class="game-item active" data-game="telos">
+              <span class="game-item-icon">🟩</span>
+              <span>Telos</span>
+            </div>
+            <div class="game-item" data-game="dungeons" style="opacity: 0.5;" title="Upcoming expansion">
+              <span class="game-item-icon">⚔️</span>
+              <span>Telos Dungeons</span>
+            </div>
+            <div class="game-item" data-game="legends" style="opacity: 0.5;" title="Upcoming expansion">
+              <span class="game-item-icon">🛡️</span>
+              <span>Telos Legends</span>
+            </div>
+          </nav>
+        </div>
+
+        <div class="sidebar-bottom">
+          <div class="user-badge" id="user-badge" title="Account settings">
+            <div class="user-avatar" id="user-avatar">L</div>
+            <div class="user-details">
+              <span class="user-name" id="user-display-name">Larvance</span>
+              <span class="user-tag">Telos Account</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Content Area -->
+      <div class="main-content">
+        <!-- Top Tab Bar -->
+        <nav class="navbar">
+          <button class="nav-tab active" data-tab="play">Play</button>
+          <button class="nav-tab" data-tab="installations">Installations</button>
+          <button class="nav-tab" data-tab="servers">Servers</button>
+          <button class="nav-tab" data-tab="patch-notes">Patch Notes</button>
+          <button class="nav-tab" data-tab="settings">Settings</button>
+        </nav>
+
+        <!-- Tab Panels -->
+        <div class="tab-panels">
+          
+          <!-- TAB 1: PLAY -->
+          <div id="tab-play" class="tab-panel active">
+            <!-- Hero Artwork Banner -->
+            <div class="hero-banner">
+              <div class="hero-overlay"></div>
+              <div class="hero-logo-wrapper">
+                <img src="assets/telos.png" alt="Telos Logo" class="hero-logo">
+              </div>
+            </div>
+
+            <!-- Launch Control Bar -->
+            <div class="launch-bar">
+              <div class="launch-left">
+                <!-- Installation Selector -->
+                <div class="install-selector-wrapper">
+                  <button class="install-selector-btn" id="install-selector-btn">
+                    <span class="install-icon" id="curr-install-icon">🔨</span>
+                    <div class="install-info">
+                      <span class="install-name" id="curr-install-name">Dev Environment (Local Build)</span>
+                      <span class="install-version" id="curr-install-version">0.1.0-dev (Local)</span>
+                    </div>
+                    <span style="font-size: 11px; color: #888;">▾</span>
+                  </button>
+
+                  <div class="install-dropdown-menu" id="install-dropdown-menu">
+                    <!-- Populated dynamically -->
+                  </div>
+                </div>
+
+                <!-- Green 3D Play Button -->
+                <button class="btn-green-3d btn-play-large" id="play-btn">
+                  PLAY
+                </button>
+              </div>
+
+              <div class="launch-right">
+                <div class="launch-status-indicator">
+                  <span class="status-dot"></span>
+                  <span id="launch-status-text">Ready to launch</span>
+                </div>
+                <span id="launch-details-text">Multi-instance build coordinator active</span>
+              </div>
+            </div>
+
+            <!-- News & Updates Section -->
+            <div class="news-section">
+              <h3 class="news-heading">News & Announcements</h3>
+              <div class="news-grid">
+                <div class="news-card">
+                  <div class="news-thumb news-thumb-1">🌊</div>
+                  <div class="news-body">
+                    <span class="news-date">October 12, 2026</span>
+                    <h4 class="news-title">Underwater Overhaul & Shading</h4>
+                    <p class="news-snippet">New 2D caustics overlay animation and dynamic mesh culling underwater!</p>
+                  </div>
+                </div>
+                <div class="news-card">
+                  <div class="news-thumb news-thumb-2">⚡</div>
+                  <div class="news-body">
+                    <span class="news-date">October 10, 2026</span>
+                    <h4 class="news-title">Dual GPU Rendering Pipeline</h4>
+                    <p class="news-snippet">Vulkan 1.3 high-performance bindless pipeline alongside fallback OpenGL renderer.</p>
+                  </div>
+                </div>
+                <div class="news-card">
+                  <div class="news-thumb news-thumb-3">🌐</div>
+                  <div class="news-body">
+                    <span class="news-date">October 06, 2026</span>
+                    <h4 class="news-title">Multiplayer Servers & Netcode</h4>
+                    <p class="news-snippet">High-speed QUIC transport with client-side prediction and server reconciliation.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: INSTALLATIONS -->
+          <div id="tab-installations" class="tab-panel">
+            <div class="tab-header-row">
+              <h3 class="section-title">Installations</h3>
+              <button class="btn-secondary" id="btn-new-installation">+ New Installation</button>
+            </div>
+            <div class="installations-list" id="installations-container">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- TAB 3: SERVERS -->
+          <div id="tab-servers" class="tab-panel">
+            <div class="tab-header-row">
+              <div>
+                <h3 class="section-title">Multiplayer Servers</h3>
+                <p style="font-size: 12px; color: #888; margin-top: 4px;">Drag server cards to reorder. Group sections are collapsible.</p>
+              </div>
+              <button class="btn-secondary" id="btn-add-server">+ Add Server</button>
+            </div>
+            <div id="server-groups-container">
+              <!-- Dynamically populated with collapsible groups & draggable cards -->
+            </div>
+          </div>
+
+          <!-- TAB 4: PATCH NOTES -->
+          <div id="tab-patch-notes" class="tab-panel">
+            <div class="patch-note-card">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <h3 class="section-title">Version 0.1.0 — Alpha Release</h3>
+                <span class="patch-version-tag">Latest Release</span>
+              </div>
+              <p style="color: #aaa; font-size: 13px;">October 12, 2026</p>
+              <ul class="patch-bullets">
+                <li><strong>Underwater Shading:</strong> Integrated 2D caustics water animation overlay and translucent geometry culling when submerged.</li>
+                <li><strong>Corrected Texture Mappings:</strong> Dynamic BlockRegistry sync for OpenGL and Vulkan flora layers.</li>
+                <li><strong>Tauri 2 Launcher:</strong> Redesigned modern launcher with advisory build locking and multi-instance launch management.</li>
+                <li><strong>Multiplayer Server Groups:</strong> Reorderable server cards with draggable controls and collapsible sections.</li>
+                <li><strong>World Generation:</strong> 3D procedural terrain with caves, aquifers, strata rules, and biomes.</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- TAB 5: SETTINGS -->
+          <div id="tab-settings" class="tab-panel">
+            <h3 class="section-title">Launcher Settings</h3>
+            
+            <div class="settings-card">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-title">Keep Launcher Open</span>
+                  <span class="setting-desc">Keep Telos Launcher open in the background after the game starts.</span>
+                </div>
+                <input type="checkbox" id="setting-keep-open" style="width: 18px; height: 18px; cursor: pointer;">
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-info">
+                  <span class="setting-title">Dev Workspace Directory</span>
+                  <span class="setting-desc" id="setting-repo-dir">/home/usr/Projects/larvance/telos</span>
+                </div>
+                <button class="btn-secondary" id="btn-check-updates">Check for Updates</button>
+              </div>
+
+              <!-- Roadmap Box for Android & iOS -->
+              <div class="roadmap-box">
+                <span class="roadmap-title">📱 Mobile Platforms Roadmap</span>
+                <span class="roadmap-desc">Support for Android (Vulkan NDK) and iOS (Metal / MoltenVK) is planned for upcoming milestones. Track progress in <code>todo.md</code>.</span>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
+              <button class="btn-secondary" id="btn-logout" style="color: #ff6666; border-color: #662222;">
+                Log Out of Telos Account
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         Dev Build Progress Drawer
+         ===================================================================== -->
+    <div id="build-drawer">
+      <div class="build-drawer-header">
+        <div class="build-drawer-title">
+          <span>🔨</span>
+          <span id="build-drawer-heading">Compiling Telos Client...</span>
+        </div>
+        <button class="btn-icon" id="btn-close-build-drawer" title="Hide">✕</button>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="build-progress-fill"></div>
+      </div>
+      <div class="build-status-text" id="build-status-text">
+        Initializing build coordinator...
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         Modal 1: Ubuntu OS-Local Updater Dialog (Image 1 Match)
+         ===================================================================== -->
+    <div class="modal-overlay" id="updater-modal">
+      <div class="ubuntu-dialog">
+        <div class="ubuntu-dialog-header">
+          <span class="ubuntu-dialog-title">Updating Launcher</span>
+          <button class="window-btn close" id="btn-close-updater">✕</button>
+        </div>
+        <div class="ubuntu-dialog-body">
+          <p class="ubuntu-dialog-message" id="updater-message">
+            Checking for updates and synchronizing launcher components...
+          </p>
+          <div class="ubuntu-progress-bar">
+            <div class="ubuntu-progress-fill" id="updater-progress-fill"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: #a0a0a0;">
+            <span id="updater-step-text">Connecting to release repository...</span>
+            <span id="updater-percent-text">45%</span>
+          </div>
+        </div>
+        <div class="ubuntu-dialog-footer">
+          <button class="ubuntu-btn" id="btn-cancel-updater">Cancel</button>
+          <button class="ubuntu-btn primary" id="btn-apply-updater" style="display: none;">Restart</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         Modal 2: Add/Edit Server Modal
+         ===================================================================== -->
+    <div class="modal-overlay" id="server-modal">
+      <div class="ubuntu-dialog" style="width: 480px;">
+        <div class="ubuntu-dialog-header">
+          <span class="ubuntu-dialog-title" id="server-modal-title">Add Multiplayer Server</span>
+          <button class="window-btn close" id="btn-close-server-modal">✕</button>
+        </div>
+        <div class="ubuntu-dialog-body">
+          <div class="input-group">
+            <label class="input-label" for="server-name-input">Server Name</label>
+            <input type="text" id="server-name-input" class="text-input" placeholder="e.g. My Telos Server">
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="server-address-input">Server Address</label>
+            <input type="text" id="server-address-input" class="text-input" placeholder="e.g. play.example.org:25565">
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="server-group-input">Server Group</label>
+            <input type="text" id="server-group-input" class="text-input" placeholder="e.g. Community Servers">
+          </div>
+        </div>
+        <div class="ubuntu-dialog-footer">
+          <button class="ubuntu-btn" id="btn-cancel-server">Cancel</button>
+          <button class="ubuntu-btn primary" id="btn-save-server">Save Server</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

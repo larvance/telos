@@ -34,44 +34,36 @@ layout(push_constant, std430) uniform PushConstants {
 
 uint get_texture_layer(uint mat) {
     switch (mat) {
-        case 6u:  // Water (standard)
-        case 8u:  // Water (core pack)
-        case 15u: // Flowing water (standard)
-        case 37u: case 38u: case 39u: case 40u: case 41u: case 42u: case 43u: // Flowing water levels 2..7 & falling
+        case 6u:  // Water (standard & core pack)
+        case 15u: // Flowing water (standard & core pack)
+        case 37u: // Falling water (standard)
             return pc.water_base_layer;
         case 11u: // Poppy fallback
-        case 12u: // Poppy (standard)
-        case 16u: // Poppy (core pack)
+        case 12u: // Poppy (standard & core pack)
             return 9u;
-        case 13u: // Dandelion (standard)
-        case 17u: // Dandelion (core pack)
+        case 13u: // Dandelion (standard & core pack)
             return 10u;
-        case 14u: // Torch (standard)
+        case 14u: // Torch (standard & core pack)
             return 11u;
-        case 18u: // Short grass (core pack)
+        case 16u: case 18u: // Short grass (core pack & standard)
             return 12u;
-        case 19u: // Fern (core pack)
+        case 17u: case 19u: // Fern (core pack & standard)
             return 13u;
-        case 20u: // Dead bush (core pack)
+        case 20u: // Dead bush
             return 14u;
-        case 69u: // Tall grass (core pack)
-        case 85u: // Tall grass (standard)
+        case 40u: case 69u: case 73u: case 85u: // Tall grass (core pack 40, standard 73)
             return 32u;
-        case 70u: // Cornflower (core pack)
-        case 86u: // Cornflower (standard)
+        case 41u: case 70u: case 74u: case 86u: // Cornflower (core pack 41, standard 74)
             return 33u;
-        case 71u: // Oxeye daisy (core pack)
-        case 87u: // Oxeye daisy (standard)
+        case 42u: case 71u: case 75u: case 87u: // Oxeye daisy (core pack 42, standard 75)
             return 34u;
-        case 72u: // Brown mushroom (core pack)
-        case 88u: // Brown mushroom (standard)
+        case 43u: case 72u: case 76u: case 88u: // Brown mushroom (core pack 43, standard 76)
             return 35u;
-        case 73u: // Red mushroom (core pack)
-        case 89u: // Red mushroom (standard)
+        case 44u: case 77u: case 89u: // Red mushroom (core pack 44, standard 77)
             return 36u;
         case 31u: // Lava
         case 32u: // Flowing lava
-        case 44u: case 45u: case 46u: case 47u: case 48u: case 49u: case 50u: // Flowing lava levels 2..7 & falling
+        case 38u: // Falling lava (standard)
             return pc.lava_base_layer;
         case 33u: // Fire
             return pc.fire_base_layer;
@@ -86,8 +78,8 @@ void main() {
     uint frame_tick = pc.frame_tick_flags & 0x7FFFFFFFu;
     uint is_translucent = (pc.frame_tick_flags >> 31u) & 1u;
 
-    bool is_lava = (v_is_emissive != 0u || (v_material >= 31u && v_material <= 32u) || (v_material >= 44u && v_material <= 50u));
-    bool is_water = !is_lava && (is_translucent != 0u || v_material == 6u || v_material == 8u || v_material == 15u || (v_material >= 37u && v_material <= 43u));
+    bool is_lava = (v_is_emissive != 0u && (v_material == 31u || v_material == 32u || v_material == 38u));
+    bool is_water = (is_translucent != 0u || v_material == 6u || v_material == 15u || v_material == 37u) && !is_lava;
 
     uint base_layer = get_texture_layer(v_material);
 
