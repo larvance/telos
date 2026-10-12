@@ -30,8 +30,15 @@ if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
     TARGET_BIN="$REPO_DIR/target/debug/telos"
 fi
 
-# Ensure launcher binary exists if cargo is available
-if [[ ! -x "$DEV_BIN" && -z "${TELOS_NO_DEV:-}" && -z "${TELOS_NO_BUILD:-}" ]] && command -v cargo >/dev/null 2>&1; then
+# Ensure launcher binary exists and is up-to-date if cargo is available
+NEED_LAUNCHER_BUILD=0
+if [[ ! -x "$DEV_BIN" ]]; then
+    NEED_LAUNCHER_BUILD=1
+elif [[ -n "$(find "$REPO_DIR/apps/telos-launcher/src" "$REPO_DIR/apps/telos-launcher/ui" "$REPO_DIR/apps/telos-launcher/Cargo.toml" "$REPO_DIR/apps/telos-launcher/tauri.conf.json" -newer "$DEV_BIN" 2>/dev/null | head -n 1)" ]]; then
+    NEED_LAUNCHER_BUILD=1
+fi
+
+if [[ "$NEED_LAUNCHER_BUILD" == "1" && -z "${TELOS_NO_DEV:-}" && -z "${TELOS_NO_BUILD:-}" ]] && command -v cargo >/dev/null 2>&1; then
     if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
         cargo build -p telos-launcher --bin telos-launcher --quiet || true
     else

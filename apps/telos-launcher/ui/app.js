@@ -149,7 +149,7 @@
   let appProfile = null;
   let appInstallations = [];
   let appServers = [];
-  let selectedInstallId = 'dev-local';
+  let selectedInstallId = 'local-dev';
   let isBuilding = false;
   let editingServerId = null;
 
@@ -240,23 +240,38 @@
     elInstallMenu.classList.remove('open');
   });
 
+  function getInstIcon(inst) {
+    if (inst.icon) return inst.icon;
+    if (inst.is_dev || inst.id === 'local-dev') return '🔨';
+    if (inst.id === 'latest-snapshot') return '📦';
+    return '🟩';
+  }
+
+  function getInstVersion(inst) {
+    return inst.version_tag || inst.version || 'v0.1.0';
+  }
+
+  function getInstDir(inst) {
+    return inst.custom_dir || inst.directory || '/home/usr/Projects/larvance/telos';
+  }
+
   function renderInstallationSelector() {
     elInstallMenu.innerHTML = '';
     const current = appInstallations.find((i) => i.id === selectedInstallId) || appInstallations[0];
     if (current) {
-      elCurrInstallIcon.textContent = current.icon || '🟩';
+      elCurrInstallIcon.textContent = getInstIcon(current);
       elCurrInstallName.textContent = current.name;
-      elCurrInstallVersion.textContent = current.version;
+      elCurrInstallVersion.textContent = getInstVersion(current);
     }
 
     appInstallations.forEach((inst) => {
       const opt = document.createElement('div');
       opt.className = 'install-option' + (inst.id === selectedInstallId ? ' selected' : '');
       opt.innerHTML = `
-        <span style="font-size: 16px;">${inst.icon || '🟩'}</span>
+        <span style="font-size: 16px;">${getInstIcon(inst)}</span>
         <div style="display: flex; flex-direction: column;">
           <span style="font-size: 13px; font-weight: 600; color: #fff;">${inst.name}</span>
-          <span style="font-size: 11px; color: #aaa;">${inst.version}</span>
+          <span style="font-size: 11px; color: #aaa;">${getInstVersion(inst)}</span>
         </div>
       `;
       opt.addEventListener('click', async () => {
@@ -292,7 +307,10 @@
     elPlayBtn.textContent = 'CHECKING...';
 
     try {
-      const res = await invoke('trigger_launch', { installation_id: selectedInstallId });
+      const res = await invoke('trigger_launch', {
+        installation_id: selectedInstallId,
+        installationId: selectedInstallId,
+      });
       if (res && res.is_building) {
         isBuilding = true;
         elPlayBtn.textContent = 'BUILDING...';
@@ -400,11 +418,11 @@
       card.className = 'installation-card';
       card.innerHTML = `
         <div class="inst-meta">
-          <div class="inst-icon">${inst.icon || '🟩'}</div>
+          <div class="inst-icon">${getInstIcon(inst)}</div>
           <div class="inst-texts">
             <span class="inst-title">${inst.name}</span>
-            <span class="inst-tag">Version: ${inst.version}</span>
-            <span class="inst-dir">${inst.directory}</span>
+            <span class="inst-tag">Version: ${getInstVersion(inst)}</span>
+            <span class="inst-dir">${getInstDir(inst)}</span>
           </div>
         </div>
         <div style="display: flex; gap: 8px;">
@@ -697,6 +715,9 @@
           selectedInstallId = appProfile.selected_installation_id;
         } else if (appProfile.last_used_installation) {
           selectedInstallId = appProfile.last_used_installation;
+        }
+        if (selectedInstallId === 'dev-local') {
+          selectedInstallId = 'local-dev';
         }
         elSettingKeepOpen.checked = !(appProfile.auto_close_on_play ?? appProfile.auto_close_on_launch ?? false);
       }

@@ -260,7 +260,7 @@ fn launch_updater(state: State<'_, AppState>) -> Result<(), String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 fn trigger_launch(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -274,7 +274,7 @@ fn trigger_launch(
 
     let is_dev = selected_inst
         .as_ref()
-        .map_or(false, |i| i.channel == ChannelKind::LocalDev);
+        .map_or(true, |i| i.channel == ChannelKind::LocalDev);
 
     let profile = state.profile.lock().unwrap().clone();
     let repo_dir = state.repo_dir.clone();
@@ -292,7 +292,7 @@ fn trigger_launch(
         is_building_flag.store(true, Ordering::SeqCst);
         let (tx, rx) = channel::<BuildEvent>();
 
-        let is_debug = std::env::var("TELOS_DEBUG").map_or(true, |v| v == "1");
+        let is_debug = std::env::var("TELOS_DEBUG").map_or(false, |v| v == "1");
         start_build_worker(repo_dir.clone(), is_debug, tx, SystemTime::now());
 
         // Spawn listener thread that relays BuildEvents to Tauri frontend
