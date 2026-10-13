@@ -33,6 +33,16 @@ uint get_texture_layer(uint mat) {
             return 15u; // redstone_torch
         case 29u: // logic_inverter_off
             return 16u; // redstone_torch_off
+        case 81u: // Chest
+            return 6u; // oak_planks
+        case 91u: // Rail
+            return 84u;
+        case 92u: // Powered Rail
+            return 85u;
+        case 93u: // Detector Rail
+            return 86u;
+        case 94u: // Activator Rail
+            return 87u;
         default:
             return 0u;
     }

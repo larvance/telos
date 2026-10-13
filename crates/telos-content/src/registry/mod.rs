@@ -825,5 +825,15 @@ mod tests {
             .get_block_state(&power_id)
             .expect("Power block registered");
         assert_eq!(power_state.as_u32(), 21);
+
+        let standard = BlockRegistry::standard();
+        for idx in 0..standard.total_states() {
+            let id = BlockStateId::new(idx as u32);
+            assert_eq!(
+                frozen.block_registry().identifier(id),
+                standard.identifier(id),
+                "Mismatch between core_blocks() and BlockRegistry::standard() at BlockStateId({idx})"
+            );
+        }
     }
 }

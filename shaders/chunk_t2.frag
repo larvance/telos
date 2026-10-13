@@ -33,40 +33,37 @@ layout(push_constant, std430) uniform PushConstants {
 } pc;
 
 uint get_texture_layer(uint mat) {
+    if (mat == 6u || mat == 15u || (mat >= 37u && mat <= 43u)) {
+        return pc.water_base_layer;
+    }
+    if (mat == 31u || mat == 32u || (mat >= 44u && mat <= 50u)) {
+        return pc.lava_base_layer;
+    }
     switch (mat) {
-        case 6u:  // Water (standard & core pack)
-        case 15u: // Flowing water (standard & core pack)
-        case 37u: // Falling water (standard)
-            return pc.water_base_layer;
-        case 11u: // Poppy fallback
-        case 12u: // Poppy (standard & core pack)
+        case 12u: // Poppy
             return 9u;
-        case 13u: // Dandelion (standard & core pack)
+        case 13u: // Dandelion
             return 10u;
-        case 14u: // Torch (standard & core pack)
+        case 14u: // Torch
             return 11u;
-        case 16u: case 18u: // Short grass (core pack & standard)
+        case 16u: // Short grass
             return 12u;
-        case 17u: case 19u: // Fern (core pack & standard)
+        case 17u: // Fern
             return 13u;
-        case 20u: // Dead bush
+        case 18u: // Dead bush
             return 14u;
-        case 40u: case 69u: case 73u: case 85u: // Tall grass (core pack 40, standard 73)
-            return 32u;
-        case 41u: case 70u: case 74u: case 86u: // Cornflower (core pack 41, standard 74)
-            return 33u;
-        case 42u: case 71u: case 75u: case 87u: // Oxeye daisy (core pack 42, standard 75)
-            return 34u;
-        case 43u: case 72u: case 76u: case 88u: // Brown mushroom (core pack 43, standard 76)
-            return 35u;
-        case 44u: case 77u: case 89u: // Red mushroom (core pack 44, standard 77)
-            return 36u;
-        case 31u: // Lava
-        case 32u: // Flowing lava
-        case 38u: // Falling lava (standard)
-            return pc.lava_base_layer;
         case 33u: // Fire
             return pc.fire_base_layer;
+        case 85u: // Tall grass
+            return 32u;
+        case 86u: // Cornflower
+            return 33u;
+        case 87u: // Oxeye daisy
+            return 34u;
+        case 88u: // Brown mushroom
+            return 35u;
+        case 89u: // Red mushroom
+            return 36u;
         default:
             return 0u;
     }
@@ -78,8 +75,8 @@ void main() {
     uint frame_tick = pc.frame_tick_flags & 0x7FFFFFFFu;
     uint is_translucent = (pc.frame_tick_flags >> 31u) & 1u;
 
-    bool is_lava = (v_is_emissive != 0u && (v_material == 31u || v_material == 32u || v_material == 38u));
-    bool is_water = (is_translucent != 0u || v_material == 6u || v_material == 15u || v_material == 37u) && !is_lava;
+    bool is_lava = (v_material == 31u || v_material == 32u || (v_material >= 44u && v_material <= 50u));
+    bool is_water = (is_translucent != 0u || v_material == 6u || v_material == 15u || (v_material >= 37u && v_material <= 43u)) && !is_lava;
 
     uint base_layer = get_texture_layer(v_material);
 
@@ -103,6 +100,11 @@ void main() {
         if (tex_color.a < 0.1) {
             discard;
         }
+    }
+
+    // Biome grass tint for greyscale flora templates (short_grass, fern, tall_grass)
+    if (base_layer == 12u || base_layer == 13u || base_layer == 32u) {
+        tex_color.rgb *= vec3(0.474, 0.753, 0.353);
     }
 
     // Directional face shading

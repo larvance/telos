@@ -411,8 +411,11 @@ impl OpenGlRenderer {
         self.custom_tints.clear();
 
         let water_base = anim_textures.water_still.base_layer as f32;
+        let water_flow_base = anim_textures.water_flow.base_layer as f32;
         let lava_base = anim_textures.lava_still.base_layer as f32;
+        let lava_flow_base = anim_textures.lava_flow.base_layer as f32;
         let fire_base = anim_textures.fire.base_layer as f32;
+        let portal_base = anim_textures.nether_portal.base_layer as f32;
 
         for state_idx in 1..registry.total_states() {
             let id = telos_voxel::state::BlockStateId::new(state_idx as u32);
@@ -428,7 +431,7 @@ impl OpenGlRenderer {
                 "grass_block" => (3.0, [1.0, 1.0, 1.0, 1.0]),
                 "bedrock" => (4.0, [1.0, 1.0, 1.0, 1.0]),
                 "sand" => (5.0, [1.0, 1.0, 1.0, 1.0]),
-                "oak_planks" => (6.0, [1.0, 1.0, 1.0, 1.0]),
+                "oak_planks" | "chest" => (6.0, [1.0, 1.0, 1.0, 1.0]),
                 "oak_leaves" => (7.0, [0.298, 0.600, 0.129, 1.0]),
                 "glass" => (8.0, [1.0, 1.0, 1.0, 1.0]),
                 "stone_slab" => (0.0, [1.0, 1.0, 1.0, 1.0]),
@@ -439,17 +442,15 @@ impl OpenGlRenderer {
                 "short_grass" => (12.0, [0.474, 0.753, 0.353, 1.0]),
                 "fern" => (13.0, [0.474, 0.753, 0.353, 1.0]),
                 "dead_bush" => (14.0, [1.0, 1.0, 1.0, 1.0]),
-                "redstone_torch" => (15.0, [1.0, 1.0, 1.0, 1.0]),
-                "redstone_torch_off" => (16.0, [1.0, 1.0, 1.0, 1.0]),
-                "redstone_block" => (17.0, [1.0, 1.0, 1.0, 1.0]),
-                "redstone_lamp" => (18.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_torch" | "logic_inverter" => (15.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_torch_off" | "logic_inverter_off" => (16.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_block" | "logic_power_block" => (17.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_lamp" | "logic_lamp" => (18.0, [1.0, 1.0, 1.0, 1.0]),
                 "redstone_lamp_lit" | "logic_lamp_lit" => (19.0, [1.0, 1.0, 1.0, 1.0]),
-                "redstone_dust_line0" | "logic_wire" | "logic_wire_powered" => {
-                    (20.0, [1.0, 1.0, 1.0, 1.0])
-                }
-                "repeater" | "repeater_on" | "logic_repeater" | "logic_repeater_powered" => {
-                    (21.0, [1.0, 1.0, 1.0, 1.0])
-                }
+                "redstone_dust_line0" | "logic_wire" => (20.0, [0.35, 0.05, 0.05, 1.0]),
+                "logic_wire_powered" => (20.0, [1.0, 0.15, 0.15, 1.0]),
+                "repeater" | "logic_repeater" | "logic_diode" => (21.0, [1.0, 1.0, 1.0, 1.0]),
+                "repeater_on" | "logic_repeater_powered" => (22.0, [1.0, 1.0, 1.0, 1.0]),
                 "lever" | "logic_lever" | "logic_lever_on" => (23.0, [1.0, 1.0, 1.0, 1.0]),
                 "oak_log" => (24.0, [1.0, 1.0, 1.0, 1.0]),
                 "birch_log" => (26.0, [1.0, 1.0, 1.0, 1.0]),
@@ -471,11 +472,51 @@ impl OpenGlRenderer {
                 "nether_quartz_ore" => (44.0, [1.0, 1.0, 1.0, 1.0]),
                 "nether_gold_ore" => (45.0, [1.0, 1.0, 1.0, 1.0]),
                 "ancient_debris" => (46.0, [1.0, 1.0, 1.0, 1.0]),
-                "water" | "flowing_water" | "falling_water" => {
-                    (water_base, [0.247, 0.463, 0.894, 0.72])
+                "cobblestone" => (47.0, [1.0, 1.0, 1.0, 1.0]),
+                "obsidian" => (48.0, [1.0, 1.0, 1.0, 1.0]),
+                "coal_ore" => (49.0, [1.0, 1.0, 1.0, 1.0]),
+                "iron_ore" => (50.0, [1.0, 1.0, 1.0, 1.0]),
+                "copper_ore" => (51.0, [1.0, 1.0, 1.0, 1.0]),
+                "gold_ore" => (52.0, [1.0, 1.0, 1.0, 1.0]),
+                "redstone_ore" => (53.0, [1.0, 1.0, 1.0, 1.0]),
+                "lapis_ore" => (54.0, [1.0, 1.0, 1.0, 1.0]),
+                "diamond_ore" => (55.0, [1.0, 1.0, 1.0, 1.0]),
+                "emerald_ore" => (56.0, [1.0, 1.0, 1.0, 1.0]),
+                "deepslate" => (57.0, [1.0, 1.0, 1.0, 1.0]),
+                "deepslate_coal_ore" => (59.0, [1.0, 1.0, 1.0, 1.0]),
+                "deepslate_iron_ore" => (60.0, [1.0, 1.0, 1.0, 1.0]),
+                "deepslate_copper_ore" => (61.0, [1.0, 1.0, 1.0, 1.0]),
+                "deepslate_gold_ore" => (62.0, [1.0, 1.0, 1.0, 1.0]),
+                "deepslate_redstone_ore" => (63.0, [1.0, 1.0, 1.0, 1.0]),
+                "deepslate_lapis_ore" => (64.0, [1.0, 1.0, 1.0, 1.0]),
+                "deepslate_diamond_ore" => (65.0, [1.0, 1.0, 1.0, 1.0]),
+                "deepslate_emerald_ore" => (66.0, [1.0, 1.0, 1.0, 1.0]),
+                "granite" => (67.0, [1.0, 1.0, 1.0, 1.0]),
+                "diorite" => (68.0, [1.0, 1.0, 1.0, 1.0]),
+                "andesite" => (69.0, [1.0, 1.0, 1.0, 1.0]),
+                "tuff" => (70.0, [1.0, 1.0, 1.0, 1.0]),
+                "raw_iron_block" => (71.0, [1.0, 1.0, 1.0, 1.0]),
+                "raw_copper_block" => (72.0, [1.0, 1.0, 1.0, 1.0]),
+                "mossy_cobblestone" => (73.0, [1.0, 1.0, 1.0, 1.0]),
+                "monster_spawner" => (74.0, [1.0, 1.0, 1.0, 1.0]),
+                "crafting_table" => (77.0, [1.0, 1.0, 1.0, 1.0]),
+                "furnace" => (81.0, [1.0, 1.0, 1.0, 1.0]),
+                "lit_furnace" => (80.0, [1.0, 1.0, 1.0, 1.0]),
+                "anvil" => (82.0, [1.0, 1.0, 1.0, 1.0]),
+                "rail" => (84.0, [1.0, 1.0, 1.0, 1.0]),
+                "powered_rail" => (85.0, [1.0, 1.0, 1.0, 1.0]),
+                "detector_rail" => (86.0, [1.0, 1.0, 1.0, 1.0]),
+                "activator_rail" => (87.0, [1.0, 1.0, 1.0, 1.0]),
+                "water" => (water_base, [0.247, 0.463, 0.894, 0.72]),
+                p if p.starts_with("flowing_water") || p == "falling_water" => {
+                    (water_flow_base, [0.247, 0.463, 0.894, 0.72])
                 }
-                "lava" | "flowing_lava" | "falling_lava" => (lava_base, [1.0, 0.9, 0.7, 1.0]),
+                "lava" => (lava_base, [1.0, 0.9, 0.7, 1.0]),
+                p if p.starts_with("flowing_lava") || p == "falling_lava" => {
+                    (lava_flow_base, [1.0, 0.9, 0.7, 1.0])
+                }
                 "fire" => (fire_base, [1.0, 1.0, 1.0, 1.0]),
+                "nether_portal" => (portal_base, [1.0, 1.0, 1.0, 0.8]),
                 _ => (0.0, [1.0, 1.0, 1.0, 1.0]),
             };
             self.custom_layers.insert(state_u16, layer);
@@ -949,79 +990,154 @@ fn unpack_t2_quad(
 }
 
 fn get_gl_texture_layer(mat: u16, dir: FaceDir, custom_layers: &HashMap<u16, f32>) -> f32 {
+    match mat {
+        3 => {
+            return match dir {
+                FaceDir::PosY => 2.0, // Grass Top
+                FaceDir::NegY => 1.0, // Dirt
+                _ => 3.0,             // Grass Side
+            };
+        }
+        59 => {
+            return match dir {
+                FaceDir::PosY | FaceDir::NegY => 58.0, // deepslate_top
+                _ => 57.0,                             // deepslate
+            };
+        }
+        74 => {
+            return match dir {
+                FaceDir::PosY | FaceDir::NegY => 25.0, // oak_log_top
+                _ => 24.0,                             // oak_log
+            };
+        }
+        75 => {
+            return match dir {
+                FaceDir::PosY | FaceDir::NegY => 27.0, // birch_log_top
+                _ => 26.0,                             // birch_log
+            };
+        }
+        76 => {
+            return match dir {
+                FaceDir::PosY | FaceDir::NegY => 29.0, // spruce_log_top
+                _ => 28.0,                             // spruce_log
+            };
+        }
+        82 => {
+            return match dir {
+                FaceDir::PosY | FaceDir::NegY => 78.0, // furnace_top
+                FaceDir::PosZ => 79.0,                 // furnace_front
+                _ => 81.0,                             // furnace_side
+            };
+        }
+        83 => {
+            return match dir {
+                FaceDir::PosY | FaceDir::NegY => 78.0, // furnace_top
+                FaceDir::PosZ => 80.0,                 // furnace_front_on
+                _ => 81.0,                             // furnace_side
+            };
+        }
+        84 => {
+            return match dir {
+                FaceDir::PosY => 75.0,                 // crafting_table_top
+                FaceDir::NegY => 6.0,                  // oak_planks
+                FaceDir::PosZ | FaceDir::NegZ => 76.0, // crafting_table_front
+                _ => 77.0,                             // crafting_table_side
+            };
+        }
+        90 => {
+            return match dir {
+                FaceDir::PosY => 83.0, // anvil_top
+                _ => 82.0,             // anvil
+            };
+        }
+        98 => {
+            return match dir {
+                FaceDir::PosY | FaceDir::NegY => 88.0, // basalt_top
+                _ => 40.0,                             // basalt_side
+            };
+        }
+        99 => {
+            return match dir {
+                FaceDir::PosY => 89.0, // blackstone_top
+                _ => 41.0,             // blackstone
+            };
+        }
+        104 => {
+            return match dir {
+                FaceDir::PosY | FaceDir::NegY => 90.0, // ancient_debris_top
+                _ => 46.0,                             // ancient_debris_side
+            };
+        }
+        _ => {}
+    }
     if let Some(&layer) = custom_layers.get(&mat) {
         return layer;
     }
     match mat {
-        1 => 0.0, // Stone
-        2 => 1.0, // Dirt
-        3 => match dir {
-            FaceDir::PosY => 2.0, // Grass Top
-            FaceDir::NegY => 1.0, // Dirt
-            _ => 3.0,             // Grass Side
-        },
-        4 => 4.0,   // Bedrock
-        5 => 5.0,   // Sand
-        6 | 15 | 37 => 47.0, // Water
-        7 => 6.0,   // Oak Planks
-        8 => 7.0,   // Oak Leaves
-        9 => 8.0,   // Glass
-        10 => 0.0,  // Stone slab
-        11 => 6.0,  // Oak stairs
-        12 => 9.0,  // Poppy
-        13 => 10.0, // Dandelion
-        14 => 11.0, // Torch
-        16 => 12.0, // Short grass
-        17 => 13.0, // Fern
-        18 | 20 => 14.0, // Dead bush
-        21 => 17.0, // logic_power_block
-        24 => 18.0, // logic_lamp
-        25 => 19.0, // logic_lamp_lit
-        31 | 32 | 38 => 49.0, // Lava
-        33 => 51.0, // Fire
-        34 => 52.0, // Nether portal
-        40 | 69 | 85 => 32.0, // tall_grass
-        41 | 70 | 86 => 33.0, // cornflower
-        42 | 71 | 87 => 34.0, // oxeye_daisy
-        43 | 72 | 88 => 35.0, // brown_mushroom
-        44 | 73 | 89 => 36.0, // red_mushroom
-        74 => match dir {
-            FaceDir::PosY | FaceDir::NegY => 25.0, // oak_log_top
-            _ => 24.0,                             // oak_log
-        },
-        75 => match dir {
-            FaceDir::PosY | FaceDir::NegY => 27.0, // birch_log_top
-            _ => 26.0,                             // birch_log
-        },
-        76 => match dir {
-            FaceDir::PosY | FaceDir::NegY => 29.0, // spruce_log_top
-            _ => 28.0,                             // spruce_log
-        },
-        77 => 30.0,      // birch_leaves
-        78 => 31.0,      // spruce_leaves
+        1 => 0.0,                  // Stone
+        2 => 1.0,                  // Dirt
+        4 => 4.0,                  // Bedrock
+        5 => 5.0,                  // Sand
+        6 | 15 | 37..=43 => 91.0,  // Water fallback
+        7 | 81 => 6.0,             // Oak Planks / Chest
+        8 => 7.0,                  // Oak Leaves
+        9 => 8.0,                  // Glass
+        10 => 0.0,                 // Stone slab
+        11 => 6.0,                 // Oak stairs
+        12 => 9.0,                 // Poppy
+        13 => 10.0,                // Dandelion
+        14 => 11.0,                // Torch
+        16 => 12.0,                // Short grass
+        17 => 13.0,                // Fern
+        18 => 14.0,                // Dead bush
+        19 | 20 => 20.0,           // logic_wire
+        21 => 17.0,                // logic_power_block
+        22 | 23 => 23.0,           // logic_lever
+        24 => 18.0,                // logic_lamp
+        25 => 19.0,                // logic_lamp_lit
+        26 | 30 => 21.0,           // logic_repeater / diode
+        27 => 22.0,                // logic_repeater_powered
+        28 => 15.0,                // logic_inverter
+        29 => 16.0,                // logic_inverter_off
+        31 | 32 | 44..=50 => 93.0, // Lava fallback
+        35 => 47.0,                // Cobblestone
+        36 => 48.0,                // Obsidian
+        51..=58 => f32::from(mat - 2),
+        60..=73 => f32::from(mat - 1),
+        77 => 30.0, // birch_leaves
+        78 => 31.0, // spruce_leaves
+        79 => 73.0, // mossy_cobblestone
+        80 => 74.0, // monster_spawner
+        85 => 32.0, // tall_grass
+        86 => 33.0, // cornflower
+        87 => 34.0, // oxeye_daisy
+        88 => 35.0, // brown_mushroom
+        89 => 36.0, // red_mushroom
+        91..=94 => f32::from(mat - 7),
+        95..=97 => f32::from(mat - 58),
+        100..=103 => f32::from(mat - 58),
         _ => 0.0,
     }
 }
 
 fn get_material_tint(mat: u16, dir: FaceDir, custom_tints: &HashMap<u16, [f32; 4]>) -> [f32; 4] {
+    if mat == 3 {
+        return if dir == FaceDir::PosY {
+            [0.474, 0.753, 0.353, 1.0]
+        } else {
+            [1.0, 1.0, 1.0, 1.0]
+        };
+    }
     if let Some(&tint) = custom_tints.get(&mat) {
         return tint;
     }
     match mat {
-        3 => {
-            // Grass
-            if dir == FaceDir::PosY {
-                [0.474, 0.753, 0.353, 1.0]
-            } else {
-                [1.0, 1.0, 1.0, 1.0]
-            }
-        }
-        16 | 17 | 40 | 69 | 73 | 85 => [0.474, 0.753, 0.353, 1.0], // Short grass, fern, tall grass
-        8 => [0.298, 0.600, 0.129, 1.0],             // Oak Leaves
-        77 => [0.502, 0.655, 0.333, 1.0],            // Birch Leaves
-        78 => [0.380, 0.600, 0.380, 1.0],            // Spruce Leaves
-        6 | 15 | 37 => [0.247, 0.463, 0.894, 0.72],  // Water
-        31 | 32 | 38 => [1.0, 0.9, 0.7, 1.0],        // Lava
+        16 | 17 | 85 => [0.474, 0.753, 0.353, 1.0],        // Short grass, fern, tall grass
+        8 => [0.298, 0.600, 0.129, 1.0],                   // Oak Leaves
+        77 => [0.502, 0.655, 0.333, 1.0],                  // Birch Leaves
+        78 => [0.380, 0.600, 0.380, 1.0],                  // Spruce Leaves
+        6 | 15 | 37..=43 => [0.247, 0.463, 0.894, 0.72],   // Water
+        31 | 32 | 44..=50 => [1.0, 0.9, 0.7, 1.0],         // Lava
         _ => [1.0, 1.0, 1.0, 1.0],
     }
 }

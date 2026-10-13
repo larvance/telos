@@ -11921,147 +11921,278 @@ fn bake_block_textures() -> (telos_assets::BakedTextureArray, AnimatedTextures) 
     );
 
     let load_texture_with_fallback = |name: &str| -> telos_assets::RgbaImage {
-        stack.load_block_texture(name).unwrap_or_else(|_| {
-            let mut img = telos_assets::RgbaImage::new(target_res, target_res);
-            let color = match name {
-                "stone" | "bedrock" => [128, 128, 128, 255],
-                "dirt" | "grass_block_side" => [134, 96, 67, 255],
-                "grass_block_top" => [124, 189, 81, 255],
-                "sand" => [219, 211, 160, 255],
-                "oak_planks" => [162, 130, 78, 255],
-                "oak_leaves" => [60, 140, 40, 255],
-                "birch_leaves" => [100, 160, 60, 255],
-                "spruce_leaves" => [65, 110, 65, 255],
-                "oak_log" => [103, 82, 49, 255],
-                "oak_log_top" => [140, 115, 75, 255],
-                "birch_log" => [215, 215, 210, 255],
-                "birch_log_top" => [180, 160, 125, 255],
-                "spruce_log" => [45, 30, 15, 255],
-                "spruce_log_top" => [105, 80, 50, 255],
-                "glass" => [200, 220, 255, 128],
-                "poppy" | "red_mushroom" => [220, 40, 40, 255],
-                "dandelion" => [255, 230, 40, 255],
-                "torch" => [255, 200, 50, 255],
-                "short_grass" | "tall_grass" | "fern" => [100, 180, 60, 255],
-                "cornflower" => [70, 120, 240, 255],
-                "oxeye_daisy" => [240, 240, 230, 255],
-                "brown_mushroom" => [150, 110, 80, 255],
-                "dead_bush" | "lever" => [140, 110, 70, 255],
-                "redstone_torch" => [255, 60, 60, 255],
-                "redstone_torch_off" => [100, 30, 30, 255],
-                "redstone_block" => [220, 30, 30, 255],
-                "redstone_lamp" => [90, 55, 30, 255],
-                "redstone_lamp_on" => [255, 210, 100, 255],
-                "redstone_dust_line0" => [255, 255, 255, 255],
-                "repeater" | "repeater_on" => [180, 180, 180, 255],
-                "netherrack" => [110, 40, 40, 255],
-                "soul_sand" | "soul_soil" => [80, 60, 50, 255],
-                "glowstone" => [240, 200, 100, 255],
-                "basalt" => [80, 80, 85, 255],
-                "blackstone" => [40, 35, 40, 255],
-                "magma_block" => [190, 80, 30, 255],
-                "nether_quartz_ore" => [130, 65, 65, 255],
-                "nether_gold_ore" => [140, 75, 50, 255],
-                "ancient_debris" => [90, 70, 65, 255],
-                _ => [255, 0, 255, 255],
-            };
-            for pixel in img.data.as_chunks_mut::<4>().0 {
-                *pixel = color;
-            }
-            img
-        })
+        let alt_name = match name {
+            "tall_grass" => Some("tall_grass_top"),
+            "basalt" => Some("basalt_side"),
+            "magma_block" => Some("magma"),
+            "ancient_debris" => Some("ancient_debris_side"),
+            "monster_spawner" => Some("spawner"),
+            _ => None,
+        };
+        stack
+            .load_block_texture(name)
+            .or_else(|_| {
+                if let Some(alt) = alt_name {
+                    stack.load_block_texture(alt)
+                } else {
+                    Err(telos_assets::AssetError::MissingTexture(name.to_string()))
+                }
+            })
+            .unwrap_or_else(|_| {
+                let mut img = telos_assets::RgbaImage::new(target_res, target_res);
+                let color = match name {
+                    "stone" | "bedrock" | "cobblestone" | "andesite" => [128, 128, 128, 255],
+                    "dirt" | "grass_block_side" => [134, 96, 67, 255],
+                    "grass_block_top" => [124, 189, 81, 255],
+                    "sand" => [219, 211, 160, 255],
+                    "oak_planks"
+                    | "crafting_table_top"
+                    | "crafting_table_front"
+                    | "crafting_table_side" => [162, 130, 78, 255],
+                    "oak_leaves" => [60, 140, 40, 255],
+                    "birch_leaves" => [100, 160, 60, 255],
+                    "spruce_leaves" => [65, 110, 65, 255],
+                    "oak_log" => [103, 82, 49, 255],
+                    "oak_log_top" => [140, 115, 75, 255],
+                    "birch_log" => [215, 215, 210, 255],
+                    "birch_log_top" => [180, 160, 125, 255],
+                    "spruce_log" => [45, 30, 15, 255],
+                    "spruce_log_top" => [105, 80, 50, 255],
+                    "glass" => [200, 220, 255, 128],
+                    "poppy" | "red_mushroom" => [220, 40, 40, 255],
+                    "dandelion" => [255, 230, 40, 255],
+                    "torch" => [255, 200, 50, 255],
+                    "short_grass" | "tall_grass" | "fern" => [100, 180, 60, 255],
+                    "cornflower" => [70, 120, 240, 255],
+                    "oxeye_daisy" | "diorite" => [240, 240, 230, 255],
+                    "brown_mushroom" | "granite" => [150, 110, 80, 255],
+                    "dead_bush" | "lever" => [140, 110, 70, 255],
+                    "redstone_torch" => [255, 60, 60, 255],
+                    "redstone_torch_off" => [100, 30, 30, 255],
+                    "redstone_block" => [220, 30, 30, 255],
+                    "redstone_lamp" => [90, 55, 30, 255],
+                    "redstone_lamp_on" => [255, 210, 100, 255],
+                    "redstone_dust_line0" => [255, 255, 255, 255],
+                    "repeater" | "repeater_on" | "furnace_top" | "furnace_front"
+                    | "furnace_front_on" | "furnace_side" => [180, 180, 180, 255],
+                    "netherrack" => [110, 40, 40, 255],
+                    "soul_sand" | "soul_soil" => [80, 60, 50, 255],
+                    "glowstone" => [240, 200, 100, 255],
+                    "basalt" | "basalt_top" | "deepslate" | "deepslate_top" | "tuff" => {
+                        [80, 80, 85, 255]
+                    }
+                    "blackstone" | "blackstone_top" | "obsidian" | "anvil" | "anvil_top" => {
+                        [40, 35, 40, 255]
+                    }
+                    "magma_block" => [190, 80, 30, 255],
+                    "nether_quartz_ore" => [130, 65, 65, 255],
+                    "nether_gold_ore" => [140, 75, 50, 255],
+                    "ancient_debris" | "ancient_debris_top" => [90, 70, 65, 255],
+                    "mossy_cobblestone" => [90, 120, 85, 255],
+                    "spawner" => [40, 60, 75, 255],
+                    _ => [140, 140, 140, 255],
+                };
+                for pixel in img.data.as_chunks_mut::<4>().0 {
+                    *pixel = color;
+                }
+                img
+            })
     };
 
     let mut builder = TextureArrayBuilder::new(target_res);
-    builder.insert("stone", load_texture_with_fallback("stone"));
-    builder.insert("dirt", load_texture_with_fallback("dirt"));
+    builder.insert("stone", load_texture_with_fallback("stone")); // 0
+    builder.insert("dirt", load_texture_with_fallback("dirt")); // 1
     builder.insert(
         "grass_block_top",
         load_texture_with_fallback("grass_block_top"),
-    );
+    ); // 2
     builder.insert(
         "grass_block_side",
         load_texture_with_fallback("grass_block_side"),
-    );
-    builder.insert("bedrock", load_texture_with_fallback("bedrock"));
-    builder.insert("sand", load_texture_with_fallback("sand"));
-    builder.insert("oak_planks", load_texture_with_fallback("oak_planks"));
-    builder.insert("oak_leaves", load_texture_with_fallback("oak_leaves"));
-    builder.insert("glass", load_texture_with_fallback("glass"));
-    builder.insert("poppy", load_texture_with_fallback("poppy"));
-    builder.insert("dandelion", load_texture_with_fallback("dandelion"));
-    builder.insert("torch", load_texture_with_fallback("torch"));
+    ); // 3
+    builder.insert("bedrock", load_texture_with_fallback("bedrock")); // 4
+    builder.insert("sand", load_texture_with_fallback("sand")); // 5
+    builder.insert("oak_planks", load_texture_with_fallback("oak_planks")); // 6
+    builder.insert("oak_leaves", load_texture_with_fallback("oak_leaves")); // 7
+    builder.insert("glass", load_texture_with_fallback("glass")); // 8
+    builder.insert("poppy", load_texture_with_fallback("poppy")); // 9
+    builder.insert("dandelion", load_texture_with_fallback("dandelion")); // 10
+    builder.insert("torch", load_texture_with_fallback("torch")); // 11
     builder.insert(
         "short_grass",
         stack
             .load_block_texture("short_grass")
-            .or_else(|_| stack.load_block_texture("tall_grass"))
+            .or_else(|_| stack.load_block_texture("tall_grass_top"))
             .unwrap_or_else(|_| load_texture_with_fallback("short_grass")),
-    );
-    builder.insert("fern", load_texture_with_fallback("fern"));
-    builder.insert("dead_bush", load_texture_with_fallback("dead_bush"));
+    ); // 12
+    builder.insert("fern", load_texture_with_fallback("fern")); // 13
+    builder.insert("dead_bush", load_texture_with_fallback("dead_bush")); // 14
     builder.insert(
         "redstone_torch",
         load_texture_with_fallback("redstone_torch"),
-    );
+    ); // 15
     builder.insert(
         "redstone_torch_off",
         load_texture_with_fallback("redstone_torch_off"),
-    );
+    ); // 16
     builder.insert(
         "redstone_block",
         load_texture_with_fallback("redstone_block"),
-    );
-    builder.insert("redstone_lamp", load_texture_with_fallback("redstone_lamp"));
+    ); // 17
+    builder.insert("redstone_lamp", load_texture_with_fallback("redstone_lamp")); // 18
     builder.insert(
         "redstone_lamp_on",
         load_texture_with_fallback("redstone_lamp_on"),
-    );
+    ); // 19
     builder.insert(
         "redstone_dust_line0",
         load_texture_with_fallback("redstone_dust_line0"),
-    );
-    builder.insert("repeater", load_texture_with_fallback("repeater"));
-    builder.insert("repeater_on", load_texture_with_fallback("repeater_on"));
-    builder.insert("lever", load_texture_with_fallback("lever"));
-    builder.insert("oak_log", load_texture_with_fallback("oak_log"));
-    builder.insert("oak_log_top", load_texture_with_fallback("oak_log_top"));
-    builder.insert("birch_log", load_texture_with_fallback("birch_log"));
-    builder.insert("birch_log_top", load_texture_with_fallback("birch_log_top"));
-    builder.insert("spruce_log", load_texture_with_fallback("spruce_log"));
+    ); // 20
+    builder.insert("repeater", load_texture_with_fallback("repeater")); // 21
+    builder.insert("repeater_on", load_texture_with_fallback("repeater_on")); // 22
+    builder.insert("lever", load_texture_with_fallback("lever")); // 23
+    builder.insert("oak_log", load_texture_with_fallback("oak_log")); // 24
+    builder.insert("oak_log_top", load_texture_with_fallback("oak_log_top")); // 25
+    builder.insert("birch_log", load_texture_with_fallback("birch_log")); // 26
+    builder.insert("birch_log_top", load_texture_with_fallback("birch_log_top")); // 27
+    builder.insert("spruce_log", load_texture_with_fallback("spruce_log")); // 28
     builder.insert(
         "spruce_log_top",
         load_texture_with_fallback("spruce_log_top"),
-    );
-    builder.insert("birch_leaves", load_texture_with_fallback("birch_leaves"));
-    builder.insert("spruce_leaves", load_texture_with_fallback("spruce_leaves"));
-    builder.insert("tall_grass", load_texture_with_fallback("tall_grass"));
-    builder.insert("cornflower", load_texture_with_fallback("cornflower"));
-    builder.insert("oxeye_daisy", load_texture_with_fallback("oxeye_daisy"));
+    ); // 29
+    builder.insert("birch_leaves", load_texture_with_fallback("birch_leaves")); // 30
+    builder.insert("spruce_leaves", load_texture_with_fallback("spruce_leaves")); // 31
+    builder.insert(
+        "tall_grass",
+        stack
+            .load_block_texture("tall_grass_top")
+            .or_else(|_| stack.load_block_texture("short_grass"))
+            .unwrap_or_else(|_| load_texture_with_fallback("tall_grass")),
+    ); // 32
+    builder.insert("cornflower", load_texture_with_fallback("cornflower")); // 33
+    builder.insert("oxeye_daisy", load_texture_with_fallback("oxeye_daisy")); // 34
     builder.insert(
         "brown_mushroom",
         load_texture_with_fallback("brown_mushroom"),
-    );
-    builder.insert("red_mushroom", load_texture_with_fallback("red_mushroom"));
-    builder.insert("netherrack", load_texture_with_fallback("netherrack"));
-    builder.insert("soul_sand", load_texture_with_fallback("soul_sand"));
-    builder.insert("glowstone", load_texture_with_fallback("glowstone"));
-    builder.insert("basalt", load_texture_with_fallback("basalt"));
-    builder.insert("blackstone", load_texture_with_fallback("blackstone"));
-    builder.insert("magma_block", load_texture_with_fallback("magma_block"));
-    builder.insert("soul_soil", load_texture_with_fallback("soul_soil"));
+    ); // 35
+    builder.insert("red_mushroom", load_texture_with_fallback("red_mushroom")); // 36
+    builder.insert("netherrack", load_texture_with_fallback("netherrack")); // 37
+    builder.insert("soul_sand", load_texture_with_fallback("soul_sand")); // 38
+    builder.insert("glowstone", load_texture_with_fallback("glowstone")); // 39
+    builder.insert("basalt", load_texture_with_fallback("basalt")); // 40
+    builder.insert("blackstone", load_texture_with_fallback("blackstone")); // 41
+    builder.insert("magma_block", load_texture_with_fallback("magma_block")); // 42
+    builder.insert("soul_soil", load_texture_with_fallback("soul_soil")); // 43
     builder.insert(
         "nether_quartz_ore",
         load_texture_with_fallback("nether_quartz_ore"),
-    );
+    ); // 44
     builder.insert(
         "nether_gold_ore",
         load_texture_with_fallback("nether_gold_ore"),
-    );
+    ); // 45
     builder.insert(
         "ancient_debris",
         load_texture_with_fallback("ancient_debris"),
-    );
+    ); // 46
+    builder.insert("cobblestone", load_texture_with_fallback("cobblestone")); // 47
+    builder.insert("obsidian", load_texture_with_fallback("obsidian")); // 48
+    builder.insert("coal_ore", load_texture_with_fallback("coal_ore")); // 49
+    builder.insert("iron_ore", load_texture_with_fallback("iron_ore")); // 50
+    builder.insert("copper_ore", load_texture_with_fallback("copper_ore")); // 51
+    builder.insert("gold_ore", load_texture_with_fallback("gold_ore")); // 52
+    builder.insert("redstone_ore", load_texture_with_fallback("redstone_ore")); // 53
+    builder.insert("lapis_ore", load_texture_with_fallback("lapis_ore")); // 54
+    builder.insert("diamond_ore", load_texture_with_fallback("diamond_ore")); // 55
+    builder.insert("emerald_ore", load_texture_with_fallback("emerald_ore")); // 56
+    builder.insert("deepslate", load_texture_with_fallback("deepslate")); // 57
+    builder.insert("deepslate_top", load_texture_with_fallback("deepslate_top")); // 58
+    builder.insert(
+        "deepslate_coal_ore",
+        load_texture_with_fallback("deepslate_coal_ore"),
+    ); // 59
+    builder.insert(
+        "deepslate_iron_ore",
+        load_texture_with_fallback("deepslate_iron_ore"),
+    ); // 60
+    builder.insert(
+        "deepslate_copper_ore",
+        load_texture_with_fallback("deepslate_copper_ore"),
+    ); // 61
+    builder.insert(
+        "deepslate_gold_ore",
+        load_texture_with_fallback("deepslate_gold_ore"),
+    ); // 62
+    builder.insert(
+        "deepslate_redstone_ore",
+        load_texture_with_fallback("deepslate_redstone_ore"),
+    ); // 63
+    builder.insert(
+        "deepslate_lapis_ore",
+        load_texture_with_fallback("deepslate_lapis_ore"),
+    ); // 64
+    builder.insert(
+        "deepslate_diamond_ore",
+        load_texture_with_fallback("deepslate_diamond_ore"),
+    ); // 65
+    builder.insert(
+        "deepslate_emerald_ore",
+        load_texture_with_fallback("deepslate_emerald_ore"),
+    ); // 66
+    builder.insert("granite", load_texture_with_fallback("granite")); // 67
+    builder.insert("diorite", load_texture_with_fallback("diorite")); // 68
+    builder.insert("andesite", load_texture_with_fallback("andesite")); // 69
+    builder.insert("tuff", load_texture_with_fallback("tuff")); // 70
+    builder.insert(
+        "raw_iron_block",
+        load_texture_with_fallback("raw_iron_block"),
+    ); // 71
+    builder.insert(
+        "raw_copper_block",
+        load_texture_with_fallback("raw_copper_block"),
+    ); // 72
+    builder.insert(
+        "mossy_cobblestone",
+        load_texture_with_fallback("mossy_cobblestone"),
+    ); // 73
+    builder.insert("spawner", load_texture_with_fallback("spawner")); // 74
+    builder.insert(
+        "crafting_table_top",
+        load_texture_with_fallback("crafting_table_top"),
+    ); // 75
+    builder.insert(
+        "crafting_table_front",
+        load_texture_with_fallback("crafting_table_front"),
+    ); // 76
+    builder.insert(
+        "crafting_table_side",
+        load_texture_with_fallback("crafting_table_side"),
+    ); // 77
+    builder.insert("furnace_top", load_texture_with_fallback("furnace_top")); // 78
+    builder.insert("furnace_front", load_texture_with_fallback("furnace_front")); // 79
+    builder.insert(
+        "furnace_front_on",
+        load_texture_with_fallback("furnace_front_on"),
+    ); // 80
+    builder.insert("furnace_side", load_texture_with_fallback("furnace_side")); // 81
+    builder.insert("anvil", load_texture_with_fallback("anvil")); // 82
+    builder.insert("anvil_top", load_texture_with_fallback("anvil_top")); // 83
+    builder.insert("rail", load_texture_with_fallback("rail")); // 84
+    builder.insert("powered_rail", load_texture_with_fallback("powered_rail")); // 85
+    builder.insert("detector_rail", load_texture_with_fallback("detector_rail")); // 86
+    builder.insert(
+        "activator_rail",
+        load_texture_with_fallback("activator_rail"),
+    ); // 87
+    builder.insert("basalt_top", load_texture_with_fallback("basalt_top")); // 88
+    builder.insert(
+        "blackstone_top",
+        load_texture_with_fallback("blackstone_top"),
+    ); // 89
+    builder.insert(
+        "ancient_debris_top",
+        load_texture_with_fallback("ancient_debris_top"),
+    ); // 90
 
     let mut load_animated = |name: &str,
                              alt_name: Option<&str>,

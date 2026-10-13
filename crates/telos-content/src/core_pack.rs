@@ -630,150 +630,279 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
             },
         ),
         (
-            "oak_log",
-            "Oak Log",
+            "flowing_water_2",
+            "Flowing Water (Level 2)",
             BlockDef {
-                shape: BlockShapeDef::FullCube,
-                render_layer: RenderLayerDef::Opaque,
-                opacity: OpacityDef::Opaque,
-                hardness: 2.0,
-                blast_resistance: 2.0,
-                tool: Some("telos:axe".into()),
-                sound: Some("telos:wood".into()),
-                item: BlockItemPolicy::Auto,
-                material_texture_index: Some(5),
-                ..Default::default()
-            },
-        ),
-        (
-            "crafting_table",
-            "Crafting Table",
-            BlockDef {
-                shape: BlockShapeDef::FullCube,
-                render_layer: RenderLayerDef::Opaque,
-                opacity: OpacityDef::Opaque,
-                hardness: 2.5,
-                blast_resistance: 2.5,
-                tool: Some("telos:axe".into()),
-                sound: Some("telos:wood".into()),
-                item: BlockItemPolicy::Auto,
-                material_texture_index: Some(14),
-                ..Default::default()
-            },
-        ),
-        (
-            "anvil",
-            "Anvil",
-            BlockDef {
-                shape: BlockShapeDef::FullCube,
-                render_layer: RenderLayerDef::Opaque,
-                opacity: OpacityDef::Opaque,
-                hardness: 5.0,
-                blast_resistance: 1200.0,
-                tool: Some("telos:pickaxe".into()),
-                sound: Some("telos:anvil".into()),
-                item: BlockItemPolicy::Auto,
-                material_texture_index: Some(91),
-                ..Default::default()
-            },
-        ),
-        (
-            "tall_grass",
-            "Tall Grass",
-            BlockDef {
-                shape: BlockShapeDef::Cross,
-                render_layer: RenderLayerDef::Cutout,
-                opacity: OpacityDef::Transparent,
-                hardness: 0.0,
-                blast_resistance: 0.0,
-                tool: None,
-                sound: Some("telos:grass".into()),
-                item: BlockItemPolicy::Auto,
-                material_texture_index: Some(69),
-                ..Default::default()
-            },
-        ),
-        (
-            "cornflower",
-            "Cornflower",
-            BlockDef {
-                shape: BlockShapeDef::Cross,
-                render_layer: RenderLayerDef::Cutout,
-                opacity: OpacityDef::Transparent,
-                hardness: 0.0,
-                blast_resistance: 0.0,
-                tool: None,
-                sound: Some("telos:grass".into()),
-                item: BlockItemPolicy::Auto,
-                material_texture_index: Some(70),
-                ..Default::default()
-            },
-        ),
-        (
-            "oxeye_daisy",
-            "Oxeye Daisy",
-            BlockDef {
-                shape: BlockShapeDef::Cross,
-                render_layer: RenderLayerDef::Cutout,
-                opacity: OpacityDef::Transparent,
-                hardness: 0.0,
-                blast_resistance: 0.0,
-                tool: None,
-                sound: Some("telos:grass".into()),
-                item: BlockItemPolicy::Auto,
-                material_texture_index: Some(71),
-                ..Default::default()
-            },
-        ),
-        (
-            "brown_mushroom",
-            "Brown Mushroom",
-            BlockDef {
-                shape: BlockShapeDef::Cross,
-                render_layer: RenderLayerDef::Cutout,
-                opacity: OpacityDef::Transparent,
-                hardness: 0.0,
-                blast_resistance: 0.0,
-                tool: None,
-                sound: Some("telos:grass".into()),
-                item: BlockItemPolicy::Auto,
-                material_texture_index: Some(72),
-                ..Default::default()
-            },
-        ),
-        (
-            "red_mushroom",
-            "Red Mushroom",
-            BlockDef {
-                shape: BlockShapeDef::Cross,
-                render_layer: RenderLayerDef::Cutout,
-                opacity: OpacityDef::Transparent,
-                hardness: 0.0,
-                blast_resistance: 0.0,
-                tool: None,
-                sound: Some("telos:grass".into()),
-                item: BlockItemPolicy::Auto,
-                material_texture_index: Some(73),
-                ..Default::default()
-            },
-        ),
-        (
-            "missing",
-            "Missing Block",
-            BlockDef {
-                shape: BlockShapeDef::FullCube,
-                render_layer: RenderLayerDef::Opaque,
-                opacity: OpacityDef::Opaque,
-                hardness: 1.0,
-                blast_resistance: 1.0,
+                shape: BlockShapeDef::Fluid {
+                    level: 2,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(3),
+                hardness: 100.0,
+                blast_resistance: 100.0,
                 tool: None,
                 sound: None,
                 item: BlockItemPolicy::None,
-                material_texture_index: Some(1),
+                material_texture_index: Some(15),
                 ..Default::default()
             },
         ),
-        // Procedural ore distribution & large sinuous ore veins (Phase 45)
+        (
+            "flowing_water_3",
+            "Flowing Water (Level 3)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 3,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(3),
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(15),
+                ..Default::default()
+            },
+        ),
+        (
+            "flowing_water_4",
+            "Flowing Water (Level 4)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 4,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(3),
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(15),
+                ..Default::default()
+            },
+        ),
+        (
+            "flowing_water_5",
+            "Flowing Water (Level 5)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 5,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(3),
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(15),
+                ..Default::default()
+            },
+        ),
+        (
+            "flowing_water_6",
+            "Flowing Water (Level 6)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 6,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(3),
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(15),
+                ..Default::default()
+            },
+        ),
+        (
+            "flowing_water_7",
+            "Flowing Water (Level 7)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 7,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(3),
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(15),
+                ..Default::default()
+            },
+        ),
+        (
+            "falling_water",
+            "Falling Water",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 1,
+                    falling: true,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(3),
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(15),
+                ..Default::default()
+            },
+        ),
+        (
+            "flowing_lava_2",
+            "Flowing Lava (Level 2)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 2,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(15),
+                light_emission: 15,
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(32),
+                ..Default::default()
+            },
+        ),
+        (
+            "flowing_lava_3",
+            "Flowing Lava (Level 3)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 3,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(15),
+                light_emission: 15,
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(32),
+                ..Default::default()
+            },
+        ),
+        (
+            "flowing_lava_4",
+            "Flowing Lava (Level 4)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 4,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(15),
+                light_emission: 15,
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(32),
+                ..Default::default()
+            },
+        ),
+        (
+            "flowing_lava_5",
+            "Flowing Lava (Level 5)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 5,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(15),
+                light_emission: 15,
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(32),
+                ..Default::default()
+            },
+        ),
+        (
+            "flowing_lava_6",
+            "Flowing Lava (Level 6)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 6,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(15),
+                light_emission: 15,
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(32),
+                ..Default::default()
+            },
+        ),
+        (
+            "flowing_lava_7",
+            "Flowing Lava (Level 7)",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 7,
+                    falling: false,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(15),
+                light_emission: 15,
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(32),
+                ..Default::default()
+            },
+        ),
+        (
+            "falling_lava",
+            "Falling Lava",
+            BlockDef {
+                shape: BlockShapeDef::Fluid {
+                    level: 1,
+                    falling: true,
+                },
+                render_layer: RenderLayerDef::Translucent,
+                opacity: OpacityDef::Filter(15),
+                light_emission: 15,
+                hardness: 100.0,
+                blast_resistance: 100.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(32),
+                ..Default::default()
+            },
+        ),
+        // Procedural ore distribution & large sinuous ore veins
         (
             "coal_ore",
             "Coal Ore",
@@ -1142,7 +1271,23 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
                 ..Default::default()
             },
         ),
-        // Procedural trees & foliage canopies (Phase 47)
+        // Procedural trees & foliage canopies
+        (
+            "oak_log",
+            "Oak Log",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 2.0,
+                blast_resistance: 2.0,
+                tool: Some("telos:axe".into()),
+                sound: Some("telos:wood".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(5),
+                ..Default::default()
+            },
+        ),
         (
             "birch_log",
             "Birch Log",
@@ -1207,7 +1352,7 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
                 ..Default::default()
             },
         ),
-        // Procedural structures, dungeons & ruins (Phase 49)
+        // Procedural structures, dungeons & ruins
         (
             "mossy_cobblestone",
             "Mossy Cobblestone",
@@ -1257,7 +1402,7 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
                 ..Default::default()
             },
         ),
-        // Smelting furnaces (Phase 54)
+        // Smelting furnaces
         (
             "furnace",
             "Furnace",
@@ -1290,6 +1435,119 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
                 item: BlockItemPolicy::None,
                 material_texture_index: Some(68),
                 has_block_entity: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "crafting_table",
+            "Crafting Table",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 2.5,
+                blast_resistance: 2.5,
+                tool: Some("telos:axe".into()),
+                sound: Some("telos:wood".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(14),
+                ..Default::default()
+            },
+        ),
+        // Natural vegetation and biome flora
+        (
+            "tall_grass",
+            "Tall Grass",
+            BlockDef {
+                shape: BlockShapeDef::Cross,
+                render_layer: RenderLayerDef::Cutout,
+                opacity: OpacityDef::Transparent,
+                hardness: 0.0,
+                blast_resistance: 0.0,
+                tool: None,
+                sound: Some("telos:grass".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(69),
+                ..Default::default()
+            },
+        ),
+        (
+            "cornflower",
+            "Cornflower",
+            BlockDef {
+                shape: BlockShapeDef::Cross,
+                render_layer: RenderLayerDef::Cutout,
+                opacity: OpacityDef::Transparent,
+                hardness: 0.0,
+                blast_resistance: 0.0,
+                tool: None,
+                sound: Some("telos:grass".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(70),
+                ..Default::default()
+            },
+        ),
+        (
+            "oxeye_daisy",
+            "Oxeye Daisy",
+            BlockDef {
+                shape: BlockShapeDef::Cross,
+                render_layer: RenderLayerDef::Cutout,
+                opacity: OpacityDef::Transparent,
+                hardness: 0.0,
+                blast_resistance: 0.0,
+                tool: None,
+                sound: Some("telos:grass".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(71),
+                ..Default::default()
+            },
+        ),
+        (
+            "brown_mushroom",
+            "Brown Mushroom",
+            BlockDef {
+                shape: BlockShapeDef::Cross,
+                render_layer: RenderLayerDef::Cutout,
+                opacity: OpacityDef::Transparent,
+                hardness: 0.0,
+                blast_resistance: 0.0,
+                tool: None,
+                sound: Some("telos:grass".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(72),
+                ..Default::default()
+            },
+        ),
+        (
+            "red_mushroom",
+            "Red Mushroom",
+            BlockDef {
+                shape: BlockShapeDef::Cross,
+                render_layer: RenderLayerDef::Cutout,
+                opacity: OpacityDef::Transparent,
+                hardness: 0.0,
+                blast_resistance: 0.0,
+                tool: None,
+                sound: Some("telos:grass".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(73),
+                ..Default::default()
+            },
+        ),
+        (
+            "anvil",
+            "Anvil",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 5.0,
+                blast_resistance: 1200.0,
+                tool: Some("telos:pickaxe".into()),
+                sound: Some("telos:anvil".into()),
+                item: BlockItemPolicy::Auto,
+                material_texture_index: Some(91),
                 ..Default::default()
             },
         ),
@@ -1361,7 +1619,7 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
                 ..Default::default()
             },
         ),
-        // Nether realm blocks (Phase 80)
+        // Nether realm blocks
         (
             "netherrack",
             "Netherrack",
@@ -1410,7 +1668,7 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
                 ..Default::default()
             },
         ),
-        // Nether realm worldgen blocks (Phase 81)
+        // Nether realm worldgen blocks
         (
             "basalt",
             "Basalt",
@@ -1521,6 +1779,22 @@ pub fn core_blocks() -> Vec<(&'static str, &'static str, BlockDef)> {
                 sound: Some("telos:stone".into()),
                 item: BlockItemPolicy::Auto,
                 material_texture_index: Some(82),
+                ..Default::default()
+            },
+        ),
+        (
+            "missing",
+            "Missing Block",
+            BlockDef {
+                shape: BlockShapeDef::FullCube,
+                render_layer: RenderLayerDef::Opaque,
+                opacity: OpacityDef::Opaque,
+                hardness: 1.0,
+                blast_resistance: 1.0,
+                tool: None,
+                sound: None,
+                item: BlockItemPolicy::None,
+                material_texture_index: Some(1),
                 ..Default::default()
             },
         ),

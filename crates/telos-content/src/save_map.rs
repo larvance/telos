@@ -83,18 +83,21 @@ impl WorldRegistryMap {
         // Register any new active blocks from registries that aren't in the save map yet
         let mut added_new = false;
 
-        // Standard blocks
-        for ident in registries.block_ident_to_state.keys() {
-            let ident_str = ident.to_string();
-            if !map.ident_to_save.contains_key(&ident_str) {
-                let next_id = map.entries.len() as u32;
-                map.entries.push(SaveIdEntry {
-                    save_id: next_id,
-                    identifier: ident_str.clone(),
-                    status: SaveIdStatus::Live,
-                });
-                map.ident_to_save.insert(ident_str, next_id);
-                added_new = true;
+        // Standard blocks in deterministic BlockStateId order
+        for state_idx in 0..registries.total_block_states() {
+            let state_id = BlockStateId::new(state_idx as u32);
+            if let Some(ident) = registries.block_registry().identifier(state_id) {
+                let ident_str = ident.to_string();
+                if !map.ident_to_save.contains_key(&ident_str) {
+                    let next_id = map.entries.len() as u32;
+                    map.entries.push(SaveIdEntry {
+                        save_id: next_id,
+                        identifier: ident_str.clone(),
+                        status: SaveIdStatus::Live,
+                    });
+                    map.ident_to_save.insert(ident_str, next_id);
+                    added_new = true;
+                }
             }
         }
 

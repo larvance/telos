@@ -22,6 +22,8 @@ uint get_texture_layer(uint mat) {
             return 30u;
         case 78u: // Spruce Leaves
             return 31u;
+        case 80u: // Monster Spawner
+            return 74u;
         default:
             return 7u;
     }
@@ -39,13 +41,13 @@ void main() {
     }
 
     // Biome foliage tint for leaves
-    if (v_material == 8u) {
+    if (layer == 7u) {
         // Oak leaves (plains green #48b518)
         tex_color.rgb *= vec3(0.298, 0.600, 0.129);
-    } else if (v_material == 77u) {
+    } else if (layer == 30u) {
         // Birch leaves (#80a755)
         tex_color.rgb *= vec3(0.502, 0.655, 0.333);
-    } else if (v_material == 78u) {
+    } else if (layer == 31u) {
         // Spruce leaves (#619961)
         tex_color.rgb *= vec3(0.380, 0.600, 0.380);
     }

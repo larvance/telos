@@ -40,7 +40,7 @@ void main() {
     vec3 fluid_tint = vec3(0.247, 0.463, 0.894); // Plains water tint #3f76e4
     float alpha = 0.72;
 
-    if (v_material == 31u || v_material == 32u) {
+    if (v_material == 31u || v_material == 32u || (v_material >= 44u && v_material <= 50u)) {
         // Lava
         if (is_simulated && pc.lava_frame_count > 1u) {
             frame = (pc.frame_tick / 2u) % pc.lava_frame_count;
@@ -48,7 +48,7 @@ void main() {
         layer = pc.lava_base_layer + frame;
         fluid_tint = vec3(1.0);
         alpha = 1.0;
-    } else if (v_material == 15u) {
+    } else if (v_material == 15u || (v_material >= 37u && v_material <= 43u)) {
         // Flowing water
         if (is_simulated && pc.water_flow_frame_count > 1u) {
             frame = (pc.frame_tick / 3u) % pc.water_flow_frame_count;
@@ -92,7 +92,7 @@ void main() {
     vec3 total_light = clamp(light_color * face_shade * ao_factor, 0.0, 1.0);
 
     // Emissive glow for lava
-    if (v_material == 31u || v_material == 32u) {
+    if (v_material == 31u || v_material == 32u || (v_material >= 44u && v_material <= 50u)) {
         total_light = max(total_light, vec3(1.0, 0.9, 0.7));
         out_color = vec4(tex_color.rgb * fluid_tint * total_light, alpha);
     } else {

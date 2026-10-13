@@ -34,6 +34,57 @@ uint get_texture_layer(uint mat, uint dir) {
             return 18u;
         case 25u: // logic_lamp_lit
             return 19u;
+        case 35u: // Cobblestone
+            return 47u;
+        case 36u: // Obsidian
+            return 48u;
+        case 51u: // Coal Ore
+            return 49u;
+        case 52u: // Iron Ore
+            return 50u;
+        case 53u: // Copper Ore
+            return 51u;
+        case 54u: // Gold Ore
+            return 52u;
+        case 55u: // Redstone Ore
+            return 53u;
+        case 56u: // Lapis Ore
+            return 54u;
+        case 57u: // Diamond Ore
+            return 55u;
+        case 58u: // Emerald Ore
+            return 56u;
+        case 59u: // Deepslate
+            if (dir == 2u || dir == 3u) return 58u;
+            return 57u;
+        case 60u: // Deepslate Coal Ore
+            return 59u;
+        case 61u: // Deepslate Iron Ore
+            return 60u;
+        case 62u: // Deepslate Copper Ore
+            return 61u;
+        case 63u: // Deepslate Gold Ore
+            return 62u;
+        case 64u: // Deepslate Redstone Ore
+            return 63u;
+        case 65u: // Deepslate Lapis Ore
+            return 64u;
+        case 66u: // Deepslate Diamond Ore
+            return 65u;
+        case 67u: // Deepslate Emerald Ore
+            return 66u;
+        case 68u: // Granite
+            return 67u;
+        case 69u: // Diorite
+            return 68u;
+        case 70u: // Andesite
+            return 69u;
+        case 71u: // Tuff
+            return 70u;
+        case 72u: // Raw Iron Block
+            return 71u;
+        case 73u: // Raw Copper Block
+            return 72u;
         case 74u: // Oak Log
             if (dir == 2u || dir == 3u) return 25u; // Top/Bottom -> oak_log_top
             return 24u;                             // Sides -> oak_log
@@ -43,6 +94,49 @@ uint get_texture_layer(uint mat, uint dir) {
         case 76u: // Spruce Log
             if (dir == 2u || dir == 3u) return 29u; // Top/Bottom -> spruce_log_top
             return 28u;                             // Sides -> spruce_log
+        case 79u: // Mossy Cobblestone
+            return 73u;
+        case 80u: // Monster Spawner
+            return 74u;
+        case 82u: // Furnace
+            if (dir == 2u || dir == 3u) return 78u;
+            if (dir == 4u) return 79u;
+            return 81u;
+        case 83u: // Lit Furnace
+            if (dir == 2u || dir == 3u) return 78u;
+            if (dir == 4u) return 80u;
+            return 81u;
+        case 84u: // Crafting Table
+            if (dir == 2u) return 75u;
+            if (dir == 3u) return 6u;
+            if (dir == 4u || dir == 5u) return 76u;
+            return 77u;
+        case 90u: // Anvil
+            if (dir == 2u) return 83u;
+            return 82u;
+        case 95u: // Netherrack
+            return 37u;
+        case 96u: // Soul Sand
+            return 38u;
+        case 97u: // Glowstone
+            return 39u;
+        case 98u: // Basalt
+            if (dir == 2u || dir == 3u) return 88u;
+            return 40u;
+        case 99u: // Blackstone
+            if (dir == 2u) return 89u;
+            return 41u;
+        case 100u: // Magma Block
+            return 42u;
+        case 101u: // Soul Soil
+            return 43u;
+        case 102u: // Nether Quartz Ore
+            return 44u;
+        case 103u: // Nether Gold Ore
+            return 45u;
+        case 104u: // Ancient Debris
+            if (dir == 2u || dir == 3u) return 90u;
+            return 46u;
         default:
             return 0u;
     }
@@ -91,13 +185,13 @@ void main() {
 
     vec3 total_light = clamp(light_color * face_shade * ao_factor, 0.0, 1.0);
 
-    // Emissive logic components (Phase 36)
-    if (v_material == 25u) {
-        // Lit redstone lamp emits warm unshaded glow without needing LightBfs flood
+    // Emissive block components
+    if (v_material == 25u || v_material == 97u) {
         total_light = max(total_light, vec3(1.0, 0.92, 0.75));
     } else if (v_material == 21u) {
-        // Redstone power block glows brightly
         total_light = max(total_light, vec3(0.9, 0.3, 0.3));
+    } else if (v_material == 100u || (v_material == 83u && v_dir == 4u)) {
+        total_light = max(total_light, vec3(0.9, 0.6, 0.3));
     }
 
     out_color = vec4(tex_color.rgb * total_light, tex_color.a);
