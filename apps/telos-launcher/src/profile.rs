@@ -14,6 +14,16 @@ pub struct LauncherProfile {
     pub language: String,
     pub auto_close_on_play: bool,
     pub game_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub news_url: Option<String>,
+    #[serde(default)]
+    pub graphics_backend: Option<String>,
+    #[serde(default)]
+    pub ram_gb: Option<u32>,
+    #[serde(default)]
+    pub last_used_installation: Option<String>,
+    #[serde(default)]
+    pub auth_token: Option<String>,
 }
 
 impl Default for LauncherProfile {
@@ -26,6 +36,11 @@ impl Default for LauncherProfile {
             language: "English - United States".to_string(),
             auto_close_on_play: false,
             game_dir: None,
+            news_url: Some("https://news.telos.larvance.com/news.json".to_string()),
+            graphics_backend: Some("vulkan".to_string()),
+            ram_gb: Some(8),
+            last_used_installation: Some("local-dev".to_string()),
+            auth_token: None,
         }
     }
 }

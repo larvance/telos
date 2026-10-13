@@ -1,5 +1,6 @@
 // ============================================================================
 // Telos Launcher Frontend Controller (Tauri 2 Native IPC + Fallback)
+// Zero-Emoji Clean SVG Iconography, Live News Feed & RTC Deployment Integration
 // ============================================================================
 
 (function () {
@@ -26,17 +27,20 @@
       username: 'Larvance',
       account_type: 'Telos Account',
       logged_in: false,
-      selected_installation_id: 'dev-local',
+      selected_installation_id: 'local-dev',
       auto_close_on_play: false,
-      language: 'English - United States',
+      language: 'English (US)',
+      news_url: 'https://news.telos.larvance.com/news.json',
+      ram_gb: 8,
+      graphics_backend: 'vulkan',
     },
     installations: [
       {
-        id: 'dev-local',
+        id: 'local-dev',
         name: 'Dev Environment (Local Build)',
         version: '0.1.0-dev (Local)',
         directory: '/home/usr/Projects/larvance/telos',
-        icon: '🔨',
+        icon_type: 'wrench',
         is_dev: true,
       },
       {
@@ -44,7 +48,7 @@
         name: 'Latest release',
         version: '0.1.0',
         directory: '/home/usr/.local/share/telos/versions/0.1.0',
-        icon: '🟩',
+        icon_type: 'voxel',
         is_dev: false,
       },
       {
@@ -52,7 +56,7 @@
         name: 'Latest snapshot',
         version: '0.2.0-alpha',
         directory: '/home/usr/.local/share/telos/versions/0.2.0-alpha',
-        icon: '📦',
+        icon_type: 'package',
         is_dev: false,
       },
     ],
@@ -103,7 +107,6 @@
   };
 
   async function mockInvoke(cmd, args) {
-    console.log(`[Mock IPC] ${cmd}:`, args);
     switch (cmd) {
       case 'get_profile':
         return mockState.profile;
@@ -111,11 +114,13 @@
         mockState.profile = { ...mockState.profile, ...args.profile };
         return;
       case 'login':
-        mockState.profile.account_name = args.username || 'Larvance';
+        mockState.profile.username = args.username || 'Larvance';
         mockState.profile.auth_token = 'token-' + Date.now();
+        mockState.profile.logged_in = true;
         return mockState.profile;
       case 'logout':
         mockState.profile.auth_token = null;
+        mockState.profile.logged_in = false;
         return;
       case 'get_installations':
         return mockState.installations;
@@ -132,26 +137,59 @@
       case 'trigger_launch':
         return {
           success: true,
-          message: 'Launching Telos...',
-          is_building: args.installation_id === 'dev-local',
+          message: 'Launching Telos Client...',
+          is_building: args.installation_id === 'local-dev' || args.installation_id === 'dev-local',
         };
       case 'window_minimize':
       case 'window_toggle_maximize':
       case 'window_close':
-        console.log(`Window command '${cmd}' acknowledged.`);
         return;
       default:
         return null;
     }
   }
 
+  // --- SVG Icon Helper (Zero Unicode Emojis) ---
+  function getSvgIcon(iconType) {
+    if (iconType === 'wrench' || iconType === 'dev' || iconType === 'hammer') {
+      return '<svg class="icon"><use href="#icon-wrench"></use></svg>';
+    }
+    if (iconType === 'package' || iconType === 'snapshot') {
+      return '<svg class="icon"><use href="#icon-package"></use></svg>';
+    }
+    if (iconType === 'swords') {
+      return '<svg class="icon"><use href="#icon-swords"></use></svg>';
+    }
+    if (iconType === 'shield') {
+      return '<svg class="icon"><use href="#icon-shield"></use></svg>';
+    }
+    return '<svg class="icon" style="color: var(--accent-green-light);"><use href="#icon-voxel"></use></svg>';
+  }
+
+  function getInstIcon(inst) {
+    if (inst.icon_type) return getSvgIcon(inst.icon_type);
+    if (inst.is_dev || inst.id === 'local-dev' || inst.id === 'dev-local') return getSvgIcon('wrench');
+    if (inst.id === 'snapshot-latest' || (inst.version && inst.version.includes('alpha'))) return getSvgIcon('package');
+    return getSvgIcon('voxel');
+  }
+
+  function getInstVersion(inst) {
+    return inst.version_tag || inst.version || 'v0.1.0';
+  }
+
+  function getInstDir(inst) {
+    return inst.custom_dir || inst.directory || '/home/usr/Projects/larvance/telos';
+  }
+
   // --- App State ---
   let appProfile = null;
   let appInstallations = [];
   let appServers = [];
+  let appNews = [];
   let selectedInstallId = 'local-dev';
   let isBuilding = false;
   let editingServerId = null;
+  let newsEndpoint = 'https://news.telos.larvance.com/news.json';
 
   // --- DOM Elements ---
   const elLoginScreen = document.getElementById('login-screen');
@@ -161,6 +199,7 @@
   const elLinkGuest = document.getElementById('link-guest-login');
   const elUserDisplayName = document.getElementById('user-display-name');
   const elUserAvatar = document.getElementById('user-avatar');
+  const elUserTag = document.getElementById('user-account-tag');
 
   // Titlebar controls
   document.getElementById('btn-minimize').addEventListener('click', () => invoke('window_minimize'));
@@ -216,6 +255,11 @@
       const uName = appProfile.username || appProfile.account_name || 'Larvance';
       elUserDisplayName.textContent = uName;
       elUserAvatar.textContent = (uName[0] || 'T').toUpperCase();
+      if (uName.startsWith('Guest_')) {
+        elUserTag.textContent = 'Guest Player (Offline)';
+      } else {
+        elUserTag.textContent = 'Telos Account';
+      }
     }
   }
 
@@ -240,26 +284,11 @@
     elInstallMenu.classList.remove('open');
   });
 
-  function getInstIcon(inst) {
-    if (inst.icon) return inst.icon;
-    if (inst.is_dev || inst.id === 'local-dev') return '🔨';
-    if (inst.id === 'latest-snapshot') return '📦';
-    return '🟩';
-  }
-
-  function getInstVersion(inst) {
-    return inst.version_tag || inst.version || 'v0.1.0';
-  }
-
-  function getInstDir(inst) {
-    return inst.custom_dir || inst.directory || '/home/usr/Projects/larvance/telos';
-  }
-
   function renderInstallationSelector() {
     elInstallMenu.innerHTML = '';
     const current = appInstallations.find((i) => i.id === selectedInstallId) || appInstallations[0];
     if (current) {
-      elCurrInstallIcon.textContent = getInstIcon(current);
+      elCurrInstallIcon.innerHTML = getInstIcon(current);
       elCurrInstallName.textContent = current.name;
       elCurrInstallVersion.textContent = getInstVersion(current);
     }
@@ -268,7 +297,7 @@
       const opt = document.createElement('div');
       opt.className = 'install-option' + (inst.id === selectedInstallId ? ' selected' : '');
       opt.innerHTML = `
-        <span style="font-size: 16px;">${getInstIcon(inst)}</span>
+        <span style="font-size: 16px; display: flex; align-items: center;">${getInstIcon(inst)}</span>
         <div style="display: flex; flex-direction: column;">
           <span style="font-size: 13px; font-weight: 600; color: #fff;">${inst.name}</span>
           <span style="font-size: 11px; color: #aaa;">${getInstVersion(inst)}</span>
@@ -345,7 +374,6 @@
         handleBuildPayload(event.payload);
       });
     } else {
-      // Simulate build events in browser preview
       simulateMockBuildEvents();
     }
   }
@@ -408,7 +436,179 @@
     }, 700);
   }
 
+  // --- Dynamic Live News & Highlights ---
+  const elNewsGrid = document.getElementById('news-grid-container');
+  const elBtnRefreshNews = document.getElementById('btn-refresh-news');
+  const elNewsReaderModal = document.getElementById('news-reader-modal');
+  const elBtnCloseReader = document.getElementById('btn-close-reader');
+  const elBtnDoneReader = document.getElementById('btn-done-reader');
+  const elReaderCategory = document.getElementById('reader-category');
+  const elReaderTitle = document.getElementById('reader-title');
+  const elReaderDate = document.getElementById('reader-date');
+  const elReaderAuthor = document.getElementById('reader-author');
+  const elReaderImg = document.getElementById('reader-img');
+  const elReaderSummary = document.getElementById('reader-summary');
+  const elReaderContent = document.getElementById('reader-content');
+  const elReaderWebLink = document.getElementById('reader-web-link');
+
+  async function fetchAndRenderNews() {
+    elNewsGrid.innerHTML = `
+      <div style="grid-column: 1 / -1; padding: 20px; text-align: center; color: #888;">
+        Loading latest announcements from news.telos.larvance.com...
+      </div>
+    `;
+
+    let articles = null;
+    const endpoint = newsEndpoint || 'https://news.telos.larvance.com/news.json';
+
+    // 1. Attempt live remote fetch with timeout
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(endpoint, {
+        signal: controller.signal,
+        cache: 'no-cache',
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        articles = await res.json();
+      }
+    } catch (e) {
+      // Fallback silently if offline or domain not pointed yet
+    }
+
+    // 2. Fallback to bundled offline news cache
+    if (!articles || !Array.isArray(articles) || articles.length === 0) {
+      try {
+        const localRes = await fetch('assets/news/news.json');
+        if (localRes.ok) {
+          articles = await localRes.json();
+        }
+      } catch (err) {
+        console.error('Failed to load local news:', err);
+      }
+    }
+
+    if (!articles || !Array.isArray(articles)) {
+      articles = [];
+    }
+
+    appNews = articles;
+    renderNewsGrid(appNews);
+  }
+
+  function resolveNewsImage(img) {
+    if (!img) return 'assets/news/underwater_overhaul.jpg';
+    if (img.startsWith('http://') || img.startsWith('https://')) return img;
+    if (img.startsWith('assets/images/')) {
+      return img.replace('assets/images/', 'assets/news/');
+    }
+    return img;
+  }
+
+  function renderNewsGrid(articles) {
+    elNewsGrid.innerHTML = '';
+    if (articles.length === 0) {
+      elNewsGrid.innerHTML = `
+        <div style="grid-column: 1 / -1; padding: 20px; text-align: center; color: #888;">
+          No news articles found.
+        </div>
+      `;
+      return;
+    }
+
+    articles.forEach((art) => {
+      const card = document.createElement('div');
+      card.className = 'news-card';
+      const imgSrc = resolveNewsImage(art.image);
+
+      card.innerHTML = `
+        <div class="news-thumb-wrap">
+          <img src="${imgSrc}" alt="${art.title}" class="news-card-img" loading="lazy">
+          <span class="news-badge">${art.category || 'Update'}</span>
+        </div>
+        <div class="news-body">
+          <span class="news-date">${art.date || ''}</span>
+          <h4 class="news-title">${art.title}</h4>
+          <p class="news-snippet">${art.summary || ''}</p>
+        </div>
+      `;
+
+      card.addEventListener('click', () => {
+        openNewsReader(art);
+      });
+
+      elNewsGrid.appendChild(card);
+    });
+  }
+
+  function openNewsReader(art) {
+    elReaderCategory.textContent = art.category || 'Announcement';
+    elReaderTitle.textContent = art.title;
+    elReaderDate.textContent = art.date || '';
+    elReaderAuthor.textContent = 'By ' + (art.author || 'Telos Dev Team');
+    elReaderImg.src = resolveNewsImage(art.image);
+    elReaderSummary.textContent = art.summary || '';
+    elReaderContent.textContent = art.content || '';
+    elReaderWebLink.href = `https://news.telos.larvance.com/articles/${art.id}.html`;
+    elNewsReaderModal.classList.add('active');
+  }
+
+  const closeNewsReader = () => elNewsReaderModal.classList.remove('active');
+  elBtnCloseReader.addEventListener('click', closeNewsReader);
+  elBtnDoneReader.addEventListener('click', closeNewsReader);
+
+  if (elBtnRefreshNews) {
+    elBtnRefreshNews.addEventListener('click', () => {
+      fetchAndRenderNews();
+    });
+  }
+
   // --- Installations Tab Rendering ---
+  const elBtnNewInstall = document.getElementById('btn-new-installation');
+  const elNewInstallModal = document.getElementById('new-install-modal');
+  const elBtnCloseNewInstall = document.getElementById('btn-close-new-install');
+  const elBtnCancelNewInstall = document.getElementById('btn-cancel-new-install');
+  const elBtnSaveNewInstall = document.getElementById('btn-save-new-install');
+  const elInpInstallName = document.getElementById('inp-install-name');
+  const elInpInstallVersion = document.getElementById('inp-install-version');
+  const elInpInstallIcon = document.getElementById('inp-install-icon');
+  const elInpInstallDir = document.getElementById('inp-install-dir');
+
+  elBtnNewInstall.addEventListener('click', () => {
+    elInpInstallName.value = 'Custom Snapshot ' + (appInstallations.length + 1);
+    elInpInstallDir.value = `/home/usr/.local/share/telos/versions/profile-${Date.now()}`;
+    elNewInstallModal.classList.add('active');
+  });
+
+  const closeNewInstallModal = () => elNewInstallModal.classList.remove('active');
+  elBtnCloseNewInstall.addEventListener('click', closeNewInstallModal);
+  elBtnCancelNewInstall.addEventListener('click', closeNewInstallModal);
+
+  elBtnSaveNewInstall.addEventListener('click', async () => {
+    const name = elInpInstallName.value.trim() || 'Custom Profile';
+    const version = elInpInstallVersion.value;
+    const iconType = elInpInstallIcon.value;
+    const dir = elInpInstallDir.value.trim() || '/home/usr/.local/share/telos/versions/custom';
+
+    const newInst = {
+      id: 'inst-' + Date.now(),
+      name,
+      version,
+      directory: dir,
+      icon_type: iconType,
+      is_dev: version.includes('dev'),
+    };
+
+    appInstallations.push(newInst);
+    selectedInstallId = newInst.id;
+    closeNewInstallModal();
+
+    await invoke('save_installations', { installations: appInstallations });
+    renderInstallationSelector();
+    renderInstallationsTab();
+  });
+
   function renderInstallationsTab() {
     const container = document.getElementById('installations-container');
     container.innerHTML = '';
@@ -416,6 +616,8 @@
     appInstallations.forEach((inst) => {
       const card = document.createElement('div');
       card.className = 'installation-card';
+      const isCustom = !['local-dev', 'dev-local', 'release-latest', 'snapshot-latest'].includes(inst.id);
+
       card.innerHTML = `
         <div class="inst-meta">
           <div class="inst-icon">${getInstIcon(inst)}</div>
@@ -425,8 +627,18 @@
             <span class="inst-dir">${getInstDir(inst)}</span>
           </div>
         </div>
-        <div style="display: flex; gap: 8px;">
-          <button class="btn-green-3d" style="padding: 8px 20px; font-size: 13px;" data-play-id="${inst.id}">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button class="btn-icon" data-folder-id="${inst.id}" title="Copy Directory Path">
+            <svg class="icon icon-sm"><use href="#icon-folder"></use></svg>
+          </button>
+          ${
+            isCustom
+              ? `<button class="btn-icon" data-del-id="${inst.id}" title="Delete Installation">
+                   <svg class="icon icon-sm"><use href="#icon-trash"></use></svg>
+                 </button>`
+              : ''
+          }
+          <button class="btn-green-3d" style="padding: 7px 18px; font-size: 13px;" data-play-id="${inst.id}">
             PLAY
           </button>
         </div>
@@ -437,6 +649,24 @@
         renderInstallationSelector();
         elPlayBtn.click();
       });
+
+      card.querySelector('[data-folder-id]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        alert(`Installation path: ${getInstDir(inst)}`);
+      });
+
+      if (isCustom) {
+        card.querySelector('[data-del-id]').addEventListener('click', async (e) => {
+          e.stopPropagation();
+          appInstallations = appInstallations.filter((x) => x.id !== inst.id);
+          if (selectedInstallId === inst.id) {
+            selectedInstallId = 'local-dev';
+          }
+          await invoke('save_installations', { installations: appInstallations });
+          renderInstallationSelector();
+          renderInstallationsTab();
+        });
+      }
 
       container.appendChild(card);
     });
@@ -502,7 +732,6 @@
   function renderServersTab() {
     elServerGroupsContainer.innerHTML = '';
 
-    // Group servers
     const groups = {};
     appServers.forEach((srv) => {
       const g = srv.group || 'Community Servers';
@@ -510,7 +739,6 @@
       groups[g].push(srv);
     });
 
-    // Sort within groups
     Object.keys(groups).forEach((g) => {
       groups[g].sort((a, b) => a.order - b.order);
     });
@@ -523,7 +751,7 @@
       headerEl.className = 'server-group-header';
       headerEl.innerHTML = `
         <span class="server-group-title">
-          <span class="chevron">▾</span>
+          <svg class="icon icon-sm chevron"><use href="#icon-chevron-down"></use></svg>
           <span>${groupName} (${servers.length})</span>
         </span>
       `;
@@ -535,7 +763,6 @@
       listEl.className = 'server-list';
       listEl.setAttribute('data-group', groupName);
 
-      // Drag and drop event handling for reordering
       listEl.addEventListener('dragover', (e) => {
         e.preventDefault();
         const afterElement = getDragAfterElement(listEl, e.clientY);
@@ -551,7 +778,6 @@
 
       listEl.addEventListener('drop', async (e) => {
         e.preventDefault();
-        // Re-calculate orders based on DOM position
         updateServerOrdersFromDOM();
         await invoke('save_servers', { servers: appServers });
       });
@@ -564,8 +790,8 @@
 
         card.innerHTML = `
           <div style="display: flex; align-items: center; gap: 12px;">
-            <span class="server-drag-handle" title="Drag to reorder">⠿</span>
-            <div class="server-icon">🌐</div>
+            <svg class="icon icon-sm server-drag-handle" title="Drag to reorder"><use href="#icon-drag"></use></svg>
+            <div class="server-icon"><svg class="icon"><use href="#icon-globe"></use></svg></div>
             <div class="server-meta">
               <span class="server-name">${srv.name}</span>
               <span class="server-address">${srv.address}</span>
@@ -577,13 +803,12 @@
               <span>${srv.ping_ms ? srv.ping_ms + 'ms' : 'Online'}</span>
             </div>
             <div class="server-actions">
-              <button class="btn-icon edit-btn" title="Edit Server">✏️</button>
-              <button class="btn-icon delete-btn" title="Delete Server">🗑️</button>
+              <button class="btn-icon edit-btn" title="Edit Server"><svg class="icon icon-sm"><use href="#icon-edit"></use></svg></button>
+              <button class="btn-icon delete-btn" title="Delete Server"><svg class="icon icon-sm"><use href="#icon-trash"></use></svg></button>
             </div>
           </div>
         `;
 
-        // HTML5 drag handlers
         card.addEventListener('dragstart', () => {
           draggedServerId = srv.id;
           card.classList.add('dragging');
@@ -594,7 +819,6 @@
           card.classList.remove('dragging');
         });
 
-        // Edit server
         card.querySelector('.edit-btn').addEventListener('click', (e) => {
           e.stopPropagation();
           editingServerId = srv.id;
@@ -605,7 +829,6 @@
           elServerModal.classList.add('active');
         });
 
-        // Delete server
         card.querySelector('.delete-btn').addEventListener('click', async (e) => {
           e.stopPropagation();
           appServers = appServers.filter((x) => x.id !== srv.id);
@@ -654,7 +877,110 @@
     });
   }
 
-  // --- Ubuntu OS-Local Updater Modal (Image 1 Match) ---
+  // --- Upcoming Expansion Modal (Sidebar) ---
+  const elExpansionModal = document.getElementById('expansion-modal');
+  const elExpansionTitle = document.getElementById('expansion-title');
+  const elExpansionIcon = document.getElementById('expansion-icon-wrap');
+  const elExpansionHeading = document.getElementById('expansion-heading');
+  const elExpansionDesc = document.getElementById('expansion-desc');
+  const elBtnCloseExpansion = document.getElementById('btn-close-expansion');
+  const elBtnCloseExpansionFooter = document.getElementById('btn-close-expansion-footer');
+  const elBtnWishlistExpansion = document.getElementById('btn-wishlist-expansion');
+
+  const expansionDetails = {
+    dungeons: {
+      title: 'Telos Dungeons',
+      heading: 'Co-op Procedural Dungeon Crawler',
+      icon: '<svg class="icon icon-lg" style="color: #e57373; transform: scale(1.8);"><use href="#icon-swords"></use></svg>',
+      desc: 'Fight through sinister subterranean crypts, assemble legendary voxel gear, and defeat colossal dungeon bosses with friends.',
+    },
+    legends: {
+      title: 'Telos Legends',
+      heading: 'Grand Strategic Voxel Warfare',
+      icon: '<svg class="icon icon-lg" style="color: #64b5f6; transform: scale(1.8);"><use href="#icon-shield"></use></svg>',
+      desc: 'Command voxel armies, defend ancient fortresses, and unite dynamic biomes against invading corrupted legions.',
+    },
+  };
+
+  document.querySelectorAll('.expansion-item').forEach((item) => {
+    item.addEventListener('click', () => {
+      const g = item.getAttribute('data-game');
+      const info = expansionDetails[g] || expansionDetails.dungeons;
+      elExpansionTitle.textContent = info.title;
+      elExpansionHeading.textContent = info.heading;
+      elExpansionIcon.innerHTML = info.icon;
+      elExpansionDesc.textContent = info.desc;
+      elBtnWishlistExpansion.textContent = 'Notify Me on Release';
+      elBtnWishlistExpansion.disabled = false;
+      elExpansionModal.classList.add('active');
+    });
+  });
+
+  const closeExpansionModal = () => elExpansionModal.classList.remove('active');
+  elBtnCloseExpansion.addEventListener('click', closeExpansionModal);
+  elBtnCloseExpansionFooter.addEventListener('click', closeExpansionModal);
+  elBtnWishlistExpansion.addEventListener('click', () => {
+    elBtnWishlistExpansion.textContent = 'Notification Subscribed';
+    elBtnWishlistExpansion.disabled = true;
+  });
+
+  // --- Language Selection Modal ---
+  const elLangPicker = document.getElementById('lang-picker');
+  const elLangModal = document.getElementById('lang-modal');
+  const elBtnCloseLang = document.getElementById('btn-close-lang');
+  const elBtnApplyLang = document.getElementById('btn-apply-lang');
+  const elLoginLangText = document.getElementById('login-lang-text');
+
+  elLangPicker.addEventListener('click', () => {
+    elLangModal.classList.add('active');
+  });
+
+  const closeLangModal = () => elLangModal.classList.remove('active');
+  elBtnCloseLang.addEventListener('click', closeLangModal);
+  elBtnApplyLang.addEventListener('click', closeLangModal);
+
+  document.querySelectorAll('.lang-option').forEach((opt) => {
+    opt.addEventListener('click', () => {
+      document.querySelectorAll('.lang-option').forEach((o) => o.classList.remove('selected'));
+      opt.classList.add('selected');
+      const name = opt.getAttribute('data-name');
+      elLoginLangText.textContent = name;
+      closeLangModal();
+    });
+  });
+
+  // --- User Account Modal ---
+  const elUserBadge = document.getElementById('user-badge');
+  const elAccountModal = document.getElementById('account-modal');
+  const elBtnCloseAccount = document.getElementById('btn-close-account');
+  const elBtnCloseAccountFooter = document.getElementById('btn-close-account-footer');
+  const elBtnAccountLogout = document.getElementById('btn-account-logout');
+  const elModalAccountAvatar = document.getElementById('modal-account-avatar');
+  const elModalAccountName = document.getElementById('modal-account-name');
+  const elModalAccountStatus = document.getElementById('modal-account-status');
+
+  elUserBadge.addEventListener('click', () => {
+    const name = (appProfile && (appProfile.username || appProfile.account_name)) || 'Larvance';
+    elModalAccountAvatar.textContent = (name[0] || 'T').toUpperCase();
+    elModalAccountName.textContent = name;
+    if (name.startsWith('Guest_')) {
+      elModalAccountStatus.textContent = 'Guest Player (Offline Mode)';
+    } else {
+      elModalAccountStatus.textContent = 'Telos Account (Authenticated)';
+    }
+    elAccountModal.classList.add('active');
+  });
+
+  const closeAccountModal = () => elAccountModal.classList.remove('active');
+  elBtnCloseAccount.addEventListener('click', closeAccountModal);
+  elBtnCloseAccountFooter.addEventListener('click', closeAccountModal);
+  elBtnAccountLogout.addEventListener('click', async () => {
+    closeAccountModal();
+    await invoke('logout');
+    transitionToLogin();
+  });
+
+  // --- Ubuntu OS-Local Updater Modal ---
   const elBtnCheckUpdates = document.getElementById('btn-check-updates');
   const elUpdaterModal = document.getElementById('updater-modal');
   const elCloseUpdater = document.getElementById('btn-close-updater');
@@ -682,7 +1008,8 @@
         elUpdaterProgress.style.width = '100%';
         elUpdaterPercent.textContent = '100%';
         elUpdaterStep.textContent = 'All components are up to date!';
-        elUpdaterMessage.textContent = info && info.release_notes ? info.release_notes : 'Telos Launcher is running the latest build.';
+        elUpdaterMessage.textContent =
+          info && info.release_notes ? info.release_notes : 'Telos Launcher is running the latest build.';
       }, 1500);
     } catch (err) {
       elUpdaterStep.textContent = 'Update check complete.';
@@ -695,12 +1022,69 @@
 
   // --- Settings Tab Handlers ---
   const elSettingKeepOpen = document.getElementById('setting-keep-open');
+  const elSettingNewsUrl = document.getElementById('setting-news-url');
+  const elBtnSyncNews = document.getElementById('btn-sync-news-settings');
+  const elSettingGraphics = document.getElementById('setting-graphics-backend');
+  const elSettingRamSlider = document.getElementById('setting-ram-slider');
+  const elSettingRamLabel = document.getElementById('setting-ram-label');
+  const elBtnResetDefaults = document.getElementById('btn-reset-defaults');
+
   elSettingKeepOpen.addEventListener('change', async () => {
     if (appProfile) {
       appProfile.auto_close_on_play = !elSettingKeepOpen.checked;
       appProfile.auto_close_on_launch = !elSettingKeepOpen.checked;
       await invoke('save_profile', { profile: appProfile });
     }
+  });
+
+  elSettingRamSlider.addEventListener('input', () => {
+    elSettingRamLabel.textContent = elSettingRamSlider.value + ' GB';
+  });
+
+  elSettingRamSlider.addEventListener('change', async () => {
+    if (appProfile) {
+      appProfile.ram_gb = parseInt(elSettingRamSlider.value, 10);
+      await invoke('save_profile', { profile: appProfile });
+    }
+  });
+
+  elSettingGraphics.addEventListener('change', async () => {
+    if (appProfile) {
+      appProfile.graphics_backend = elSettingGraphics.value;
+      await invoke('save_profile', { profile: appProfile });
+    }
+  });
+
+  elBtnSyncNews.addEventListener('click', async () => {
+    newsEndpoint = elSettingNewsUrl.value.trim() || 'https://news.telos.larvance.com/news.json';
+    if (appProfile) {
+      appProfile.news_url = newsEndpoint;
+      await invoke('save_profile', { profile: appProfile });
+    }
+    elBtnSyncNews.textContent = 'Syncing...';
+    await fetchAndRenderNews();
+    elBtnSyncNews.textContent = 'Synced!';
+    setTimeout(() => {
+      elBtnSyncNews.textContent = 'Sync Feed';
+    }, 2000);
+  });
+
+  elBtnResetDefaults.addEventListener('click', async () => {
+    elSettingKeepOpen.checked = true;
+    elSettingNewsUrl.value = 'https://news.telos.larvance.com/news.json';
+    elSettingGraphics.value = 'vulkan';
+    elSettingRamSlider.value = '8';
+    elSettingRamLabel.textContent = '8 GB';
+    newsEndpoint = 'https://news.telos.larvance.com/news.json';
+    if (appProfile) {
+      appProfile.auto_close_on_play = false;
+      appProfile.news_url = newsEndpoint;
+      appProfile.graphics_backend = 'vulkan';
+      appProfile.ram_gb = 8;
+      await invoke('save_profile', { profile: appProfile });
+    }
+    await fetchAndRenderNews();
+    alert('Settings reset to defaults.');
   });
 
   // --- Initial Boot Sequence ---
@@ -720,13 +1104,24 @@
           selectedInstallId = 'local-dev';
         }
         elSettingKeepOpen.checked = !(appProfile.auto_close_on_play ?? appProfile.auto_close_on_launch ?? false);
+        if (appProfile.news_url) {
+          newsEndpoint = appProfile.news_url;
+          elSettingNewsUrl.value = newsEndpoint;
+        }
+        if (appProfile.graphics_backend) {
+          elSettingGraphics.value = appProfile.graphics_backend;
+        }
+        if (appProfile.ram_gb) {
+          elSettingRamSlider.value = appProfile.ram_gb;
+          elSettingRamLabel.textContent = appProfile.ram_gb + ' GB';
+        }
       }
 
       renderInstallationSelector();
       renderInstallationsTab();
       renderServersTab();
+      await fetchAndRenderNews();
 
-      // If user has an existing auth session, jump to main screen directly!
       if (appProfile && (appProfile.logged_in || appProfile.auth_token)) {
         transitionToMain();
       } else {
@@ -738,7 +1133,6 @@
     }
   }
 
-  // Run on DOM load
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

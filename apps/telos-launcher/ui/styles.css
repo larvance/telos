@@ -30,6 +30,39 @@
   --radius-lg: 10px;
 }
 
+/* ==========================================================================
+   SVG Vector Icons (Zero Emojis)
+   ========================================================================== */
+.icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.icon-sm {
+  width: 12px;
+  height: 12px;
+}
+
+.icon-lg {
+  width: 20px;
+  height: 20px;
+}
+
+.build-spin {
+  animation: spinWrench 2.5s linear infinite;
+}
+
+@keyframes spinWrench {
+  100% { transform: rotate(360deg); }
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -106,10 +139,15 @@ html, body {
   cursor: pointer;
   background-color: #3b3b3b;
   color: #9a9a9a;
-  font-size: 11px;
   transition: all 0.15s ease;
   line-height: 1;
   padding: 0;
+}
+
+.window-btn .icon {
+  width: 10px;
+  height: 10px;
+  stroke: currentColor;
 }
 
 .window-btn:hover {
@@ -791,6 +829,12 @@ html, body {
   gap: 16px;
 }
 
+.news-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .news-heading {
   font-size: 16px;
   font-weight: 600;
@@ -798,9 +842,30 @@ html, body {
   letter-spacing: 0.5px;
 }
 
+.news-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.news-portal-link {
+  font-size: 12px;
+  color: var(--accent-gold);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s;
+}
+
+.news-portal-link:hover {
+  color: var(--accent-gold-light);
+  text-decoration: underline;
+}
+
 .news-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
 }
 
@@ -810,33 +875,50 @@ html, body {
   border-radius: var(--radius-sm);
   overflow: hidden;
   cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .news-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: #555555;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
 }
 
-.news-thumb {
-  height: 110px;
+.news-thumb-wrap {
+  position: relative;
+  height: 125px;
   width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 32px;
+  overflow: hidden;
+  background: #111;
 }
 
-.news-thumb-1 {
-  background: linear-gradient(135deg, #1b3a4b 0%, #065a60 100%);
+.news-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
 }
 
-.news-thumb-2 {
-  background: linear-gradient(135deg, #2b2d42 0%, #4a4e69 100%);
+.news-card:hover .news-card-img {
+  transform: scale(1.05);
 }
 
-.news-thumb-3 {
-  background: linear-gradient(135deg, #3d0c11 0%, #6b1724 100%);
+.news-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .news-body {
@@ -1398,3 +1480,183 @@ html, body {
 .ubuntu-btn.primary:hover {
   background-color: #fb612c;
 }
+
+/* ==========================================================================
+   News Reader Dialog
+   ========================================================================== */
+.reader-dialog {
+  width: 640px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.reader-body {
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.reader-hero-img {
+  width: 100%;
+  height: 240px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-color);
+}
+
+.reader-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+
+.reader-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.reader-summary-lead {
+  font-size: 14px;
+  color: #dddddd;
+  font-weight: 500;
+  line-height: 1.5;
+  margin-bottom: 14px;
+  border-left: 3px solid var(--accent-gold);
+  padding-left: 12px;
+}
+
+.reader-content {
+  font-size: 13px;
+  color: #aaaaaa;
+  line-height: 1.6;
+}
+
+/* ==========================================================================
+   Select Inputs & Dropdowns
+   ========================================================================== */
+.select-input {
+  background-color: #151515;
+  border: 1px solid #3d3d3d;
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+}
+
+.select-input:focus {
+  border-color: var(--accent-gold);
+}
+
+/* ==========================================================================
+   Upcoming Expansion Badges & Modals
+   ========================================================================== */
+.expansion-item {
+  cursor: pointer;
+}
+
+.expansion-tag {
+  font-size: 9px;
+  font-weight: 700;
+  background: #333333;
+  color: #aaaaaa;
+  padding: 2px 5px;
+  border-radius: 3px;
+  margin-left: auto;
+  letter-spacing: 0.5px;
+}
+
+.expansion-info-pill {
+  font-size: 11px;
+  color: #ffaa44;
+  background: rgba(255, 170, 68, 0.12);
+  border: 1px solid rgba(255, 170, 68, 0.3);
+  padding: 6px 12px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+/* ==========================================================================
+   Language Picker Modal
+   ========================================================================== */
+.lang-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.lang-option {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  background: #252525;
+  border: 1px solid transparent;
+  transition: background 0.15s;
+}
+
+.lang-option:hover {
+  background: #333333;
+}
+
+.lang-option.selected {
+  border-color: var(--accent-gold);
+  background: #2a2a2a;
+}
+
+.lang-flag-sm {
+  width: 20px;
+  height: 14px;
+  object-fit: cover;
+}
+
+.flag-placeholder {
+  width: 20px;
+  height: 14px;
+  background: #444444;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+}
+
+/* ==========================================================================
+   Account Modal
+   ========================================================================== */
+.user-avatar-large {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #4b6cb7 0%, #182848 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.account-badge-pill {
+  display: inline-block;
+  font-size: 11px;
+  color: #55dd77;
+  background: rgba(85, 221, 119, 0.12);
+  border: 1px solid rgba(85, 221, 119, 0.3);
+  padding: 3px 8px;
+  border-radius: 12px;
+  margin-top: 8px;
+}
+

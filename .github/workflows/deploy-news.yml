@@ -1,0 +1,44 @@
+name: Deploy Telos News Portal
+
+on:
+  push:
+    paths:
+      - 'web/news/**'
+      - '.github/workflows/deploy-news.yml'
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "news-pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy News Portal
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build Static News Site
+        run: |
+          python3 web/news/manage.py build
+
+      - name: Deploy to Vercel (if VERCEL_TOKEN available)
+        if: env.VERCEL_TOKEN != ''
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          npx --yes vercel deploy --prod web/news/dist --token ${{ secrets.VERCEL_TOKEN }} --yes

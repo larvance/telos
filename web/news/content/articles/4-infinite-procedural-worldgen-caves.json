@@ -1,0 +1,12 @@
+{
+  "id": "infinite-procedural-worldgen-caves",
+  "title": "World Generation: Colossal Caverns, Aquifers, and Mountain Spires",
+  "date": "October 02, 2026",
+  "timestamp": "2026-10-02T09:15:00Z",
+  "category": "Worldgen",
+  "category_slug": "worldgen",
+  "image": "assets/images/caves_worldgen.jpg",
+  "summary": "Descend into massive 3D subterranean cave networks featuring glowing amethyst geodes, underground lakes, and soaring jagged peaks.",
+  "author": "Telos Worldgen Team",
+  "content": "Our custom 3D noise router with SIMD AVX2 acceleration generates immense vertical depth spanning [-1024, 2048). Discover multi-tier subterranean caverns with cheese and noodle caves, flooded aquifers, magma chambers at mantle depths, and lush glowing underground flora."
+}

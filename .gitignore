@@ -1,6 +1,7 @@
 # Build outputs
 /target
 /web/dist
+/web/news/dist
 Cargo.lock.d
 examples/mods/**/target
 examples/mods/**/dist

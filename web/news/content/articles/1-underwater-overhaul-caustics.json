@@ -1,0 +1,12 @@
+{
+  "id": "underwater-overhaul-caustics",
+  "title": "Underwater Overhaul: 2D Caustics & Submerged Visuals",
+  "date": "October 12, 2026",
+  "timestamp": "2026-10-12T18:00:00Z",
+  "category": "Graphics & Shading",
+  "category_slug": "graphics",
+  "image": "assets/images/underwater_overhaul.jpg",
+  "summary": "Experience a tranquil ocean depths overhaul with animated 2D caustics, submerged geometry culling, and realistic underwater lighting.",
+  "author": "Telos Rendering Team",
+  "content": "In our latest update, we completely reworked how fluids and underwater exploration look and feel in Telos. When diving into lakes and deep ocean trenches, the engine transitions dynamically into submerged camera mode, discarding outer water geometry and rendering a high-fidelity animated 2D caustics overlay. Surface normal distortions have been smoothed for natural wave motion, and underwater fog realistically attenuates sunlight based on water depth."
+}

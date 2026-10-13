@@ -25,11 +25,22 @@ pub enum ChannelKind {
 pub struct Installation {
     pub id: String,
     pub name: String,
+    #[serde(default = "default_channel_kind")]
     pub channel: ChannelKind,
+    #[serde(default)]
     pub version_tag: String,
+    #[serde(default)]
     pub custom_dir: Option<PathBuf>,
+    #[serde(default)]
     pub custom_args: Option<String>,
+    #[serde(default)]
     pub is_dev: bool,
+    #[serde(default)]
+    pub icon_type: Option<String>,
+}
+
+fn default_channel_kind() -> ChannelKind {
+    ChannelKind::Custom
 }
 
 impl Installation {
@@ -43,6 +54,7 @@ impl Installation {
             custom_dir: None,
             custom_args: None,
             is_dev: false,
+            icon_type: Some("voxel".into()),
         }
     }
 
@@ -56,6 +68,7 @@ impl Installation {
             custom_dir: None,
             custom_args: None,
             is_dev: false,
+            icon_type: Some("package".into()),
         }
     }
 
@@ -68,6 +81,7 @@ impl Installation {
             custom_dir: Some(path),
             custom_args: None,
             is_dev: true,
+            icon_type: Some("wrench".into()),
         }
     }
 }
