@@ -4,6 +4,7 @@ pub mod camera;
 pub mod entity_client;
 pub mod opengl_renderer;
 pub mod physics;
+pub mod touch_controls;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -17,6 +18,7 @@ use crate::physics::{
 use anyhow::Result;
 use camera::{Camera, FlyController};
 use clap::Parser;
+use touch_controls::TouchControls;
 use entity_client::{ClientEntityStore, EntityPushConstants, EntityVertexGpu};
 use glam::{DVec3, Vec3};
 use hashbrown::{HashMap, HashSet};
@@ -1452,6 +1454,7 @@ struct App {
     player_hurt_timer: f32,
     bow_charging: bool,
     bow_charge_ticks: u16,
+    touch_controls: TouchControls,
 
     // Day/Night & Celestial Rendering
     client_time_of_day: f32,
@@ -1984,6 +1987,7 @@ impl App {
             player_hurt_timer: 0.0,
             bow_charging: false,
             bow_charge_ticks: 0,
+            touch_controls: TouchControls::default(),
 
             client_time_of_day: 6000.0,
             client_world_age: 0,
@@ -2474,6 +2478,300 @@ impl App {
                 state_id = self.selected_block_state.as_u32(),
                 "Selected hotbar slot"
             );
+        }
+    }
+
+    fn handle_primary_action(&mut self) {
+        // Check combat raycast against entities first
+        let origin = self.camera.position;
+        let forward = self.camera.forward();
+        if let Some((target_net_id, _dist)) = self.entity_store.raycast(
+            glam::DVec3::new(
+                f64::from(origin.x),
+                f64::from(origin.y),
+                f64::from(origin.z),
+            ),
+            forward,
+            3.5,
+        ) {
+            let interact_msg = C2sMessage::InteractEntity(C2sInteractEntity {
+                target_net_id,
+                action: 0, // Attack
+            });
+            let _ = self
+                .client_conn
+                .send(Lane::Control, Payload::Msg(interact_msg));
+
+            let ent_pos = self
+                .entity_store
+                .get(target_net_id)
+                .map_or(origin + forward * 2.0, |e| e.pos.as_vec3());
+            self.audio.play_procedural_hurt(ent_pos, 1.0);
+            self.particle_system
+                .spawn_crit(ent_pos + Vec3::new(0.0, 1.0, 0.0), 16);
+            return;
+        }
+
+        if !self.physics.capabilities.can_build {
+            return;
+        }
+
+        if let Some(hit) = self.targeted_block {
+            self.action_sequence += 1;
+            let msg = C2sMessage::BlockAction(C2sBlockAction {
+                sequence: self.action_sequence,
+                action: BlockActionKind::Break,
+                x: hit.pos.x(),
+                y: hit.pos.y(),
+                z: hit.pos.z(),
+                input_tick: self.frame_counter,
+            });
+            let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
+            let broken_state = self.get_block_at(hit.pos);
+            self.apply_block_update(hit.pos, BlockStateId::AIR);
+
+            let hit_pos_f = Vec3::new(
+                hit.pos.x() as f32 + 0.5,
+                hit.pos.y() as f32 + 0.5,
+                hit.pos.z() as f32 + 0.5,
+            );
+            let (layer, tint) = block_state_to_particle_layer(broken_state);
+            if let Some(hook) = &self.js_particle_hook {
+                let p = hook.on_particle_spawn(
+                    "block_break",
+                    telos_mod::JsParticleParams {
+                        pos: [hit_pos_f.x, hit_pos_f.y, hit_pos_f.z],
+                        velocity: [0.0, 0.0, 0.0],
+                        color_tint: u32::from_le_bytes(tint),
+                        scale: 1.0,
+                        lifetime: 32.0,
+                    },
+                );
+                let mod_tint = p.color_tint.to_le_bytes();
+                let mod_count = (p.lifetime as usize).clamp(1, 128);
+                let mod_pos = Vec3::new(p.pos[0], p.pos[1], p.pos[2]);
+                self.particle_system
+                    .spawn_block_break(mod_pos, layer, mod_tint, mod_count);
+            } else {
+                self.particle_system
+                    .spawn_block_break(hit_pos_f, layer, tint, 32);
+            }
+
+            let mut pitch = 0.92
+                + (hit.pos.x().abs() as f32 * 0.1
+                    + hit.pos.z().abs() as f32 * 0.2)
+                    .fract()
+                    * 0.16;
+            if let Some(hook) = &self.js_particle_hook {
+                let (_, mod_pitch) =
+                    hook.on_sound_play("block_break", 1.0, pitch);
+                pitch = mod_pitch;
+            }
+            self.audio.play_procedural_break(hit_pos_f, pitch);
+        }
+    }
+
+    fn handle_secondary_action(&mut self) {
+        // Check interaction with entities (e.g. boarding boat)
+        let origin = self.camera.position;
+        let forward = self.camera.forward();
+        if let Some((target_net_id, _dist)) = self.entity_store.raycast(
+            glam::DVec3::new(
+                f64::from(origin.x),
+                f64::from(origin.y),
+                f64::from(origin.z),
+            ),
+            forward,
+            3.5,
+        ) {
+            let interact_msg = C2sMessage::InteractEntity(C2sInteractEntity {
+                target_net_id,
+                action: 1, // Interact / Board
+            });
+            let _ = self
+                .client_conn
+                .send(Lane::Control, Payload::Msg(interact_msg));
+            if self.riding_vehicle_id == Some(target_net_id) {
+                self.riding_vehicle_id = None;
+            } else {
+                self.riding_vehicle_id = Some(target_net_id);
+            }
+            return;
+        }
+
+        if let (true, Some(hit)) = (
+            telos_sim::is_boat(self.inventory_sim.selected_item().item),
+            self.targeted_block,
+        ) {
+            self.action_sequence += 1;
+            let msg = C2sMessage::BlockAction(C2sBlockAction {
+                sequence: self.action_sequence,
+                action: BlockActionKind::Place {
+                    state_id: BlockStateId::new(telos_sim::ITEM_OAK_BOAT),
+                    hit_face: hit.face as u8,
+                },
+                x: hit.pos.x(),
+                y: hit.pos.y(),
+                z: hit.pos.z(),
+                input_tick: self.frame_counter,
+            });
+            let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
+            let hit_pos_f = Vec3::new(
+                hit.pos.x() as f32 + 0.5,
+                hit.pos.y() as f32 + 0.5,
+                hit.pos.z() as f32 + 0.5,
+            );
+            self.audio.play_procedural_place(hit_pos_f, 1.0);
+            return;
+        }
+
+        if self.inventory_sim.selected_item().item == telos_sim::ITEM_BOW {
+            self.bow_charging = true;
+            self.bow_charge_ticks = 0;
+            return;
+        }
+
+        if telos_sim::is_potion(self.inventory_sim.selected_item().item) {
+            let msg = C2sMessage::PlayerCommand(C2sPlayerCommand {
+                command: PlayerCommandKind::DrinkPotion { potion_type: 4 },
+            });
+            let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
+            return;
+        }
+
+        if telos_sim::is_fishing_rod(self.inventory_sim.selected_item().item) {
+            let cmd = C2sMessage::PlayerCommand(C2sPlayerCommand {
+                command: PlayerCommandKind::UseFishingRod,
+            });
+            let _ = self.client_conn.send(Lane::Control, Payload::Msg(cmd));
+            self.audio.play_bow_shoot(self.camera.position);
+            return;
+        }
+
+        if let Some(hit) = self.targeted_block {
+            let target_state = self.get_block_at(hit.pos);
+            if self.block_registry.is_chest(target_state) && !self.shift_held {
+                self.action_sequence += 1;
+                let msg = C2sMessage::BlockAction(C2sBlockAction {
+                    sequence: self.action_sequence,
+                    action: BlockActionKind::Interact,
+                    x: hit.pos.x(),
+                    y: hit.pos.y(),
+                    z: hit.pos.z(),
+                    input_tick: self.frame_counter,
+                });
+                let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
+                return;
+            }
+
+            let is_lever = self
+                .block_registry
+                .identifier(target_state)
+                .is_some_and(|id| {
+                    id.path() == "logic_lever" || id.path() == "logic_lever_on"
+                });
+            if is_lever {
+                self.action_sequence += 1;
+                let msg = C2sMessage::BlockAction(C2sBlockAction {
+                    sequence: self.action_sequence,
+                    action: BlockActionKind::Interact,
+                    x: hit.pos.x(),
+                    y: hit.pos.y(),
+                    z: hit.pos.z(),
+                    input_tick: self.frame_counter,
+                });
+                let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
+                let toggled_name = if self
+                    .block_registry
+                    .identifier(target_state)
+                    .is_some_and(|id| id.path() == "logic_lever")
+                {
+                    "logic_lever_on"
+                } else {
+                    "logic_lever"
+                };
+                if let Ok(id) =
+                    telos_core::ident::Identifier::new("telos", toggled_name)
+                    && let Some(b) = self.block_registry.get(&id)
+                {
+                    self.apply_block_update(hit.pos, b.default_state());
+                }
+                let hit_pos_f = Vec3::new(
+                    hit.pos.x() as f32 + 0.5,
+                    hit.pos.y() as f32 + 0.5,
+                    hit.pos.z() as f32 + 0.5,
+                );
+                self.audio.play_procedural_place(hit_pos_f, 1.25);
+                return;
+            }
+
+            if !self.physics.capabilities.can_build {
+                return;
+            }
+
+            let norm = hit.face.normal_ivec();
+            let place_pos = BlockPos::new(
+                hit.pos.x() + norm.x,
+                hit.pos.y() + norm.y,
+                hit.pos.z() + norm.z,
+            );
+            self.action_sequence += 1;
+            let msg = C2sMessage::BlockAction(C2sBlockAction {
+                sequence: self.action_sequence,
+                action: BlockActionKind::Place {
+                    state_id: self.selected_block_state,
+                    hit_face: hit.face as u8,
+                },
+                x: hit.pos.x(),
+                y: hit.pos.y(),
+                z: hit.pos.z(),
+                input_tick: self.frame_counter,
+            });
+            let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
+            self.apply_block_update(place_pos, self.selected_block_state);
+
+            let place_pos_f = Vec3::new(
+                place_pos.x() as f32 + 0.5,
+                place_pos.y() as f32 + 0.5,
+                place_pos.z() as f32 + 0.5,
+            );
+            let (layer, tint) =
+                block_state_to_particle_layer(self.selected_block_state);
+            if let Some(hook) = &self.js_particle_hook {
+                let p = hook.on_particle_spawn(
+                    "block_place",
+                    telos_mod::JsParticleParams {
+                        pos: [place_pos_f.x, place_pos_f.y, place_pos_f.z],
+                        velocity: [0.0, 0.0, 0.0],
+                        color_tint: u32::from_le_bytes(tint),
+                        scale: 1.0,
+                        lifetime: 12.0,
+                    },
+                );
+                let mod_tint = p.color_tint.to_le_bytes();
+                let mod_count = (p.lifetime as usize).clamp(1, 128);
+                let mod_pos = Vec3::new(p.pos[0], p.pos[1], p.pos[2]);
+                self.particle_system
+                    .spawn_block_place(mod_pos, layer, mod_tint, mod_count);
+            } else {
+                self.particle_system.spawn_block_place(
+                    place_pos_f,
+                    layer,
+                    tint,
+                    12,
+                );
+            }
+            let mut pitch = 0.95
+                + (place_pos.x().abs() as f32 * 0.13
+                    + place_pos.z().abs() as f32 * 0.17)
+                    .fract()
+                    * 0.12;
+            if let Some(hook) = &self.js_particle_hook {
+                let (_, mod_pitch) =
+                    hook.on_sound_play("block_place", 1.0, pitch);
+                pitch = mod_pitch;
+            }
+            self.audio.play_procedural_place(place_pos_f, pitch);
         }
     }
 
@@ -4507,7 +4805,16 @@ impl App {
 
         if self.current_screen == AppScreen::InGame {
             if !self.is_paused {
-                let input_state = PlayerInputState {
+                let [look_dx, look_dy] = self.touch_controls.consume_look_delta();
+                if look_dx != 0.0 || look_dy != 0.0 {
+                    let sens = self.controller.mouse_sensitivity * 1.5;
+                    self.camera.yaw += look_dx * sens;
+                    self.camera.pitch -= look_dy * sens;
+                    let max_pitch = 89.0f32.to_radians();
+                    self.camera.pitch = self.camera.pitch.clamp(-max_pitch, max_pitch);
+                }
+
+                let mut input_state = PlayerInputState {
                     forward: self.controller.forward && self.controller.mouse_captured,
                     backward: self.controller.backward && self.controller.mouse_captured,
                     left: self.controller.left && self.controller.mouse_captured,
@@ -4516,6 +4823,7 @@ impl App {
                     sneak: self.controller.down && self.controller.mouse_captured,
                     sprint: self.controller.sprint && self.controller.mouse_captured,
                 };
+                self.touch_controls.apply_to_player_input(&mut input_state);
                 let player_chunk = telos_core::coords::BlockPos::new(
                     self.physics.pos.x.floor() as i32,
                     self.physics.pos.y.floor() as i32,
@@ -7075,6 +7383,20 @@ impl App {
                                 now_secs,
                                 &mut ui_quads,
                             );
+
+                            if self.touch_controls.enabled
+                                && !self.inventory_open
+                                && self.container_state.is_none()
+                                && !self.advancements_open
+                            {
+                                self.touch_controls.render(
+                                    font,
+                                    swapchain_extent.width,
+                                    swapchain_extent.height,
+                                    gui_scale,
+                                    &mut ui_quads,
+                                );
+                            }
                         }
                     }
                 }
@@ -7672,6 +7994,20 @@ impl App {
                         now_secs,
                         &mut ui_quads,
                     );
+
+                    if self.touch_controls.enabled
+                        && !self.inventory_open
+                        && self.container_state.is_none()
+                        && !self.advancements_open
+                    {
+                        self.touch_controls.render(
+                            font,
+                            width,
+                            height,
+                            gui_scale,
+                            &mut ui_quads,
+                        );
+                    }
                 }
             }
         }
@@ -7720,7 +8056,16 @@ impl App {
         self.update_toast(dt);
 
         if self.current_screen == AppScreen::InGame && !self.is_paused {
-            let input_state = PlayerInputState {
+            let [look_dx, look_dy] = self.touch_controls.consume_look_delta();
+            if look_dx != 0.0 || look_dy != 0.0 {
+                let sens = self.controller.mouse_sensitivity * 1.5;
+                self.camera.yaw += look_dx * sens;
+                self.camera.pitch -= look_dy * sens;
+                let max_pitch = 89.0f32.to_radians();
+                self.camera.pitch = self.camera.pitch.clamp(-max_pitch, max_pitch);
+            }
+
+            let mut input_state = PlayerInputState {
                 forward: self.controller.forward && self.controller.mouse_captured,
                 backward: self.controller.backward && self.controller.mouse_captured,
                 left: self.controller.left && self.controller.mouse_captured,
@@ -7729,6 +8074,7 @@ impl App {
                 sneak: self.controller.down && self.controller.mouse_captured,
                 sprint: self.controller.sprint && self.controller.mouse_captured,
             };
+            self.touch_controls.apply_to_player_input(&mut input_state);
             let reg = &self.block_registry;
             let chunks = &self.chunks;
             let player_chunk = telos_core::coords::BlockPos::new(
@@ -10432,296 +10778,10 @@ impl ApplicationHandler for App {
                 if self.controller.mouse_captured {
                     match button {
                         MouseButton::Left => {
-                            // Check combat raycast against entities first
-                            let origin = self.camera.position;
-                            let forward = self.camera.forward();
-                            if let Some((target_net_id, _dist)) = self.entity_store.raycast(
-                                glam::DVec3::new(
-                                    f64::from(origin.x),
-                                    f64::from(origin.y),
-                                    f64::from(origin.z),
-                                ),
-                                forward,
-                                3.5,
-                            ) {
-                                let interact_msg = C2sMessage::InteractEntity(C2sInteractEntity {
-                                    target_net_id,
-                                    action: 0, // Attack
-                                });
-                                let _ = self
-                                    .client_conn
-                                    .send(Lane::Control, Payload::Msg(interact_msg));
-
-                                let ent_pos = self
-                                    .entity_store
-                                    .get(target_net_id)
-                                    .map_or(origin + forward * 2.0, |e| e.pos.as_vec3());
-                                self.audio.play_procedural_hurt(ent_pos, 1.0);
-                                self.particle_system
-                                    .spawn_crit(ent_pos + Vec3::new(0.0, 1.0, 0.0), 16);
-                                return;
-                            }
-
-                            if !self.physics.capabilities.can_build {
-                                return;
-                            }
-
-                            if let Some(hit) = self.targeted_block {
-                                self.action_sequence += 1;
-                                let msg = C2sMessage::BlockAction(C2sBlockAction {
-                                    sequence: self.action_sequence,
-                                    action: BlockActionKind::Break,
-                                    x: hit.pos.x(),
-                                    y: hit.pos.y(),
-                                    z: hit.pos.z(),
-                                    input_tick: self.frame_counter,
-                                });
-                                let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
-                                let broken_state = self.get_block_at(hit.pos);
-                                self.apply_block_update(hit.pos, BlockStateId::AIR);
-
-                                let hit_pos_f = Vec3::new(
-                                    hit.pos.x() as f32 + 0.5,
-                                    hit.pos.y() as f32 + 0.5,
-                                    hit.pos.z() as f32 + 0.5,
-                                );
-                                let (layer, tint) = block_state_to_particle_layer(broken_state);
-                                if let Some(hook) = &self.js_particle_hook {
-                                    let p = hook.on_particle_spawn(
-                                        "block_break",
-                                        telos_mod::JsParticleParams {
-                                            pos: [hit_pos_f.x, hit_pos_f.y, hit_pos_f.z],
-                                            velocity: [0.0, 0.0, 0.0],
-                                            color_tint: u32::from_le_bytes(tint),
-                                            scale: 1.0,
-                                            lifetime: 32.0,
-                                        },
-                                    );
-                                    let mod_tint = p.color_tint.to_le_bytes();
-                                    let mod_count = (p.lifetime as usize).clamp(1, 128);
-                                    let mod_pos = Vec3::new(p.pos[0], p.pos[1], p.pos[2]);
-                                    self.particle_system
-                                        .spawn_block_break(mod_pos, layer, mod_tint, mod_count);
-                                } else {
-                                    self.particle_system
-                                        .spawn_block_break(hit_pos_f, layer, tint, 32);
-                                }
-
-                                let mut pitch = 0.92
-                                    + (hit.pos.x().abs() as f32 * 0.1
-                                        + hit.pos.z().abs() as f32 * 0.2)
-                                        .fract()
-                                        * 0.16;
-                                if let Some(hook) = &self.js_particle_hook {
-                                    let (_, mod_pitch) =
-                                        hook.on_sound_play("block_break", 1.0, pitch);
-                                    pitch = mod_pitch;
-                                }
-                                self.audio.play_procedural_break(hit_pos_f, pitch);
-                            }
+                            self.handle_primary_action();
                         }
                         MouseButton::Right => {
-                            // Check interaction with entities (e.g. boarding boat)
-                            let origin = self.camera.position;
-                            let forward = self.camera.forward();
-                            if let Some((target_net_id, _dist)) = self.entity_store.raycast(
-                                glam::DVec3::new(
-                                    f64::from(origin.x),
-                                    f64::from(origin.y),
-                                    f64::from(origin.z),
-                                ),
-                                forward,
-                                3.5,
-                            ) {
-                                let interact_msg = C2sMessage::InteractEntity(C2sInteractEntity {
-                                    target_net_id,
-                                    action: 1, // Interact / Board
-                                });
-                                let _ = self
-                                    .client_conn
-                                    .send(Lane::Control, Payload::Msg(interact_msg));
-                                if self.riding_vehicle_id == Some(target_net_id) {
-                                    self.riding_vehicle_id = None;
-                                } else {
-                                    self.riding_vehicle_id = Some(target_net_id);
-                                }
-                                return;
-                            }
-
-                            if let (true, Some(hit)) = (
-                                telos_sim::is_boat(self.inventory_sim.selected_item().item),
-                                self.targeted_block,
-                            ) {
-                                self.action_sequence += 1;
-                                let msg = C2sMessage::BlockAction(C2sBlockAction {
-                                    sequence: self.action_sequence,
-                                    action: BlockActionKind::Place {
-                                        state_id: BlockStateId::new(telos_sim::ITEM_OAK_BOAT),
-                                        hit_face: hit.face as u8,
-                                    },
-                                    x: hit.pos.x(),
-                                    y: hit.pos.y(),
-                                    z: hit.pos.z(),
-                                    input_tick: self.frame_counter,
-                                });
-                                let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
-                                let hit_pos_f = Vec3::new(
-                                    hit.pos.x() as f32 + 0.5,
-                                    hit.pos.y() as f32 + 0.5,
-                                    hit.pos.z() as f32 + 0.5,
-                                );
-                                self.audio.play_procedural_place(hit_pos_f, 1.0);
-                                return;
-                            }
-
-                            if self.inventory_sim.selected_item().item == telos_sim::ITEM_BOW {
-                                self.bow_charging = true;
-                                self.bow_charge_ticks = 0;
-                                return;
-                            }
-
-                            if telos_sim::is_potion(self.inventory_sim.selected_item().item) {
-                                let msg = C2sMessage::PlayerCommand(C2sPlayerCommand {
-                                    command: PlayerCommandKind::DrinkPotion { potion_type: 4 },
-                                });
-                                let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
-                                return;
-                            }
-
-                            if telos_sim::is_fishing_rod(self.inventory_sim.selected_item().item) {
-                                let cmd = C2sMessage::PlayerCommand(C2sPlayerCommand {
-                                    command: PlayerCommandKind::UseFishingRod,
-                                });
-                                let _ = self.client_conn.send(Lane::Control, Payload::Msg(cmd));
-                                self.audio.play_bow_shoot(self.camera.position);
-                                return;
-                            }
-
-                            if let Some(hit) = self.targeted_block {
-                                let target_state = self.get_block_at(hit.pos);
-                                if self.block_registry.is_chest(target_state) && !self.shift_held {
-                                    self.action_sequence += 1;
-                                    let msg = C2sMessage::BlockAction(C2sBlockAction {
-                                        sequence: self.action_sequence,
-                                        action: BlockActionKind::Interact,
-                                        x: hit.pos.x(),
-                                        y: hit.pos.y(),
-                                        z: hit.pos.z(),
-                                        input_tick: self.frame_counter,
-                                    });
-                                    let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
-                                    return;
-                                }
-
-                                let is_lever = self
-                                    .block_registry
-                                    .identifier(target_state)
-                                    .is_some_and(|id| {
-                                        id.path() == "logic_lever" || id.path() == "logic_lever_on"
-                                    });
-                                if is_lever {
-                                    self.action_sequence += 1;
-                                    let msg = C2sMessage::BlockAction(C2sBlockAction {
-                                        sequence: self.action_sequence,
-                                        action: BlockActionKind::Interact,
-                                        x: hit.pos.x(),
-                                        y: hit.pos.y(),
-                                        z: hit.pos.z(),
-                                        input_tick: self.frame_counter,
-                                    });
-                                    let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
-                                    let toggled_name = if self
-                                        .block_registry
-                                        .identifier(target_state)
-                                        .is_some_and(|id| id.path() == "logic_lever")
-                                    {
-                                        "logic_lever_on"
-                                    } else {
-                                        "logic_lever"
-                                    };
-                                    if let Ok(id) =
-                                        telos_core::ident::Identifier::new("telos", toggled_name)
-                                        && let Some(b) = self.block_registry.get(&id)
-                                    {
-                                        self.apply_block_update(hit.pos, b.default_state());
-                                    }
-                                    let hit_pos_f = Vec3::new(
-                                        hit.pos.x() as f32 + 0.5,
-                                        hit.pos.y() as f32 + 0.5,
-                                        hit.pos.z() as f32 + 0.5,
-                                    );
-                                    self.audio.play_procedural_place(hit_pos_f, 1.25);
-                                    return;
-                                }
-
-                                if !self.physics.capabilities.can_build {
-                                    return;
-                                }
-
-                                let norm = hit.face.normal_ivec();
-                                let place_pos = BlockPos::new(
-                                    hit.pos.x() + norm.x,
-                                    hit.pos.y() + norm.y,
-                                    hit.pos.z() + norm.z,
-                                );
-                                self.action_sequence += 1;
-                                let msg = C2sMessage::BlockAction(C2sBlockAction {
-                                    sequence: self.action_sequence,
-                                    action: BlockActionKind::Place {
-                                        state_id: self.selected_block_state,
-                                        hit_face: hit.face as u8,
-                                    },
-                                    x: hit.pos.x(),
-                                    y: hit.pos.y(),
-                                    z: hit.pos.z(),
-                                    input_tick: self.frame_counter,
-                                });
-                                let _ = self.client_conn.send(Lane::Control, Payload::Msg(msg));
-                                self.apply_block_update(place_pos, self.selected_block_state);
-
-                                let place_pos_f = Vec3::new(
-                                    place_pos.x() as f32 + 0.5,
-                                    place_pos.y() as f32 + 0.5,
-                                    place_pos.z() as f32 + 0.5,
-                                );
-                                let (layer, tint) =
-                                    block_state_to_particle_layer(self.selected_block_state);
-                                if let Some(hook) = &self.js_particle_hook {
-                                    let p = hook.on_particle_spawn(
-                                        "block_place",
-                                        telos_mod::JsParticleParams {
-                                            pos: [place_pos_f.x, place_pos_f.y, place_pos_f.z],
-                                            velocity: [0.0, 0.0, 0.0],
-                                            color_tint: u32::from_le_bytes(tint),
-                                            scale: 1.0,
-                                            lifetime: 12.0,
-                                        },
-                                    );
-                                    let mod_tint = p.color_tint.to_le_bytes();
-                                    let mod_count = (p.lifetime as usize).clamp(1, 128);
-                                    let mod_pos = Vec3::new(p.pos[0], p.pos[1], p.pos[2]);
-                                    self.particle_system
-                                        .spawn_block_place(mod_pos, layer, mod_tint, mod_count);
-                                } else {
-                                    self.particle_system.spawn_block_place(
-                                        place_pos_f,
-                                        layer,
-                                        tint,
-                                        12,
-                                    );
-                                }
-                                let mut pitch = 0.95
-                                    + (place_pos.x().abs() as f32 * 0.13
-                                        + place_pos.z().abs() as f32 * 0.17)
-                                        .fract()
-                                        * 0.12;
-                                if let Some(hook) = &self.js_particle_hook {
-                                    let (_, mod_pitch) =
-                                        hook.on_sound_play("block_place", 1.0, pitch);
-                                    pitch = mod_pitch;
-                                }
-                                self.audio.play_procedural_place(place_pos_f, pitch);
-                            }
+                            self.handle_secondary_action();
                         }
                         _ => {}
                     }
@@ -11520,6 +11580,94 @@ impl ApplicationHandler for App {
                     event_loop.exit();
                 } else if let Some(window) = &self.window {
                     window.request_redraw();
+                }
+            }
+            WindowEvent::Touch(touch) => {
+                let win_size = self.window_size();
+                let gui_scale = compute_gui_scale(win_size.width, win_size.height);
+                let win_w = win_size.width as f32 / gui_scale as f32;
+                let win_h = win_size.height as f32 / gui_scale as f32;
+
+                if self.current_screen == AppScreen::InGame
+                    && !self.is_paused
+                    && !self.inventory_open
+                    && self.container_state.is_none()
+                    && !self.advancements_open
+                    && self.active_modal_form.is_none()
+                {
+                    self.touch_controls.handle_touch(&touch, win_w, win_h, gui_scale);
+
+                    if self.touch_controls.pause_requested {
+                        self.touch_controls.pause_requested = false;
+                        self.is_paused = true;
+                        self.controller.mouse_captured = false;
+                        self.set_cursor_captured(false);
+                    }
+
+                    if self.touch_controls.inventory_requested {
+                        self.touch_controls.inventory_requested = false;
+                        self.inventory_open = true;
+                        self.controller.mouse_captured = false;
+                        self.set_cursor_captured(false);
+                    }
+
+                    if let Some(slot) = self.touch_controls.hotbar_slot_requested.take() {
+                        self.select_hotbar_slot(slot);
+                    }
+
+                    if self.touch_controls.break_requested {
+                        self.touch_controls.break_requested = false;
+                        self.handle_primary_action();
+                    }
+
+                    if self.touch_controls.place_requested {
+                        self.touch_controls.place_requested = false;
+                        self.handle_secondary_action();
+                    }
+                } else {
+                    let position = touch.location;
+                    match touch.phase {
+                        winit::event::TouchPhase::Started => {
+                            self.window_event(
+                                event_loop,
+                                window_id,
+                                WindowEvent::CursorMoved {
+                                    device_id: touch.device_id,
+                                    position,
+                                },
+                            );
+                            self.window_event(
+                                event_loop,
+                                window_id,
+                                WindowEvent::MouseInput {
+                                    device_id: touch.device_id,
+                                    state: ElementState::Pressed,
+                                    button: MouseButton::Left,
+                                },
+                            );
+                        }
+                        winit::event::TouchPhase::Moved => {
+                            self.window_event(
+                                event_loop,
+                                window_id,
+                                WindowEvent::CursorMoved {
+                                    device_id: touch.device_id,
+                                    position,
+                                },
+                            );
+                        }
+                        winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
+                            self.window_event(
+                                event_loop,
+                                window_id,
+                                WindowEvent::MouseInput {
+                                    device_id: touch.device_id,
+                                    state: ElementState::Released,
+                                    button: MouseButton::Left,
+                                },
+                            );
+                        }
+                    }
                 }
             }
             _ => {}
