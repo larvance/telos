@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <filter id="iconGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="10" result="blur" />
+      <feFlood flood-color="#f39c12" flood-opacity="0.4" result="color" />
+      <feComposite in="color" in2="blur" operator="in" result="glow" />
+      <feMerge>
+        <feMergeNode in="glow" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="coreAura" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <linearGradient id="cubeTop" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFEAA7" />
+      <stop offset="45%" stop-color="#FFF8E7" />
+      <stop offset="100%" stop-color="#FDCB6E" />
+    </linearGradient>
+
+    <linearGradient id="cubeLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E67E22" />
+      <stop offset="50%" stop-color="#D35400" />
+      <stop offset="100%" stop-color="#BA4A00" />
+    </linearGradient>
+
+    <linearGradient id="cubeRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A04000" />
+      <stop offset="60%" stop-color="#7E3200" />
+      <stop offset="100%" stop-color="#552200" />
+    </linearGradient>
+
+    <linearGradient id="gemTop" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#A8FFEB" />
+      <stop offset="100%" stop-color="#55EFC4" />
+    </linearGradient>
+    <linearGradient id="gemLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00D2A0" />
+      <stop offset="100%" stop-color="#00A880" />
+    </linearGradient>
+    <linearGradient id="gemRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#008B5B" />
+      <stop offset="100%" stop-color="#00583A" />
+    </linearGradient>
+
+    <radialGradient id="shadowGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.65" />
+      <stop offset="60%" stop-color="#000000" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <g filter="url(#iconGlow)">
+    <!-- Ambient Shadow under floating cube -->
+    <ellipse cx="128" cy="216" rx="72" ry="22" fill="url(#shadowGrad)" />
+
+    <!-- Main Voxel Cube (scale ~ 1.8x, centered at 128, 122) -->
+    <g transform="translate(128, 122)">
+      <!-- Left Face -->
+      <polygon points="0,0 -68,-38 -68,46 0,84" fill="url(#cubeLeft)" stroke="#3E1A00" stroke-width="3" stroke-linejoin="round" />
+      <!-- Left Face Architectural Sub-Grid -->
+      <polygon points="0,0 -34,-19 -34,65 0,84" fill="#000000" opacity="0.12" />
+      <line x1="-68" y1="4" x2="0" y2="42" stroke="#FFB870" stroke-width="2" opacity="0.45" />
+
+      <!-- Right Face -->
+      <polygon points="0,0 68,-38 68,46 0,84" fill="url(#cubeRight)" stroke="#270F00" stroke-width="3" stroke-linejoin="round" />
+      <!-- Right Face Architectural Sub-Grid -->
+      <polygon points="0,0 34,-19 34,65 0,84" fill="#000000" opacity="0.22" />
+      <line x1="0" y1="42" x2="68" y2="4" stroke="#000000" stroke-width="2" opacity="0.5" />
+
+      <!-- Top Face -->
+      <polygon points="0,0 -68,-38 0,-76 68,-38" fill="url(#cubeTop)" stroke="#B37D14" stroke-width="3" stroke-linejoin="round" />
+      <!-- Top Face Sub-Grid Lines -->
+      <line x1="-34" y1="-57" x2="34" y2="-19" stroke="#FFFFFF" stroke-width="2.2" opacity="0.6" />
+      <line x1="-34" y1="-19" x2="34" y2="-57" stroke="#FFFFFF" stroke-width="2.2" opacity="0.6" />
+
+      <!-- Center Glowing Emerald Core Crystal (Isometric) -->
+      <g transform="translate(0, 4) scale(0.85)" filter="url(#coreAura)">
+        <polygon points="0,0 -30,-17 0,-34 30,-17" fill="url(#gemTop)" stroke="#00B894" stroke-width="2.5" />
+        <polygon points="0,0 -30,-17 -30,20 0,38" fill="url(#gemLeft)" stroke="#00966B" stroke-width="2.5" />
+        <polygon points="0,0 30,-17 30,20 0,38" fill="url(#gemRight)" stroke="#00583A" stroke-width="2.5" />
+      </g>
+
+      <!-- Satellite Micro-Voxels -->
+      <!-- Top Left Gold Micro-Voxel -->
+      <g transform="translate(-76, -58) scale(0.44)">
+        <polygon points="0,0 -20,-11 0,-22 20,-11" fill="#FFF275" stroke="#D35400" stroke-width="1.5" />
+        <polygon points="0,0 -20,-11 -20,13 0,24" fill="#FFA502" stroke="#B84400" stroke-width="1.5" />
+        <polygon points="0,0 20,-11 20,13 0,24" fill="#D35400" stroke="#7A2200" stroke-width="1.5" />
+      </g>
+      <!-- Bottom Right Emerald Micro-Voxel -->
+      <g transform="translate(78, 52) scale(0.38)">
+        <polygon points="0,0 -20,-11 0,-22 20,-11" fill="#A8FFEB" stroke="#00B894" stroke-width="1.5" />
+        <polygon points="0,0 -20,-11 -20,13 0,24" fill="#00D2A0" stroke="#008B5B" stroke-width="1.5" />
+        <polygon points="0,0 20,-11 20,13 0,24" fill="#00796B" stroke="#004D36" stroke-width="1.5" />
+      </g>
+      <!-- Top Right Accent Micro-Voxel -->
+      <g transform="translate(68, -52) scale(0.32)">
+        <polygon points="0,0 -20,-11 0,-22 20,-11" fill="#FFEAA7" stroke="#D35400" stroke-width="1.5" />
+        <polygon points="0,0 -20,-11 -20,13 0,24" fill="#F39C12" stroke="#B84400" stroke-width="1.5" />
+        <polygon points="0,0 20,-11 20,13 0,24" fill="#C0392B" stroke="#7A2200" stroke-width="1.5" />
+      </g>
+      <!-- Bottom Left Floating Shard -->
+      <g transform="translate(-82, 40) scale(0.26)">
+        <polygon points="0,0 -20,-11 0,-22 20,-11" fill="#A8FFEB" />
+        <polygon points="0,0 -20,-11 -20,13 0,24" fill="#00D2A0" />
+        <polygon points="0,0 20,-11 20,13 0,24" fill="#00796B" />
+      </g>
+    </g>
+  </g>
+</svg>

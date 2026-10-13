@@ -248,9 +248,9 @@ html, body {
 }
 
 .login-logo {
-  height: 52px;
+  height: 54px;
+  max-width: 260px;
   object-fit: contain;
-  image-rendering: pixelated;
 }
 
 .login-title {
@@ -614,13 +614,13 @@ html, body {
 }
 
 .tab-panel {
-  display: none;
+  display: none !important;
   height: 100%;
   width: 100%;
 }
 
 .tab-panel.active {
-  display: block;
+  display: flex !important;
 }
 
 /* ==========================================================================
@@ -682,9 +682,9 @@ html, body {
 }
 
 .hero-logo {
-  height: 90px;
+  height: 96px;
+  max-width: 420px;
   object-fit: contain;
-  image-rendering: pixelated;
 }
 
 /* Launch Control Bar */

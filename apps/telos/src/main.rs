@@ -196,6 +196,10 @@ struct Args {
     #[arg(long, default_value_t = false)]
     no_cull: bool,
 
+    /// Force main menu screen on startup (useful for menu testing and screenshots).
+    #[arg(long, default_value_t = false)]
+    menu: bool,
+
     /// Rendering backend selection ('vulkan', 'opengl', or 'auto').
     #[arg(long, default_value = "auto")]
     backend: String,
@@ -1647,7 +1651,7 @@ impl App {
 
         let _ = app_dirs.ensure_dirs_exist();
 
-        let is_direct_ingame = args.screenshot.is_some() || args.pos.is_some();
+        let is_direct_ingame = (args.screenshot.is_some() || args.pos.is_some()) && !args.menu;
         let current_screen = if is_direct_ingame {
             AppScreen::InGame
         } else {

@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 160" width="640" height="160">
+  <defs>
+    <!-- Background / Glow Filters -->
+    <filter id="logoGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6" result="blur" />
+      <feFlood flood-color="#f39c12" flood-opacity="0.35" result="glowColor" />
+      <feComposite in="glowColor" in2="blur" operator="in" result="glow" />
+      <feMerge>
+        <feMergeNode in="glow" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="depthShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="3" dy="5" stdDeviation="4" flood-color="#000000" flood-opacity="0.9" />
+    </filter>
+
+    <!-- Front Face: Chiseled Warm Gold with specular top -->
+    <linearGradient id="frontGold" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFDF7" />
+      <stop offset="12%" stop-color="#FEEBAA" />
+      <stop offset="45%" stop-color="#EDB33B" />
+      <stop offset="80%" stop-color="#C57E13" />
+      <stop offset="100%" stop-color="#915206" />
+    </linearGradient>
+
+    <!-- Top Bevel Highlight: Brilliant White-Gold -->
+    <linearGradient id="bevelTop" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95" />
+      <stop offset="50%" stop-color="#FFF5D6" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#FFEAA7" stop-opacity="0.7" />
+    </linearGradient>
+
+    <!-- Side Bevel / Extrusion: Deep Warm Bronze Shadow -->
+    <linearGradient id="extrudeSide" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#733F08" />
+      <stop offset="50%" stop-color="#4C2703" />
+      <stop offset="100%" stop-color="#241001" />
+    </linearGradient>
+
+    <!-- Crest Isometric Gradients -->
+    <linearGradient id="cubeTop" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFEAA7" />
+      <stop offset="50%" stop-color="#FFF8E7" />
+      <stop offset="100%" stop-color="#FDCB6E" />
+    </linearGradient>
+    <linearGradient id="cubeLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E67E22" />
+      <stop offset="100%" stop-color="#D35400" />
+    </linearGradient>
+    <linearGradient id="cubeRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A04000" />
+      <stop offset="100%" stop-color="#6E2C00" />
+    </linearGradient>
+  </defs>
+
+  <g filter="url(#depthShadow)">
+    <!-- ==================== 1. FLOATING VOXEL CREST ==================== -->
+    <g transform="translate(78, 76)">
+      <!-- Ground Shadow -->
+      <ellipse cx="0" cy="46" rx="42" ry="13" fill="#000000" opacity="0.5" />
+
+      <!-- Left Face -->
+      <polygon points="0,0 -40,-22 -40,26 0,48" fill="url(#cubeLeft)" stroke="#3E1A00" stroke-width="2.2" stroke-linejoin="round" />
+      <polygon points="0,0 -20,-11 -20,37 0,48" fill="#000000" opacity="0.12" />
+      <line x1="-40" y1="2" x2="0" y2="24" stroke="#FF9F43" stroke-width="1.4" opacity="0.4" />
+
+      <!-- Right Face -->
+      <polygon points="0,0 40,-22 40,26 0,48" fill="url(#cubeRight)" stroke="#270F00" stroke-width="2.2" stroke-linejoin="round" />
+      <polygon points="0,0 20,-11 20,37 0,48" fill="#000000" opacity="0.2" />
+      <line x1="0" y1="24" x2="40" y2="2" stroke="#000000" stroke-width="1.4" opacity="0.5" />
+
+      <!-- Top Face -->
+      <polygon points="0,0 -40,-22 0,-44 40,-22" fill="url(#cubeTop)" stroke="#B37D14" stroke-width="2.2" stroke-linejoin="round" />
+      <line x1="-20" y1="-33" x2="20" y2="-11" stroke="#FFFFFF" stroke-width="1.6" opacity="0.6" />
+      <line x1="-20" y1="-11" x2="20" y2="-33" stroke="#FFFFFF" stroke-width="1.6" opacity="0.6" />
+
+      <!-- Center Glowing Emerald Core Voxel -->
+      <g transform="translate(0, 3) scale(0.48)">
+        <polygon points="0,0 -20,-11 0,-22 20,-11" fill="#A8FFEB" stroke="#00B894" stroke-width="1.8" />
+        <polygon points="0,0 -20,-11 -20,13 0,24" fill="#00D2A0" stroke="#00966B" stroke-width="1.8" />
+        <polygon points="0,0 20,-11 20,13 0,24" fill="#008B5B" stroke="#00583A" stroke-width="1.8" />
+      </g>
+
+      <!-- Satellite Micro-Voxels -->
+      <g transform="translate(-46, -34) scale(0.26)">
+        <polygon points="0,0 -16,-9 0,-18 16,-9" fill="#FFF275" />
+        <polygon points="0,0 -16,-9 -16,10 0,19" fill="#FFA502" />
+        <polygon points="0,0 16,-9 16,10 0,19" fill="#D35400" />
+      </g>
+      <g transform="translate(48, 30) scale(0.22)">
+        <polygon points="0,0 -16,-9 0,-18 16,-9" fill="#55EFC4" />
+        <polygon points="0,0 -16,-9 -16,10 0,19" fill="#00B894" />
+        <polygon points="0,0 16,-9 16,10 0,19" fill="#00796B" />
+      </g>
+      <g transform="translate(42, -30) scale(0.2)">
+        <polygon points="0,0 -16,-9 0,-18 16,-9" fill="#FFF275" />
+        <polygon points="0,0 -16,-9 -16,10 0,19" fill="#FFA502" />
+        <polygon points="0,0 16,-9 16,10 0,19" fill="#D35400" />
+      </g>
+    </g>
+
+    <!-- ==================== 2. CHISELED 3D VOXEL WORDMARK "TELOS" ==================== -->
+    <g transform="translate(150, 32)">
+
+      <!-- SHARED 3D EXTRUSION BACK LAYER -->
+      <g fill="url(#extrudeSide)" stroke="#1A0D02" stroke-width="5" stroke-linejoin="round" fill-rule="evenodd" transform="translate(4, 7)">
+        <!-- T -->
+        <path d="M 0,0 L 74,0 L 74,20 L 48,20 L 48,82 L 26,82 L 26,20 L 0,20 Z" />
+        <!-- E -->
+        <path d="M 88,0 L 154,0 L 154,20 L 112,20 L 112,32 L 148,32 L 148,50 L 112,50 L 112,62 L 156,62 L 156,82 L 88,82 Z" />
+        <!-- L -->
+        <path d="M 170,0 L 194,0 L 194,62 L 236,62 L 236,82 L 170,82 Z" />
+        <!-- O (Outer chamfered octagonal, inner chamfered cutout with evenodd) -->
+        <path d="M 258,0 L 324,0 L 332,8 L 332,74 L 324,82 L 258,82 L 250,74 L 250,8 Z
+                 M 276,20 L 306,20 L 310,24 L 310,58 L 306,62 L 276,62 L 272,58 L 272,24 Z" />
+        <!-- S -->
+        <path d="M 358,0 L 420,0 L 420,22 L 378,22 L 378,32 L 420,38 L 420,82 L 350,82 L 350,60 L 392,60 L 392,50 L 350,44 L 350,8 Z" />
+      </g>
+
+      <!-- MID-DEPTH ACCENT LAYER -->
+      <g fill="url(#extrudeSide)" stroke="#4A2603" stroke-width="2.2" stroke-linejoin="round" fill-rule="evenodd" transform="translate(2, 3)">
+        <path d="M 0,0 L 74,0 L 74,20 L 48,20 L 48,82 L 26,82 L 26,20 L 0,20 Z" />
+        <path d="M 88,0 L 154,0 L 154,20 L 112,20 L 112,32 L 148,32 L 148,50 L 112,50 L 112,62 L 156,62 L 156,82 L 88,82 Z" />
+        <path d="M 170,0 L 194,0 L 194,62 L 236,62 L 236,82 L 170,82 Z" />
+        <path d="M 258,0 L 324,0 L 332,8 L 332,74 L 324,82 L 258,82 L 250,74 L 250,8 Z
+                 M 276,20 L 306,20 L 310,24 L 310,58 L 306,62 L 276,62 L 272,58 L 272,24 Z" />
+        <path d="M 358,0 L 420,0 L 420,22 L 378,22 L 378,32 L 420,38 L 420,82 L 350,82 L 350,60 L 392,60 L 392,50 L 350,44 L 350,8 Z" />
+      </g>
+
+      <!-- FRONT FACE LAYER -->
+      <g fill="url(#frontGold)" stroke="#663A04" stroke-width="1.8" stroke-linejoin="round" fill-rule="evenodd">
+        <path d="M 0,0 L 74,0 L 74,20 L 48,20 L 48,82 L 26,82 L 26,20 L 0,20 Z" />
+        <path d="M 88,0 L 154,0 L 154,20 L 112,20 L 112,32 L 148,32 L 148,50 L 112,50 L 112,62 L 156,62 L 156,82 L 88,82 Z" />
+        <path d="M 170,0 L 194,0 L 194,62 L 236,62 L 236,82 L 170,82 Z" />
+        <path d="M 258,0 L 324,0 L 332,8 L 332,74 L 324,82 L 258,82 L 250,74 L 250,8 Z
+                 M 276,20 L 306,20 L 310,24 L 310,58 L 306,62 L 276,62 L 272,58 L 272,24 Z" />
+        <path d="M 358,0 L 420,0 L 420,22 L 378,22 L 378,32 L 420,38 L 420,82 L 350,82 L 350,60 L 392,60 L 392,50 L 350,44 L 350,8 Z" />
+      </g>
+
+      <!-- SPECULAR HIGHLIGHT BEVEL (Top Edge Glint) -->
+      <g stroke="url(#bevelTop)" stroke-width="2" stroke-linecap="square">
+        <!-- T -->
+        <line x1="2" y1="2" x2="72" y2="2" />
+        <line x1="2" y1="2" x2="2" y2="18" />
+        <line x1="28" y1="22" x2="46" y2="22" />
+
+        <!-- E -->
+        <line x1="90" y1="2" x2="152" y2="2" />
+        <line x1="90" y1="2" x2="90" y2="80" />
+        <line x1="114" y1="34" x2="146" y2="34" />
+        <line x1="114" y1="64" x2="154" y2="64" />
+
+        <!-- L -->
+        <line x1="172" y1="2" x2="192" y2="2" />
+        <line x1="172" y1="2" x2="172" y2="80" />
+        <line x1="196" y1="64" x2="234" y2="64" />
+
+        <!-- O -->
+        <line x1="260" y1="2" x2="322" y2="2" />
+        <line x1="252" y1="10" x2="252" y2="72" />
+        <line x1="274" y1="22" x2="308" y2="22" />
+
+        <!-- S -->
+        <line x1="360" y1="2" x2="418" y2="2" />
+        <line x1="352" y1="10" x2="352" y2="42" />
+        <line x1="380" y1="24" x2="418" y2="24" />
+        <line x1="352" y1="80" x2="418" y2="80" />
+      </g>
+
+      <!-- SUBTITLE / TAGLINE -->
+      <g transform="translate(176, 104)">
+        <text x="0" y="0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+              font-size="11" font-weight="700" letter-spacing="3.5" fill="#D4AF37" opacity="0.95">VOXEL ADVENTURE ENGINE</text>
+      </g>
+    </g>
+  </g>
+</svg>

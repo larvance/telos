@@ -1127,6 +1127,33 @@
       } else {
         transitionToLogin();
       }
+
+      // Check for CLI arguments (--tab <name>, --modal <name>)
+      try {
+        const cliArgs = await invoke('get_cli_args');
+        if (Array.isArray(cliArgs)) {
+          const tabIdx = cliArgs.indexOf('--tab');
+          if (tabIdx !== -1 && cliArgs[tabIdx + 1]) {
+            const targetTab = cliArgs[tabIdx + 1];
+            const tabBtn = document.querySelector(`.nav-tab[data-tab="${targetTab}"]`);
+            if (tabBtn) tabBtn.click();
+          }
+          const modalIdx = cliArgs.indexOf('--modal');
+          if (modalIdx !== -1 && cliArgs[modalIdx + 1]) {
+            const targetModal = cliArgs[modalIdx + 1];
+            if (targetModal === 'news-reader') {
+              const card = document.querySelector('.news-card');
+              if (card) card.click();
+            } else if (targetModal === 'new-installation') {
+              const btn = document.getElementById('btn-new-install');
+              if (btn) btn.click();
+            } else if (targetModal === 'account') {
+              const badge = document.querySelector('.user-profile-badge');
+              if (badge) badge.click();
+            }
+          }
+        }
+      } catch (_) {}
     } catch (err) {
       console.error('Initialization error:', err);
       transitionToLogin();

@@ -435,6 +435,11 @@ fn window_close(window: Window) -> Result<(), String> {
     window.close().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_cli_args() -> Result<Vec<String>, String> {
+    Ok(std::env::args().collect())
+}
+
 fn main() {
     let repo_dir = resolve_repo_dir();
     let profile = load_profile();
@@ -469,6 +474,7 @@ fn main() {
             window_minimize,
             window_toggle_maximize,
             window_close,
+            get_cli_args,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Telos Launcher");
