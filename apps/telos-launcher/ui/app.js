@@ -6,6 +6,13 @@
 (function () {
   'use strict';
 
+  // Prevent default browser context menu inside the launcher
+  window.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+  });
+
+  const RAW_NEWS_URL = 'https://raw.githubusercontent.com/larvance/telos/main/apps/telos-launcher/ui/assets/news/news.json';
+
   // --- Tauri IPC Wrappers ---
   const isTauri = !!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke);
 
@@ -30,7 +37,7 @@
       selected_installation_id: 'local-dev',
       auto_close_on_play: false,
       language: 'English (US)',
-      news_url: 'https://news.telos.larvance.com/news.json',
+      news_url: RAW_NEWS_URL,
       ram_gb: 8,
       graphics_backend: 'vulkan',
     },
@@ -551,12 +558,12 @@
   async function fetchAndRenderNews() {
     elNewsGrid.innerHTML = `
       <div style="grid-column: 1 / -1; padding: 20px; text-align: center; color: #888;">
-        Loading latest announcements from news.telos.larvance.com...
+        Loading latest announcements...
       </div>
     `;
 
     let articles = null;
-    const endpoint = newsEndpoint || 'https://news.telos.larvance.com/news.json';
+    const endpoint = newsEndpoint || RAW_NEWS_URL;
 
     // 1. Attempt live remote fetch with timeout
     try {
@@ -1313,7 +1320,7 @@
   });
 
   elBtnSyncNews.addEventListener('click', async () => {
-    newsEndpoint = elSettingNewsUrl.value.trim() || 'https://news.telos.larvance.com/news.json';
+    newsEndpoint = elSettingNewsUrl.value.trim() || RAW_NEWS_URL;
     if (appProfile) {
       appProfile.news_url = newsEndpoint;
       await invoke('save_profile', { profile: appProfile });
@@ -1328,11 +1335,11 @@
 
   elBtnResetDefaults.addEventListener('click', async () => {
     elSettingKeepOpen.checked = true;
-    elSettingNewsUrl.value = 'https://news.telos.larvance.com/news.json';
+    elSettingNewsUrl.value = RAW_NEWS_URL;
     elSettingGraphics.value = 'vulkan';
     elSettingRamSlider.value = '8';
     elSettingRamLabel.textContent = '8 GB';
-    newsEndpoint = 'https://news.telos.larvance.com/news.json';
+    newsEndpoint = RAW_NEWS_URL;
     if (appProfile) {
       appProfile.auto_close_on_play = false;
       appProfile.news_url = newsEndpoint;

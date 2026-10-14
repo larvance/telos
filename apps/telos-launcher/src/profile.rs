@@ -36,7 +36,7 @@ impl Default for LauncherProfile {
             language: "English - United States".to_string(),
             auto_close_on_play: false,
             game_dir: None,
-            news_url: Some("https://news.telos.larvance.com/news.json".to_string()),
+            news_url: Some("https://raw.githubusercontent.com/larvance/telos/main/apps/telos-launcher/ui/assets/news/news.json".to_string()),
             graphics_backend: Some("vulkan".to_string()),
             ram_gb: Some(8),
             last_used_installation: Some("local-dev".to_string()),
