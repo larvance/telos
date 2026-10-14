@@ -16,9 +16,9 @@ mod profile;
 mod version_manager;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -33,6 +33,37 @@ use version_manager::{
     load_or_init_installations, persist_installations, ChannelKind, Installation,
     RemoteVersionInfo,
 };
+
+/// Path to the single-instance UNIX domain socket.
+fn get_launcher_ipc_path() -> PathBuf {
+    if let Some(runtime_dir) = dirs::runtime_dir() {
+        runtime_dir.join("telos-launcher.sock")
+    } else if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+        PathBuf::from(runtime_dir).join("telos-launcher.sock")
+    } else {
+        std::env::temp_dir().join("telos-launcher.sock")
+    }
+}
+
+/// Attempts to connect to an existing running launcher instance and requests it to show its window.
+/// Returns `true` if an active instance responded and acknowledged the SHOW command.
+fn try_send_ipc_show(sock_path: &Path) -> bool {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    if let Ok(mut stream) = UnixStream::connect(sock_path) {
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(600)));
+        let _ = stream.set_write_timeout(Some(Duration::from_millis(600)));
+        if stream.write_all(b"SHOW\n").is_ok() {
+            let mut response = [0u8; 3];
+            if stream.read_exact(&mut response).is_ok() && &response == b"OK\n" {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 /// Persisted multiplayer server entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,6 +211,12 @@ pub struct AppState {
     pub remote_versions: RemoteVersionInfo,
     /// Flag indicating if background build is in progress.
     pub is_building: Arc<AtomicBool>,
+    /// Number of actively running game processes supervised by this launcher.
+    pub running_instances: Arc<AtomicUsize>,
+    /// Whether the launcher window is currently open / visible to the user.
+    pub is_window_open: Arc<AtomicBool>,
+    /// Path to the single-instance IPC socket.
+    pub ipc_socket_path: PathBuf,
 }
 
 #[tauri::command]
@@ -282,18 +319,38 @@ fn spawn_and_supervise(
     mut cmd: Command,
     app_handle: AppHandle,
     inst_name: String,
-    auto_close: bool,
+    _auto_close: bool,
 ) -> Result<(), String> {
-    if auto_close {
-        if let Some(win) = app_handle.get_webview_window("main") {
-            let _ = win.hide();
-        }
+    let state = app_handle.state::<AppState>();
+    let running_instances = state.running_instances.clone();
+    let is_window_open = state.is_window_open.clone();
+    let ipc_socket_path = state.ipc_socket_path.clone();
+
+    // When starting the game, always hide launcher window but keep process running in background
+    if let Some(win) = app_handle.get_webview_window("main") {
+        let _ = win.hide();
     }
+    is_window_open.store(false, Ordering::SeqCst);
 
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn game process: {e}"))?;
+    let mut child = match cmd.spawn() {
+        Ok(c) => {
+            running_instances.fetch_add(1, Ordering::SeqCst);
+            c
+        }
+        Err(e) => {
+            // Restore window if launch failed
+            is_window_open.store(true, Ordering::SeqCst);
+            if let Some(win) = app_handle.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+            return Err(format!("Failed to spawn game process: {e}"));
+        }
+    };
 
     std::thread::spawn(move || {
         let stderr_reader = child.stderr.take();
@@ -321,15 +378,19 @@ fn spawn_and_supervise(
         let stderr_output = err_handle.join().unwrap_or_default();
         let stdout_output = out_handle.join().unwrap_or_default();
 
-        // Always show the launcher back when game exits or crashes
-        if let Some(win) = app_handle.get_webview_window("main") {
-            let _ = win.show();
-            let _ = win.unminimize();
-            let _ = win.set_focus();
-        }
+        let remaining = running_instances.fetch_sub(1, Ordering::SeqCst).saturating_sub(1);
 
         match status {
             Ok(exit_status) if exit_status.success() => {
+                if remaining == 0 && !is_window_open.load(Ordering::SeqCst) {
+                    // No running Telos instances left that the launcher spawned, and launcher was closed:
+                    // Exit the launcher completely.
+                    let _ = fs::remove_file(&ipc_socket_path);
+                    app_handle.exit(0);
+                    return;
+                }
+
+                // If user reopened launcher or other instances are still running:
                 let _ = app_handle.emit("game_exited", serde_json::json!({
                     "success": true,
                     "installation": inst_name,
@@ -337,6 +398,14 @@ fn spawn_and_supervise(
                 }));
             }
             Ok(exit_status) => {
+                // Game crashed: show launcher back so user can inspect crash details
+                is_window_open.store(true, Ordering::SeqCst);
+                if let Some(win) = app_handle.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+
                 let code = exit_status.code().unwrap_or(-1);
                 let mut combined = String::new();
                 if !stderr_output.trim().is_empty() {
@@ -367,6 +436,13 @@ fn spawn_and_supervise(
                 }));
             }
             Err(e) => {
+                is_window_open.store(true, Ordering::SeqCst);
+                if let Some(win) = app_handle.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+
                 let error_msg = format!("Process supervision failed: {e}");
                 let _ = app_handle.emit("game_crash", serde_json::json!({
                     "success": false,
@@ -659,8 +735,20 @@ fn is_window_maximized(window: Window) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn window_close(window: Window) -> Result<(), String> {
-    window.close().map_err(|e| e.to_string())
+fn window_close(
+    window: Window,
+    state: State<'_, AppState>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    let running = state.running_instances.load(Ordering::SeqCst);
+    state.is_window_open.store(false, Ordering::SeqCst);
+    if running > 0 {
+        window.hide().map_err(|e| e.to_string())
+    } else {
+        let _ = fs::remove_file(&state.ipc_socket_path);
+        app_handle.exit(0);
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -786,6 +874,21 @@ fn sync_desktop_integration(repo_dir: &std::path::Path) {
 }
 
 fn main() {
+    let sock_path = get_launcher_ipc_path();
+    let is_activate_only = std::env::args().any(|arg| arg == "--activate" || arg == "--ping");
+
+    // 1. Single-instance enforcement via UNIX domain socket
+    if try_send_ipc_show(&sock_path) {
+        println!("Telos Launcher is already running; activated existing window.");
+        std::process::exit(0);
+    } else if is_activate_only {
+        // Fast-path ping check requested, but no launcher instance is alive
+        std::process::exit(1);
+    }
+
+    // Clean up any stale socket from previous terminated or crashed process
+    let _ = fs::remove_file(&sock_path);
+
     let repo_dir = resolve_repo_dir();
     sync_desktop_integration(&repo_dir);
 
@@ -794,6 +897,9 @@ fn main() {
     let installations = load_or_init_installations(&repo_dir, &remote_versions);
     let servers = load_servers();
 
+    let running_instances = Arc::new(AtomicUsize::new(0));
+    let is_window_open = Arc::new(AtomicBool::new(true));
+
     let app_state = AppState {
         repo_dir,
         profile: Mutex::new(profile),
@@ -801,15 +907,63 @@ fn main() {
         installations: Mutex::new(installations),
         remote_versions,
         is_building: Arc::new(AtomicBool::new(false)),
+        running_instances: running_instances.clone(),
+        is_window_open: is_window_open.clone(),
+        ipc_socket_path: sock_path.clone(),
     };
 
+    let ipc_listener = std::os::unix::net::UnixListener::bind(&sock_path).ok();
+    let running_instances_close = running_instances.clone();
+    let is_window_open_close = is_window_open.clone();
+    let ipc_socket_path_close = sock_path.clone();
+    let is_window_open_ipc = is_window_open.clone();
+
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
             if let Some(win) = app.get_webview_window("main") {
                 let icon = tauri::include_image!("icons/128x128@2x.png");
                 let _ = win.set_icon(icon);
             }
+
+            // Spawn background IPC listener thread
+            if let Some(listener) = ipc_listener {
+                let app_handle_for_ipc = app.handle().clone();
+                let is_open = is_window_open_ipc.clone();
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, BufReader, Write};
+                    for mut stream in listener.incoming().flatten() {
+                        let mut reader = BufReader::new(&stream);
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).is_ok() {
+                            let cmd = line.trim();
+                            if cmd == "SHOW" {
+                                is_open.store(true, Ordering::SeqCst);
+                                if let Some(win) = app_handle_for_ipc.get_webview_window("main") {
+                                    let _ = win.show();
+                                    let _ = win.unminimize();
+                                    let _ = win.set_focus();
+                                }
+                                let _ = stream.write_all(b"OK\n");
+                            }
+                        }
+                    }
+                });
+            }
+
             Ok(())
+        })
+        .on_window_event(move |window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let running = running_instances_close.load(Ordering::SeqCst);
+                is_window_open_close.store(false, Ordering::SeqCst);
+                if running > 0 {
+                    api.prevent_close();
+                    let _ = window.hide();
+                } else {
+                    let _ = fs::remove_file(&ipc_socket_path_close);
+                    window.app_handle().exit(0);
+                }
+            }
         })
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
@@ -874,5 +1028,64 @@ mod tests {
 
         let swapchain_fail = determine_crash_summary(1, "Swapchain resize failed: timeout");
         assert!(swapchain_fail.contains("swapchain failure"));
+    }
+
+    #[test]
+    fn test_ipc_socket_ping_no_server() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let non_existent_sock = temp_dir.path().join("test_non_existent.sock");
+        assert!(!try_send_ipc_show(&non_existent_sock));
+    }
+
+    #[test]
+    fn test_ipc_socket_show_roundtrip() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixListener;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let sock_path = temp_dir.path().join("test_active.sock");
+
+        let listener = UnixListener::bind(&sock_path).unwrap();
+        let server_thread = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                if reader.read_line(&mut line).is_ok() && line.trim() == "SHOW" {
+                    let _ = stream.write_all(b"OK\n");
+                }
+            }
+        });
+
+        assert!(try_send_ipc_show(&sock_path));
+        server_thread.join().unwrap();
+    }
+
+    #[test]
+    fn test_lifecycle_atomic_counters() {
+        let running_instances = Arc::new(AtomicUsize::new(0));
+        let is_window_open = Arc::new(AtomicBool::new(true));
+
+        // 1. Starting game: window hides, instance increments
+        is_window_open.store(false, Ordering::SeqCst);
+        running_instances.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(running_instances.load(Ordering::SeqCst), 1);
+        assert!(!is_window_open.load(Ordering::SeqCst));
+
+        // 2. User reopens launcher from app list: window becomes visible
+        is_window_open.store(true, Ordering::SeqCst);
+        assert!(is_window_open.load(Ordering::SeqCst));
+
+        // 3. User closes launcher again while game is still playing: window hides
+        let running = running_instances.load(Ordering::SeqCst);
+        assert!(running > 0);
+        is_window_open.store(false, Ordering::SeqCst);
+
+        // 4. Game exits cleanly: remaining instances drops to 0
+        let remaining = running_instances.fetch_sub(1, Ordering::SeqCst).saturating_sub(1);
+        assert_eq!(remaining, 0);
+
+        // Check condition: remaining == 0 && !is_window_open -> should terminate launcher completely
+        let should_exit = remaining == 0 && !is_window_open.load(Ordering::SeqCst);
+        assert!(should_exit);
     }
 }

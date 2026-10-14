@@ -30,6 +30,11 @@ if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
     TARGET_BIN="$REPO_DIR/target/debug/telos"
 fi
 
+# Fast path: If an existing launcher instance is already running, activate it immediately!
+if [[ -x "$DEV_BIN" ]] && "$DEV_BIN" --activate >/dev/null 2>&1; then
+    exit 0
+fi
+
 # Ensure launcher binary exists and is up-to-date if cargo is available
 NEED_LAUNCHER_BUILD=0
 if [[ ! -x "$DEV_BIN" ]]; then
