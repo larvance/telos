@@ -1645,7 +1645,6 @@
   const elSettingGraphics = document.getElementById('setting-graphics-backend');
   const elSettingRamSlider = document.getElementById('setting-ram-slider');
   const elSettingRamLabel = document.getElementById('setting-ram-label');
-  const elBtnResetDefaults = document.getElementById('btn-reset-defaults');
 
   elSettingKeepOpen.addEventListener('change', async () => {
     if (appProfile) {
@@ -1877,24 +1876,6 @@
       }
     });
   }
-
-  elBtnResetDefaults.addEventListener('click', async () => {
-    elSettingKeepOpen.checked = true;
-    elSettingNewsUrl.value = DEFAULT_NEWS_URL;
-    elSettingGraphics.value = 'vulkan';
-    elSettingRamSlider.value = '8';
-    elSettingRamLabel.textContent = '8 GB';
-    newsEndpoint = DEFAULT_NEWS_URL;
-    if (appProfile) {
-      appProfile.auto_close_on_play = false;
-      appProfile.news_url = newsEndpoint;
-      appProfile.graphics_backend = 'vulkan';
-      appProfile.ram_gb = 8;
-      await invoke('save_profile', { profile: appProfile });
-    }
-    await fetchAndRenderNews();
-    alert('Settings reset to defaults.');
-  });
 
   // --- Game Crash Supervision & Modal Handlers ---
   const elBtnCloseCrash = document.getElementById('btn-close-crash');

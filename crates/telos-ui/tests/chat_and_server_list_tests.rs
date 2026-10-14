@@ -267,7 +267,7 @@ fn test_server_groups_collapsible() {
     screen.update_layout(800.0, 600.0);
     let header_y = match &items_collapsed[0] {
         ServerListItem::GroupHeader { y, .. } => *y + 2.0,
-        _ => panic!("Expected first item to be GroupHeader"),
+        ServerListItem::ServerCard { .. } => panic!("Expected first item to be GroupHeader"),
     };
     let toggle_action = screen.handle_mouse_click(400.0, header_y, 800.0, 600.0);
     assert_eq!(toggle_action, Some(telos_ui::ServerListAction::ServersModified));

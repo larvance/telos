@@ -591,3 +591,34 @@ fn test_settings_screen_ssr_toggle() {
     );
     assert!(screen.settings.video.ssr);
 }
+
+#[test]
+fn test_settings_screen_footer_layout_no_reset_defaults() {
+    use telos_core::i18n::LanguageCatalog;
+    use telos_ui::menu::settings_screen::SettingsScreen;
+
+    let catalog = LanguageCatalog::with_default_embedded();
+    let settings = GameSettings::default();
+    let mut screen = SettingsScreen::new(settings);
+
+    screen.update_layout_i18n(800.0, 600.0, &catalog);
+
+    // Verify footer layout: Back button on the left, Done button on the right
+    assert_eq!(screen.back_button.label, "[ ESC ] Back");
+    assert_eq!(screen.done_button.label, "Done");
+    assert!(screen.back_button.x < screen.done_button.x);
+    assert_eq!(screen.back_button.y, screen.done_button.y);
+
+    // Verify hover states
+    screen.handle_mouse_move(screen.back_button.x + 2.0, screen.back_button.y + 2.0);
+    assert!(screen.back_button.hovered);
+    assert!(!screen.done_button.hovered);
+
+    screen.handle_mouse_move(screen.done_button.x + 2.0, screen.done_button.y + 2.0);
+    assert!(!screen.back_button.hovered);
+    assert!(screen.done_button.hovered);
+
+    // Verify clicking Done or Back exits settings
+    assert!(screen.handle_mouse_click_i18n(screen.done_button.x + 2.0, screen.done_button.y + 2.0, 800.0, 600.0, &catalog));
+    assert!(screen.handle_mouse_click_i18n(screen.back_button.x + 2.0, screen.back_button.y + 2.0, 800.0, 600.0, &catalog));
+}

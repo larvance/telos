@@ -9,7 +9,7 @@ use crate::keybinds::{InputKey, KeyAction, KeyCategory};
 use crate::menu::widgets::{MenuButton, MenuSlider};
 use crate::quad::UiQuad;
 use crate::scale::snap_to_physical;
-use crate::settings::{AudioSettings, ControlSettings, GameSettings, VideoSettings};
+use crate::settings::GameSettings;
 use telos_core::i18n::LanguageCatalog;
 
 /// Active tab within the options screen.
@@ -102,8 +102,6 @@ pub struct SettingsScreen {
     pub listening_action: Option<KeyAction>,
     /// Button to reset keybinds to defaults.
     pub reset_keybinds_button: MenuButton,
-    /// Button to reset current tab or all settings to defaults.
-    pub reset_defaults_button: MenuButton,
     /// Left footer Back / Escape pill button.
     pub back_button: MenuButton,
     /// Done / Save confirmation button.
@@ -133,7 +131,6 @@ impl SettingsScreen {
             keybind_buttons: Vec::new(),
             listening_action: None,
             reset_keybinds_button: MenuButton::new(501, 0.0, 0.0, 160.0, 22.0, "Reset Keybinds"),
-            reset_defaults_button: MenuButton::new(502, 0.0, 0.0, 120.0, 20.0, "Reset to Defaults"),
             back_button: MenuButton::new(98, 0.0, 0.0, 75.0, 20.0, "[ ESC ] Back"),
             done_button: MenuButton::new(99, 0.0, 0.0, 95.0, 20.0, "Done"),
             active_drag_slider: None,
@@ -186,7 +183,6 @@ impl SettingsScreen {
             || self.toggle_buttons.iter().any(|b| b.hovered)
             || self.keybind_buttons.iter().any(|(_, b)| b.hovered)
             || self.reset_keybinds_button.hovered
-            || self.reset_defaults_button.hovered
             || self.back_button.hovered
             || self.done_button.hovered
     }
@@ -1156,16 +1152,6 @@ impl SettingsScreen {
         let foot_y = height_gui - 26.0;
         self.back_button = MenuButton::new(98, col_x, foot_y, 75.0, 20.0, "[ ESC ] Back");
 
-        let rst_def_w = 115.0;
-        self.reset_defaults_button = MenuButton::new(
-            502,
-            col_x + col_w - 225.0,
-            foot_y,
-            rst_def_w,
-            20.0,
-            "Reset to Defaults",
-        );
-
         let done_w = 100.0;
         self.done_button = MenuButton::new(
             99,
@@ -1217,7 +1203,6 @@ impl SettingsScreen {
         self.reset_keybinds_button.hovered =
             in_content_zone && reset_kb_vis && self.reset_keybinds_button.contains(mouse_x, mouse_y);
 
-        self.reset_defaults_button.hovered = self.reset_defaults_button.contains(mouse_x, mouse_y);
         self.back_button.hovered = self.back_button.contains(mouse_x, mouse_y);
         self.done_button.hovered = self.done_button.contains(mouse_x, mouse_y);
     }
@@ -1242,19 +1227,6 @@ impl SettingsScreen {
         let center_x = width_gui * 0.5;
         let col_w = 440.0f32.min(width_gui - 32.0);
         let col_x = center_x - col_w * 0.5;
-
-        // Reset to Defaults button
-        if self.reset_defaults_button.contains(mouse_x, mouse_y) {
-            match self.active_tab {
-                SettingsTab::Video => self.settings.video = VideoSettings::default(),
-                SettingsTab::Audio => self.settings.audio = AudioSettings::default(),
-                SettingsTab::Controls => self.settings.controls = ControlSettings::default(),
-                SettingsTab::Language => self.settings.gameplay.language = "en_us".to_string(),
-            }
-            self.listening_action = None;
-            self.update_layout_i18n(width_gui, height_gui, catalog);
-            return false;
-        }
 
         // Tab selection
         for btn in &self.tab_buttons {
@@ -2052,51 +2024,6 @@ impl SettingsScreen {
             font.layout_text("ESC", kbox_x + 4.0, kbox_y + 3.0, UiQuad::rgba(220, 230, 245, 255), false, scale, out);
 
             font.layout_text("Back", btn.x + 34.0, btn.y + 5.5, UiQuad::rgba(180, 196, 215, 255), true, scale, out);
-        }
-
-        // Reset to Defaults button
-        {
-            let btn = &self.reset_defaults_button;
-            let px_x = snap_to_physical(btn.x, scale);
-            let px_y = snap_to_physical(btn.y, scale);
-            let px_bw = snap_to_physical(btn.width, scale) as u16;
-            let px_bh = snap_to_physical(btn.height, scale) as u16;
-            let b_th = scale.max(1) as u16;
-
-            let border_col = if btn.hovered {
-                UiQuad::rgba(65, 88, 125, 255)
-            } else {
-                UiQuad::rgba(38, 52, 75, 200)
-            };
-            let bg_col = if btn.hovered {
-                UiQuad::rgba(32, 44, 66, 240)
-            } else {
-                UiQuad::rgba(22, 30, 44, 220)
-            };
-
-            out.push(UiQuad::solid([px_x, px_y], [px_bw, px_bh], border_col));
-            let in_x = px_x + i32::from(b_th);
-            let in_y = px_y + i32::from(b_th);
-            let in_w = px_bw.saturating_sub(b_th * 2);
-            let in_h = px_bh.saturating_sub(b_th * 2);
-            out.push(UiQuad::solid([in_x, in_y], [in_w, in_h], bg_col));
-
-            let rst_upper = "RESET TO DEFAULTS";
-            let (lw, _) = font.measure_text(rst_upper);
-            let text_col = if btn.hovered {
-                UiQuad::rgba(200, 215, 235, 255)
-            } else {
-                UiQuad::rgba(140, 160, 184, 255)
-            };
-            font.layout_text(
-                rst_upper,
-                btn.x + (btn.width - lw) * 0.5,
-                btn.y + 5.5,
-                text_col,
-                true,
-                scale,
-                out,
-            );
         }
 
         // Vibrant illuminated blue Done button
