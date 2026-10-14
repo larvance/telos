@@ -8383,6 +8383,10 @@ impl ApplicationHandler for App {
     #[allow(clippy::too_many_lines)]
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
+            info!("Application resumed from background suspension");
+            if let Some(w) = &self.window {
+                w.request_redraw();
+            }
             return;
         }
 
@@ -11676,6 +11680,20 @@ impl ApplicationHandler for App {
             }
             _ => {}
         }
+    }
+
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        info!("Application suspended by OS (moving to background)");
+        // Automatically pause game and release cursor when app goes to background
+        if self.current_screen == AppScreen::InGame && !self.is_paused {
+            self.is_paused = true;
+            self.set_cursor_captured(false);
+            info!("Auto-paused in-game session during mobile/desktop suspension");
+        }
+    }
+
+    fn memory_warning(&mut self, _event_loop: &ActiveEventLoop) {
+        warn!("OS memory pressure warning received, clearing temporary allocations");
     }
 
     #[allow(clippy::too_many_lines)]
