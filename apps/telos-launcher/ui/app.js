@@ -1179,52 +1179,7 @@
     });
   }
 
-  // --- Upcoming Expansion Modal (Sidebar) ---
-  const elExpansionModal = document.getElementById('expansion-modal');
-  const elExpansionTitle = document.getElementById('expansion-title');
-  const elExpansionIcon = document.getElementById('expansion-icon-wrap');
-  const elExpansionHeading = document.getElementById('expansion-heading');
-  const elExpansionDesc = document.getElementById('expansion-desc');
-  const elBtnCloseExpansion = document.getElementById('btn-close-expansion');
-  const elBtnCloseExpansionFooter = document.getElementById('btn-close-expansion-footer');
-  const elBtnWishlistExpansion = document.getElementById('btn-wishlist-expansion');
 
-  const expansionDetails = {
-    dungeons: {
-      title: 'Telos Dungeons',
-      heading: 'Co-op Procedural Dungeon Crawler',
-      icon: '<svg class="icon icon-lg" style="color: #e57373; transform: scale(1.8);"><use href="#icon-swords"></use></svg>',
-      desc: 'Fight through sinister subterranean crypts, assemble legendary voxel gear, and defeat colossal dungeon bosses with friends.',
-    },
-    legends: {
-      title: 'Telos Legends',
-      heading: 'Grand Strategic Voxel Warfare',
-      icon: '<svg class="icon icon-lg" style="color: #64b5f6; transform: scale(1.8);"><use href="#icon-shield"></use></svg>',
-      desc: 'Command voxel armies, defend ancient fortresses, and unite dynamic biomes against invading corrupted legions.',
-    },
-  };
-
-  document.querySelectorAll('.expansion-item').forEach((item) => {
-    item.addEventListener('click', () => {
-      const g = item.getAttribute('data-game');
-      const info = expansionDetails[g] || expansionDetails.dungeons;
-      elExpansionTitle.textContent = info.title;
-      elExpansionHeading.textContent = info.heading;
-      elExpansionIcon.innerHTML = info.icon;
-      elExpansionDesc.textContent = info.desc;
-      elBtnWishlistExpansion.textContent = 'Notify Me on Release';
-      elBtnWishlistExpansion.disabled = false;
-      elExpansionModal.classList.add('active');
-    });
-  });
-
-  const closeExpansionModal = () => elExpansionModal.classList.remove('active');
-  elBtnCloseExpansion.addEventListener('click', closeExpansionModal);
-  elBtnCloseExpansionFooter.addEventListener('click', closeExpansionModal);
-  elBtnWishlistExpansion.addEventListener('click', () => {
-    elBtnWishlistExpansion.textContent = 'Notification Subscribed';
-    elBtnWishlistExpansion.disabled = true;
-  });
 
   // --- Language Selection Modal ---
   const elLangPicker = document.getElementById('lang-picker');

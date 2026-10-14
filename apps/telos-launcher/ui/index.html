@@ -179,40 +179,25 @@
       <!-- Left Sidebar -->
       <aside class="sidebar w-[210px] bg-telos-sidebar border-r border-telos-subtle flex flex-col justify-between shrink-0">
         <div class="sidebar-top flex flex-col">
-          <div class="sidebar-header p-4 flex items-center gap-2.5 border-b border-telos-subtle">
-            <img src="assets/telos-icon.svg" alt="Telos" class="sidebar-logo-icon w-[26px] h-[26px] object-contain">
-            <span class="sidebar-title font-bold text-[15px] tracking-[0.8px] text-white">TELOS</span>
-          </div>
-          <nav class="game-list flex flex-col p-2 gap-1">
-            <div class="game-item active" data-game="telos" title="Telos Voxel Engine">
-              <span class="game-item-icon w-5 h-5 flex items-center justify-center">
-                <svg class="icon text-telos-green-light"><use href="#icon-voxel"></use></svg>
+          <nav class="game-list flex flex-col p-3 pt-3.5 gap-2">
+            <div class="game-item active" data-game="telos" title="Telos Voxel Game">
+              <span class="game-item-icon w-6 h-6 flex items-center justify-center shrink-0">
+                <img src="assets/telos-icon.svg" alt="Telos" class="w-6 h-6 object-contain">
               </span>
-              <span>Telos</span>
-            </div>
-            <div class="game-item expansion-item" data-game="dungeons" title="Click to view details">
-              <span class="game-item-icon w-5 h-5 flex items-center justify-center">
-                <svg class="icon text-red-400"><use href="#icon-swords"></use></svg>
-              </span>
-              <span>Telos Dungeons</span>
-              <span class="expansion-tag text-[9px] font-bold bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded ml-auto tracking-[0.5px]">SOON</span>
-            </div>
-            <div class="game-item expansion-item" data-game="legends" title="Click to view details">
-              <span class="game-item-icon w-5 h-5 flex items-center justify-center">
-                <svg class="icon text-blue-400"><use href="#icon-shield"></use></svg>
-              </span>
-              <span>Telos Legends</span>
-              <span class="expansion-tag text-[9px] font-bold bg-neutral-800 text-neutral-400 px-1.5 py-0.5 rounded ml-auto tracking-[0.5px]">SOON</span>
+              <div class="flex flex-col min-w-0 leading-tight">
+                <span class="text-[13px] font-semibold text-white tracking-wide">Telos</span>
+                <span class="text-[10px] text-neutral-400 font-normal mt-0.5">Voxel Engine</span>
+              </div>
             </div>
           </nav>
         </div>
 
-        <div class="sidebar-bottom p-3 border-t border-telos-subtle">
-          <div class="user-badge flex items-center gap-2.5 p-2 rounded cursor-pointer bg-neutral-800/60 border border-telos-border hover:bg-telos-hover transition-colors duration-150" id="user-badge" title="Manage Account Profile">
-            <div class="user-avatar w-8 h-8 rounded bg-gradient-to-br from-[#4b6cb7] to-[#182848] flex items-center justify-center font-bold text-white text-sm shadow" id="user-avatar">L</div>
+        <div class="sidebar-bottom p-3 pb-4 border-t border-telos-subtle">
+          <div class="user-badge flex items-center gap-2.5 p-2 rounded-md cursor-pointer bg-neutral-800/60 border border-telos-border hover:bg-telos-hover transition-colors duration-150" id="user-badge" title="Manage Account Profile">
+            <div class="user-avatar w-8 h-8 rounded bg-gradient-to-br from-[#4b6cb7] to-[#182848] flex items-center justify-center font-bold text-white text-sm shadow shrink-0" id="user-avatar">L</div>
             <div class="user-details flex flex-col overflow-hidden">
               <span class="user-name text-[13px] font-semibold text-white truncate" id="user-display-name">Larvance</span>
-              <span class="user-tag text-[11px] text-neutral-500" id="user-account-tag">Telos Account</span>
+              <span class="user-tag text-[11px] text-neutral-400 truncate" id="user-account-tag">Telos Account</span>
             </div>
           </div>
         </div>
@@ -221,7 +206,7 @@
       <!-- Main Content Area -->
       <div class="main-content flex-1 flex flex-col bg-telos-bg overflow-hidden">
         <!-- Top Tab Bar -->
-        <nav class="navbar h-12 bg-telos-secondary border-b border-telos-border flex items-center px-5 gap-6 shrink-0">
+        <nav class="navbar h-12 bg-telos-secondary border-b border-telos-border flex items-center px-6 gap-7 shrink-0">
           <button class="nav-tab active" data-tab="play">Play</button>
           <button class="nav-tab" data-tab="installations">Installations</button>
           <button class="nav-tab" data-tab="servers">Servers</button>
@@ -235,27 +220,27 @@
           <!-- TAB 1: PLAY -->
           <div id="tab-play" class="tab-panel active flex flex-col h-full overflow-y-auto">
             <!-- Hero Artwork Banner -->
-            <div class="hero-banner relative h-[280px] w-full flex flex-col justify-center items-center shrink-0 overflow-hidden">
+            <div class="hero-banner relative h-[220px] w-full flex flex-col justify-center items-center shrink-0 overflow-hidden">
               <div class="hero-overlay absolute inset-0 bg-gradient-to-b from-black/20 via-black/40 to-telos-bg"></div>
-              <div class="hero-logo-wrapper relative z-[5] drop-shadow-[0_8px_16px_rgba(0,0,0,0.8)]">
-                <img src="assets/telos-logo.svg" alt="Telos Logo" class="hero-logo h-24 max-w-[420px] object-contain">
+              <div class="hero-logo-wrapper relative z-[5] drop-shadow-[0_8px_20px_rgba(0,0,0,0.85)]">
+                <img src="assets/telos-logo.svg" alt="Telos Logo" class="hero-logo h-20 max-w-[360px] object-contain">
               </div>
             </div>
 
             <!-- Launch Control Bar -->
-            <div class="launch-bar bg-[#1e1e1e] border-y border-telos-border px-7 py-3 flex items-center justify-between gap-5 shrink-0 z-20">
+            <div class="launch-bar bg-[#1e1e1e] border-y border-telos-border px-8 py-3.5 flex items-center justify-between gap-6 shrink-0 z-20 shadow-md">
               <div class="launch-left flex items-center gap-4">
                 <!-- Installation Selector -->
                 <div class="install-selector-wrapper relative">
-                  <button class="install-selector-btn bg-[#2b2b2b] border border-[#444444] text-white px-3.5 py-2 rounded flex items-center gap-2.5 cursor-pointer min-w-[240px] text-left hover:bg-[#383838] hover:border-[#555] transition-all duration-150" id="install-selector-btn">
+                  <button class="install-selector-btn h-[46px] bg-[#282828] border border-[#444] text-white px-4 py-2 rounded flex items-center gap-3 cursor-pointer min-w-[260px] text-left hover:bg-[#333] hover:border-[#555] transition-all duration-150" id="install-selector-btn">
                     <span class="install-icon-wrap text-base flex items-center" id="curr-install-icon">
                       <svg class="icon"><use href="#icon-wrench"></use></svg>
                     </span>
-                    <div class="install-info flex-1 flex flex-col">
-                      <span class="install-name text-[13px] font-semibold text-white" id="curr-install-name">Dev Environment (Local Build)</span>
-                      <span class="install-version text-[11px] text-neutral-400" id="curr-install-version">0.1.0-dev (Local)</span>
+                    <div class="install-info flex-1 flex flex-col leading-tight">
+                      <span class="install-name text-[13px] font-semibold text-white truncate" id="curr-install-name">Dev Environment (Local Build)</span>
+                      <span class="install-version text-[11px] text-neutral-400 font-mono mt-0.5" id="curr-install-version">0.1.0-dev (Local)</span>
                     </div>
-                    <svg class="icon icon-sm text-neutral-400"><use href="#icon-chevron-down"></use></svg>
+                    <svg class="icon icon-sm text-neutral-400 shrink-0"><use href="#icon-chevron-down"></use></svg>
                   </button>
 
                   <div class="install-dropdown-menu" id="install-dropdown-menu">
@@ -264,24 +249,24 @@
                 </div>
 
                 <!-- Green 3D Play Button -->
-                <button class="btn-green-3d btn-play-large" id="play-btn">
+                <button class="btn-green-3d btn-play-large h-[46px] min-w-[190px] px-8 text-base font-bold tracking-wider rounded" id="play-btn">
                   PLAY
                 </button>
               </div>
 
-              <div class="launch-right flex flex-col items-end text-neutral-400 text-xs">
-                <div class="launch-status-indicator flex items-center gap-1.5 text-[#55dd77] font-medium">
+              <div class="launch-right flex flex-col items-end text-neutral-400 text-xs pr-1">
+                <div class="launch-status-indicator flex items-center gap-2 text-[#55dd77] font-semibold">
                   <span class="status-dot"></span>
                   <span id="launch-status-text">Ready to launch</span>
                 </div>
-                <span id="launch-details-text" class="text-neutral-500 mt-0.5">Multi-instance build coordinator active</span>
+                <span id="launch-details-text" class="text-neutral-500 text-[11px] mt-1 font-medium">Multi-instance build coordinator active</span>
               </div>
             </div>
 
             <!-- News & Updates Section -->
-            <div class="news-section px-7 py-6 flex flex-col gap-4">
-              <div class="news-header-row flex justify-between items-center">
-                <h3 class="news-heading text-base font-semibold text-white tracking-[0.5px]">News & Announcements</h3>
+            <div class="news-section px-8 py-7 pb-12 flex flex-col gap-5">
+              <div class="news-header-row flex justify-between items-center pb-0.5">
+                <h3 class="news-heading text-base font-bold text-white tracking-wide">News & Announcements</h3>
                 <div class="news-actions flex items-center gap-3">
                   <a href="https://news.telos.larvance.com" target="_blank" rel="noopener" class="news-portal-link text-xs text-telos-gold hover:text-telos-gold-light hover:underline flex items-center gap-1 transition-colors duration-150" title="Open Official Web News Portal">
                     news.telos.larvance.com <svg class="icon icon-sm"><use href="#icon-external"></use></svg>
@@ -291,14 +276,14 @@
                   </button>
                 </div>
               </div>
-              <div class="news-grid grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4" id="news-grid-container">
+              <div class="news-grid grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-5" id="news-grid-container">
                 <!-- Populated dynamically with high-res artwork cards -->
               </div>
             </div>
           </div>
 
           <!-- TAB 2: INSTALLATIONS -->
-          <div id="tab-installations" class="tab-panel px-7 py-6 flex flex-col gap-5">
+          <div id="tab-installations" class="tab-panel px-8 py-7 pb-12 flex flex-col gap-6">
             <div class="tab-header-row flex items-center justify-between">
               <div>
                 <h3 class="section-title text-lg font-semibold text-white">Installations</h3>
@@ -308,13 +293,13 @@
                 <svg class="icon icon-sm"><use href="#icon-plus"></use></svg> New Installation
               </button>
             </div>
-            <div class="installations-list flex flex-col gap-2.5" id="installations-container">
+            <div class="installations-list flex flex-col gap-3" id="installations-container">
               <!-- Dynamically populated -->
             </div>
           </div>
 
           <!-- TAB 3: SERVERS -->
-          <div id="tab-servers" class="tab-panel px-7 py-6 flex flex-col gap-5">
+          <div id="tab-servers" class="tab-panel px-8 py-7 pb-12 flex flex-col gap-6">
             <div class="tab-header-row flex items-center justify-between">
               <div>
                 <h3 class="section-title text-lg font-semibold text-white">Multiplayer Servers</h3>
@@ -324,15 +309,15 @@
                 <svg class="icon icon-sm"><use href="#icon-plus"></use></svg> Add Server
               </button>
             </div>
-            <div id="server-groups-container" class="flex flex-col gap-3">
+            <div id="server-groups-container" class="flex flex-col gap-3.5">
               <!-- Dynamically populated with collapsible groups & draggable cards -->
             </div>
           </div>
 
           <!-- TAB 4: PATCH NOTES -->
-          <div id="tab-patch-notes" class="tab-panel px-7 py-6 flex flex-col gap-5">
+          <div id="tab-patch-notes" class="tab-panel px-8 py-7 pb-12 flex flex-col gap-6">
             <div class="patch-notes-container flex flex-col gap-5">
-              <div class="patch-note-card bg-telos-secondary border border-telos-border rounded-md p-5 md:p-6 flex flex-col gap-3.5">
+              <div class="patch-note-card bg-telos-secondary border border-telos-border rounded-lg p-6 flex flex-col gap-4">
                 <div class="flex items-center justify-between">
                   <h3 class="section-title text-base md:text-lg font-semibold text-white">Version 0.1.0 — Alpha Release</h3>
                   <span class="patch-version-tag inline-block bg-[#2a3c26] text-[#8ae470] border border-[#3c6527] px-2 py-0.5 rounded text-xs font-semibold w-fit">Latest Release</span>
@@ -347,7 +332,7 @@
                 </ul>
               </div>
 
-              <div class="patch-note-card bg-telos-secondary border border-telos-border rounded-md p-5 md:p-6 flex flex-col gap-3.5">
+              <div class="patch-note-card bg-telos-secondary border border-telos-border rounded-lg p-6 flex flex-col gap-4">
                 <div class="flex items-center justify-between">
                   <h3 class="section-title text-base md:text-lg font-semibold text-white">Version 0.0.9 — Architecture Preview</h3>
                   <span class="patch-version-tag inline-block bg-[#1e2a3a] text-[#70aae4] border border-[#274865] px-2 py-0.5 rounded text-xs font-semibold w-fit">Snapshot</span>
@@ -363,10 +348,10 @@
           </div>
 
           <!-- TAB 5: SETTINGS -->
-          <div id="tab-settings" class="tab-panel px-7 py-6 flex flex-col gap-6">
+          <div id="tab-settings" class="tab-panel px-8 py-7 pb-12 flex flex-col gap-6">
             <h3 class="section-title text-lg font-semibold text-white">Launcher Settings</h3>
             
-            <div class="settings-card bg-telos-secondary border border-telos-border rounded-md p-5 flex flex-col gap-4">
+            <div class="settings-card bg-telos-secondary border border-telos-border rounded-lg p-6 flex flex-col gap-5">
               <div class="setting-row flex items-center justify-between gap-5">
                 <div class="setting-info flex flex-col gap-1">
                   <span class="setting-title text-sm font-semibold text-white">Keep Launcher Open</span>
@@ -636,31 +621,7 @@
       </div>
     </div>
 
-    <!-- =====================================================================
-         Modal 5: Upcoming Expansion Modal (Dungeons / Legends)
-         ===================================================================== -->
-    <div class="modal-overlay" id="expansion-modal">
-      <div class="ubuntu-dialog bg-[#2b2b2b] border border-[#4a4a4a] rounded-lg shadow-[0_16px_40px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col w-[480px]">
-        <div class="ubuntu-dialog-header h-10 bg-[#222] border-b border-[#333] flex items-center justify-between px-4">
-          <span class="ubuntu-dialog-title text-sm font-semibold text-[#f0f0f0]" id="expansion-title">Upcoming Expansion</span>
-          <button class="window-btn close" id="btn-close-expansion">
-            <svg class="icon icon-sm"><use href="#icon-close"></use></svg>
-          </button>
-        </div>
-        <div class="ubuntu-dialog-body text-center p-6 flex flex-col items-center">
-          <div id="expansion-icon-wrap" class="mb-3"></div>
-          <h3 id="expansion-heading" class="text-lg font-bold text-white mb-2">Expansion Title</h3>
-          <p id="expansion-desc" class="text-neutral-400 text-xs md:text-sm leading-relaxed mb-5"></p>
-          <div class="expansion-info-pill text-[11px] text-amber-400 bg-amber-400/10 border border-amber-400/30 px-3 py-1.5 rounded-full inline-block font-medium">
-            In Active Development • Powered by Telos Voxel Engine
-          </div>
-        </div>
-        <div class="ubuntu-dialog-footer px-5 py-3.5 bg-[#242424] border-t border-telos-border flex justify-end gap-2.5">
-          <button class="ubuntu-btn" id="btn-close-expansion-footer">Close</button>
-          <button class="ubuntu-btn primary" id="btn-wishlist-expansion">Notify Me on Release</button>
-        </div>
-      </div>
-    </div>
+
 
     <!-- =====================================================================
          Modal 6: Language Selection Modal

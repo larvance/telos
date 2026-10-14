@@ -377,7 +377,7 @@ html, body {
 #build-drawer {
   position: absolute;
   bottom: 0;
-  left: 210px;
+  left: 220px;
   right: 0;
   background-color: #1a1a1a;
   border-top: 2px solid var(--accent-gold);
@@ -619,12 +619,78 @@ input[type="range"]::-moz-range-thumb {
   @apply !text-white !font-semibold !border-telos-green-light;
 }
 
+/* Sidebar Layout & Structure */
+.sidebar {
+  width: 220px !important;
+  background-color: var(--color-telos-sidebar);
+  border-right: 1px solid var(--color-telos-border);
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  flex-shrink: 0 !important;
+  padding: 14px 12px 16px 12px !important;
+}
+
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 /* Sidebar Game List Items */
 .game-item {
-  @apply flex items-center gap-2.5 px-3 py-2.5 rounded cursor-pointer text-neutral-400 font-medium text-[13px] hover:bg-telos-hover hover:text-white transition-all duration-150 border-l-[3px] border-transparent;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 10px 12px !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  color: #a0a0a0 !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  transition: all 0.15s ease !important;
+  border-left: 3px solid transparent !important;
 }
+
+.game-item:hover {
+  background-color: #282828 !important;
+  color: #ffffff !important;
+}
+
 .game-item.active {
-  @apply !bg-[#2e2e2e] !text-white !font-semibold !border-telos-green-light;
+  background-color: #2a2a2a !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  border-left: 3px solid var(--accent-green-light) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4) !important;
+}
+
+.sidebar-bottom {
+  padding-top: 12px !important;
+  border-top: 1px solid var(--color-telos-border) !important;
+}
+
+.user-badge {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 8px 10px !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  background-color: rgba(38, 38, 38, 0.7) !important;
+  border: 1px solid var(--color-telos-border) !important;
+  transition: all 0.15s ease !important;
+}
+
+.user-badge:hover {
+  background-color: var(--color-telos-hover) !important;
+  border-color: #4a4a4a !important;
 }
 
 /* Language Selection Options */
@@ -650,10 +716,10 @@ input[type="range"]::-moz-range-thumb {
 
 /* News Cards */
 .news-card {
-  @apply bg-telos-card border border-telos-border rounded cursor-pointer transition-all duration-200 flex flex-col overflow-hidden hover:-translate-y-1 hover:border-neutral-600 hover:shadow-xl;
+  @apply bg-telos-card border border-telos-border rounded-lg cursor-pointer transition-all duration-200 flex flex-col overflow-hidden hover:-translate-y-1 hover:border-neutral-500 hover:shadow-2xl;
 }
 .news-thumb-wrap {
-  @apply relative h-[125px] w-full overflow-hidden bg-black;
+  @apply relative h-[140px] w-full overflow-hidden bg-black;
 }
 .news-card-img {
   @apply w-full h-full object-cover transition-transform duration-300;
@@ -662,13 +728,13 @@ input[type="range"]::-moz-range-thumb {
   @apply scale-105;
 }
 .news-badge {
-  @apply absolute top-2 left-2 bg-black/75 backdrop-blur-[4px] border border-white/20 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-[0.5px];
+  @apply absolute top-2 left-2 bg-black/80 backdrop-blur-[4px] border border-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-[0.5px];
 }
 .news-body {
-  @apply p-3 flex flex-col gap-1.5;
+  @apply p-4 flex flex-col gap-2;
 }
 .news-date {
-  @apply text-[11px] text-neutral-400;
+  @apply text-[11px] text-neutral-400 font-medium;
 }
 .news-title {
   @apply text-[13px] font-semibold text-white leading-snug;
@@ -679,7 +745,7 @@ input[type="range"]::-moz-range-thumb {
 
 /* Installation Cards */
 .installation-card {
-  @apply bg-telos-secondary border border-telos-border rounded px-4 py-3 flex items-center justify-between cursor-grab transition-all duration-150 select-none hover:bg-[#2b2b2b] hover:border-neutral-600;
+  @apply bg-[#242424] border border-neutral-700/60 rounded-lg px-5 py-4 flex items-center justify-between cursor-grab transition-all duration-150 select-none hover:bg-[#2b2b2b] hover:border-neutral-500;
 }
 .inst-meta {
   @apply flex items-center gap-3;
