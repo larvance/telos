@@ -156,16 +156,19 @@
   // --- SVG Icon Helper (Zero Unicode Emojis) ---
   function getSvgIcon(iconType) {
     if (iconType === 'wrench' || iconType === 'dev' || iconType === 'hammer') {
-      return '<svg class="icon"><use href="#icon-wrench"></use></svg>';
+      return '<svg class="icon" style="color: #64b5f6;"><use href="#icon-wrench"></use></svg>';
     }
     if (iconType === 'package' || iconType === 'snapshot') {
-      return '<svg class="icon"><use href="#icon-package"></use></svg>';
+      return '<svg class="icon" style="color: var(--accent-gold);"><use href="#icon-package"></use></svg>';
     }
     if (iconType === 'swords') {
-      return '<svg class="icon"><use href="#icon-swords"></use></svg>';
+      return '<svg class="icon" style="color: #e57373;"><use href="#icon-swords"></use></svg>';
     }
     if (iconType === 'shield') {
-      return '<svg class="icon"><use href="#icon-shield"></use></svg>';
+      return '<svg class="icon" style="color: #4dd0e1;"><use href="#icon-shield"></use></svg>';
+    }
+    if (iconType === 'globe') {
+      return '<svg class="icon" style="color: #81c784;"><use href="#icon-globe"></use></svg>';
     }
     return '<svg class="icon" style="color: var(--accent-green-light);"><use href="#icon-voxel"></use></svg>';
   }
@@ -173,16 +176,27 @@
   function getInstIcon(inst) {
     if (inst.icon_type) return getSvgIcon(inst.icon_type);
     if (inst.is_dev || inst.id === 'local-dev' || inst.id === 'dev-local') return getSvgIcon('wrench');
-    if (inst.id === 'snapshot-latest' || (inst.version && inst.version.includes('alpha'))) return getSvgIcon('package');
+    if (inst.id === 'latest-snapshot' || inst.id === 'snapshot-latest' || (inst.version && inst.version.includes('alpha'))) return getSvgIcon('package');
     return getSvgIcon('voxel');
   }
 
   function getInstVersion(inst) {
-    return inst.version_tag || inst.version || 'v0.1.0';
+    return inst.version_tag || inst.version || '0.1.0';
   }
 
   function getInstDir(inst) {
-    return inst.custom_dir || inst.directory || '/home/usr/Projects/larvance/telos';
+    if (inst.custom_dir) return inst.custom_dir;
+    if (inst.is_dev) return 'Source Repository (Local)';
+    return '~/.telos (Default Directory)';
+  }
+
+  function getInstRam(inst) {
+    if (inst.max_memory_mb) {
+      return inst.max_memory_mb >= 1024
+        ? `${Math.round(inst.max_memory_mb / 1024)} GB`
+        : `${inst.max_memory_mb} MB`;
+    }
+    return '4 GB';
   }
 
   // --- App State ---
@@ -647,76 +661,267 @@
     });
   }
 
-  // --- Installations Tab Rendering ---
+  // --- Installations Tab & Profile Management ---
   const elBtnNewInstall = document.getElementById('btn-new-installation');
   const elNewInstallModal = document.getElementById('new-install-modal');
   const elBtnCloseNewInstall = document.getElementById('btn-close-new-install');
   const elBtnCancelNewInstall = document.getElementById('btn-cancel-new-install');
   const elBtnSaveNewInstall = document.getElementById('btn-save-new-install');
+  const elInstallModalTitle = document.getElementById('install-modal-title');
   const elInpInstallName = document.getElementById('inp-install-name');
   const elInpInstallVersion = document.getElementById('inp-install-version');
   const elInpInstallIcon = document.getElementById('inp-install-icon');
+  const elChkCustomDir = document.getElementById('chk-custom-dir');
   const elInpInstallDir = document.getElementById('inp-install-dir');
+  const elInpInstallRam = document.getElementById('inp-install-ram');
+  const elInpInstallRamVal = document.getElementById('inp-install-ram-val');
+  const elInpInstallResolution = document.getElementById('inp-install-resolution');
+  const elInpInstallArgs = document.getElementById('inp-install-args');
+  const ramPresetBtns = document.querySelectorAll('.btn-preset-ram');
 
-  elBtnNewInstall.addEventListener('click', () => {
-    elInpInstallName.value = 'Custom Snapshot ' + (appInstallations.length + 1);
-    elInpInstallDir.value = `/home/usr/.local/share/telos/versions/profile-${Date.now()}`;
-    elNewInstallModal.classList.add('active');
+  let editingInstallId = null;
+
+  function populateVersionOptions(selectedVal) {
+    if (!elInpInstallVersion) return;
+    const versions = new Set(['0.1.0', 'snapshot-latest']);
+    appInstallations.forEach((inst) => {
+      const v = inst.version_tag || inst.version;
+      if (v && !v.includes('local @')) {
+        versions.add(v);
+      }
+    });
+
+    elInpInstallVersion.innerHTML = '';
+    versions.forEach((ver) => {
+      const opt = document.createElement('option');
+      opt.value = ver;
+      if (ver === '0.1.0') {
+        opt.textContent = '0.1.0 (Latest Release)';
+      } else if (ver === 'snapshot-latest') {
+        opt.textContent = 'Latest Snapshot (Continuous)';
+      } else {
+        opt.textContent = `Version ${ver}`;
+      }
+      if (ver === selectedVal) {
+        opt.selected = true;
+      }
+      elInpInstallVersion.appendChild(opt);
+    });
+  }
+
+  if (elInpInstallRam && elInpInstallRamVal) {
+    elInpInstallRam.addEventListener('input', () => {
+      elInpInstallRamVal.textContent = elInpInstallRam.value + ' GB';
+    });
+  }
+
+  ramPresetBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const r = btn.getAttribute('data-ram');
+      if (r && elInpInstallRam && elInpInstallRamVal) {
+        elInpInstallRam.value = r;
+        elInpInstallRamVal.textContent = r + ' GB';
+      }
+    });
   });
+
+  if (elChkCustomDir && elInpInstallDir) {
+    elChkCustomDir.addEventListener('change', () => {
+      elInpInstallDir.disabled = !elChkCustomDir.checked;
+      if (elChkCustomDir.checked && !elInpInstallDir.value) {
+        const slug = (elInpInstallName.value || 'profile')
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]/g, '_');
+        elInpInstallDir.value = `/home/usr/.telos/instances/${slug}`;
+      }
+    });
+  }
 
   const closeNewInstallModal = () => elNewInstallModal.classList.remove('active');
-  elBtnCloseNewInstall.addEventListener('click', closeNewInstallModal);
-  elBtnCancelNewInstall.addEventListener('click', closeNewInstallModal);
+  if (elBtnCloseNewInstall) elBtnCloseNewInstall.addEventListener('click', closeNewInstallModal);
+  if (elBtnCancelNewInstall) elBtnCancelNewInstall.addEventListener('click', closeNewInstallModal);
 
-  elBtnSaveNewInstall.addEventListener('click', async () => {
-    const name = elInpInstallName.value.trim() || 'Custom Profile';
-    const version = elInpInstallVersion.value;
-    const iconType = elInpInstallIcon.value;
-    const dir = elInpInstallDir.value.trim() || '/home/usr/.local/share/telos/versions/custom';
+  if (elBtnNewInstall) {
+    elBtnNewInstall.addEventListener('click', () => {
+      editingInstallId = null;
+      if (elInstallModalTitle) elInstallModalTitle.textContent = 'Create New Installation';
+      elInpInstallName.value = 'Custom Profile ' + (appInstallations.length + 1);
+      populateVersionOptions('0.1.0');
+      elInpInstallIcon.value = 'voxel';
+      if (elChkCustomDir) elChkCustomDir.checked = false;
+      if (elInpInstallDir) {
+        elInpInstallDir.disabled = true;
+        elInpInstallDir.value = '';
+      }
+      if (elInpInstallRam) elInpInstallRam.value = '4';
+      if (elInpInstallRamVal) elInpInstallRamVal.textContent = '4 GB';
+      if (elInpInstallResolution) elInpInstallResolution.value = 'Auto';
+      if (elInpInstallArgs) elInpInstallArgs.value = '';
+      elNewInstallModal.classList.add('active');
+    });
+  }
 
-    const newInst = {
-      id: 'inst-' + Date.now(),
-      name,
-      version,
-      directory: dir,
-      icon_type: iconType,
-      is_dev: version.includes('dev'),
-    };
+  function openEditInstallation(inst) {
+    editingInstallId = inst.id;
+    if (elInstallModalTitle) elInstallModalTitle.textContent = `Edit Installation: ${inst.name}`;
+    elInpInstallName.value = inst.name;
+    populateVersionOptions(inst.version_tag || '0.1.0');
+    elInpInstallIcon.value = inst.icon_type || 'voxel';
 
-    appInstallations.push(newInst);
-    selectedInstallId = newInst.id;
-    closeNewInstallModal();
+    if (inst.custom_dir) {
+      if (elChkCustomDir) elChkCustomDir.checked = true;
+      if (elInpInstallDir) {
+        elInpInstallDir.disabled = false;
+        elInpInstallDir.value = inst.custom_dir;
+      }
+    } else {
+      if (elChkCustomDir) elChkCustomDir.checked = false;
+      if (elInpInstallDir) {
+        elInpInstallDir.disabled = true;
+        elInpInstallDir.value = '';
+      }
+    }
 
-    await invoke('save_installations', { installations: appInstallations });
-    renderInstallationSelector();
-    renderInstallationsTab();
-  });
+    const gb = inst.max_memory_mb ? Math.max(2, Math.round(inst.max_memory_mb / 1024)) : 4;
+    if (elInpInstallRam) elInpInstallRam.value = gb;
+    if (elInpInstallRamVal) elInpInstallRamVal.textContent = gb + ' GB';
+    if (elInpInstallResolution) elInpInstallResolution.value = inst.resolution || 'Auto';
+    if (elInpInstallArgs) elInpInstallArgs.value = inst.custom_args || '';
+    elNewInstallModal.classList.add('active');
+  }
+
+  if (elBtnSaveNewInstall) {
+    elBtnSaveNewInstall.addEventListener('click', async () => {
+      const name = elInpInstallName.value.trim() || 'Custom Profile';
+      const versionTag = elInpInstallVersion.value;
+      const iconType = elInpInstallIcon.value;
+      const customDir = elChkCustomDir && elChkCustomDir.checked && elInpInstallDir.value.trim()
+        ? elInpInstallDir.value.trim()
+        : null;
+      const ramGb = parseInt(elInpInstallRam.value, 10) || 4;
+      const maxMemoryMb = ramGb * 1024;
+      const resolution = elInpInstallResolution.value;
+      const customArgs = elInpInstallArgs.value.trim() || null;
+
+      if (editingInstallId) {
+        const inst = appInstallations.find((x) => x.id === editingInstallId);
+        if (inst) {
+          inst.name = name;
+          inst.version_tag = versionTag;
+          inst.icon_type = iconType;
+          inst.custom_dir = customDir;
+          inst.max_memory_mb = maxMemoryMb;
+          inst.resolution = resolution;
+          inst.custom_args = customArgs;
+        }
+      } else {
+        const newInst = {
+          id: 'inst-' + Date.now(),
+          name,
+          channel: 'Custom',
+          version_tag: versionTag,
+          custom_dir: customDir,
+          max_memory_mb: maxMemoryMb,
+          resolution,
+          custom_args: customArgs,
+          is_dev: false,
+          icon_type: iconType,
+        };
+        appInstallations.push(newInst);
+        selectedInstallId = newInst.id;
+      }
+
+      closeNewInstallModal();
+      await invoke('save_installations', { installations: appInstallations });
+      renderInstallationSelector();
+      renderInstallationsTab();
+    });
+  }
 
   function renderInstallationsTab() {
     const container = document.getElementById('installations-container');
+    if (!container) return;
     container.innerHTML = '';
+
+    // Drag-over and drop event handlers on the installations container for reordering
+    container.ondragover = (e) => {
+      e.preventDefault();
+      const afterElement = getDragAfterElement(container, e.clientY, '.installation-card:not(.dragging)');
+      const dragging = document.querySelector('.installation-card.dragging');
+      if (dragging) {
+        if (afterElement == null) {
+          container.appendChild(dragging);
+        } else {
+          container.insertBefore(dragging, afterElement);
+        }
+      }
+    };
+
+    container.ondrop = async (e) => {
+      e.preventDefault();
+      const cardEls = container.querySelectorAll('.installation-card');
+      const newOrderIds = [...cardEls].map((el) => el.getAttribute('data-id'));
+      const reordered = [];
+      newOrderIds.forEach((id) => {
+        const item = appInstallations.find((x) => x.id === id);
+        if (item) reordered.push(item);
+      });
+      appInstallations.forEach((x) => {
+        if (!reordered.find((r) => r.id === x.id)) reordered.push(x);
+      });
+      appInstallations = reordered;
+      await invoke('save_installations', { installations: appInstallations });
+      renderInstallationSelector();
+    };
 
     appInstallations.forEach((inst) => {
       const card = document.createElement('div');
       card.className = 'installation-card';
-      const isCustom = !['local-dev', 'dev-local', 'release-latest', 'snapshot-latest'].includes(inst.id);
+      card.draggable = true;
+      card.setAttribute('data-id', inst.id);
+
+      const isDev = inst.is_dev || inst.id === 'local-dev' || inst.id === 'dev-local';
+      const isDefault = inst.id === 'latest-release' || inst.id === 'latest-snapshot';
+      const isCustom = !isDev && !isDefault;
+
+      let badgeHtml = '';
+      if (isDev) {
+        badgeHtml = '<span class="inst-badge-pill">Dev Build</span>';
+      } else if (inst.id === 'latest-release') {
+        badgeHtml = '<span class="inst-badge-pill">Release</span>';
+      } else if (inst.id === 'latest-snapshot') {
+        badgeHtml = '<span class="inst-badge-pill" style="background:#5c4308; color:#ffd54f;">Snapshot</span>';
+      } else {
+        badgeHtml = '<span class="inst-badge-custom">Custom</span>';
+      }
 
       card.innerHTML = `
         <div class="inst-meta">
+          <svg class="icon icon-sm inst-drag-handle" title="Drag to reorder"><use href="#icon-drag"></use></svg>
           <div class="inst-icon">${getInstIcon(inst)}</div>
           <div class="inst-texts">
-            <span class="inst-title">${inst.name}</span>
-            <span class="inst-tag">Version: ${getInstVersion(inst)}</span>
+            <div style="display: flex; align-items: center;">
+              <span class="inst-title">${inst.name}</span>
+              ${badgeHtml}
+            </div>
+            <span class="inst-tag">Version: ${getInstVersion(inst)} • RAM: ${getInstRam(inst)} • ${inst.resolution || 'Auto'}</span>
             <span class="inst-dir">${getInstDir(inst)}</span>
           </div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
-          <button class="btn-icon" data-folder-id="${inst.id}" title="Copy Directory Path">
+          <button class="btn-icon folder-inst-btn" title="Open Game Directory">
             <svg class="icon icon-sm"><use href="#icon-folder"></use></svg>
           </button>
           ${
+            !isDev
+              ? `<button class="btn-icon edit-inst-btn" title="Edit Installation">
+                   <svg class="icon icon-sm"><use href="#icon-edit"></use></svg>
+                 </button>`
+              : ''
+          }
+          ${
             isCustom
-              ? `<button class="btn-icon" data-del-id="${inst.id}" title="Delete Installation">
+              ? `<button class="btn-icon del-inst-btn" title="Delete Installation">
                    <svg class="icon icon-sm"><use href="#icon-trash"></use></svg>
                  </button>`
               : ''
@@ -727,27 +932,41 @@
         </div>
       `;
 
+      card.addEventListener('dragstart', () => card.classList.add('dragging'));
+      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+
       card.querySelector('[data-play-id]').addEventListener('click', () => {
         selectedInstallId = inst.id;
         renderInstallationSelector();
         elPlayBtn.click();
       });
 
-      card.querySelector('[data-folder-id]').addEventListener('click', (e) => {
+      card.querySelector('.folder-inst-btn').addEventListener('click', (e) => {
         e.stopPropagation();
-        alert(`Installation path: ${getInstDir(inst)}`);
+        alert(`Game directory for "${inst.name}":\n${getInstDir(inst)}\n\nWorld saves are stored in:\n${getInstDir(inst)}/worlds`);
       });
 
-      if (isCustom) {
-        card.querySelector('[data-del-id]').addEventListener('click', async (e) => {
+      const editBtn = card.querySelector('.edit-inst-btn');
+      if (editBtn) {
+        editBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          appInstallations = appInstallations.filter((x) => x.id !== inst.id);
-          if (selectedInstallId === inst.id) {
-            selectedInstallId = 'local-dev';
+          openEditInstallation(inst);
+        });
+      }
+
+      const delBtn = card.querySelector('.del-inst-btn');
+      if (delBtn) {
+        delBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (confirm(`Are you sure you want to delete installation "${inst.name}"?`)) {
+            appInstallations = appInstallations.filter((x) => x.id !== inst.id);
+            if (selectedInstallId === inst.id) {
+              selectedInstallId = appInstallations[0] ? appInstallations[0].id : 'local-dev';
+            }
+            await invoke('save_installations', { installations: appInstallations });
+            renderInstallationSelector();
+            renderInstallationsTab();
           }
-          await invoke('save_installations', { installations: appInstallations });
-          renderInstallationSelector();
-          renderInstallationsTab();
         });
       }
 
@@ -928,8 +1147,8 @@
     });
   }
 
-  function getDragAfterElement(container, y) {
-    const draggableElements = [...container.querySelectorAll('.server-card:not(.dragging)')];
+  function getDragAfterElement(container, y, selector = '.server-card:not(.dragging)') {
+    const draggableElements = [...container.querySelectorAll(selector)];
     return draggableElements.reduce(
       (closest, child) => {
         const box = child.getBoundingClientRect();
@@ -1227,9 +1446,12 @@
             if (targetModal === 'news-reader') {
               const card = document.querySelector('.news-card');
               if (card) card.click();
-            } else if (targetModal === 'new-installation') {
-              const btn = document.getElementById('btn-new-install');
+            } else if (targetModal === 'new-installation' || targetModal === 'install') {
+              const btn = document.getElementById('btn-new-installation');
               if (btn) btn.click();
+            } else if (targetModal === 'edit-installation') {
+              const editBtn = document.querySelector('.edit-inst-btn');
+              if (editBtn) editBtn.click();
             } else if (targetModal === 'account') {
               const badge = document.querySelector('.user-profile-badge');
               if (badge) badge.click();

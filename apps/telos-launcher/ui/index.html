@@ -552,27 +552,26 @@
     </div>
 
     <!-- =====================================================================
-         Modal 4: New Installation Modal
+         Modal 4: New / Edit Installation Modal
          ===================================================================== -->
     <div class="modal-overlay" id="new-install-modal">
-      <div class="ubuntu-dialog" style="width: 500px;">
+      <div class="ubuntu-dialog" style="width: 520px; max-width: 95vw;">
         <div class="ubuntu-dialog-header">
-          <span class="ubuntu-dialog-title">Create New Installation</span>
+          <span class="ubuntu-dialog-title" id="install-modal-title">Create New Installation</span>
           <button class="window-btn close" id="btn-close-new-install">
             <svg class="icon icon-sm"><use href="#icon-close"></use></svg>
           </button>
         </div>
-        <div class="ubuntu-dialog-body">
+        <div class="ubuntu-dialog-body" style="max-height: 75vh; overflow-y: auto;">
           <div class="input-group">
             <label class="input-label" for="inp-install-name">Installation Name</label>
             <input type="text" id="inp-install-name" class="text-input" placeholder="e.g. My Custom Build" value="Custom Snapshot">
           </div>
           <div class="input-group">
-            <label class="input-label" for="inp-install-version">Version Channel</label>
+            <label class="input-label" for="inp-install-version">Version Tag / Cache</label>
             <select id="inp-install-version" class="select-input">
-              <option value="0.1.0">Latest Release (0.1.0)</option>
-              <option value="0.2.0-alpha" selected>Latest Snapshot (0.2.0-alpha)</option>
-              <option value="0.1.0-dev">Local Dev Build</option>
+              <option value="0.1.0">0.1.0 (Latest Release)</option>
+              <option value="snapshot-latest">Latest Snapshot (Continuous)</option>
             </select>
           </div>
           <div class="input-group">
@@ -581,16 +580,56 @@
               <option value="voxel">Voxel Block (Green)</option>
               <option value="package">Package / Snapshot (Gold)</option>
               <option value="wrench">Wrench / Dev Tool (Blue)</option>
+              <option value="swords">Crossed Swords (Red)</option>
+              <option value="shield">Shield (Cyan)</option>
+              <option value="globe">Multiplayer Globe (Teal)</option>
             </select>
           </div>
           <div class="input-group">
-            <label class="input-label" for="inp-install-dir">Game Directory</label>
-            <input type="text" id="inp-install-dir" class="text-input" value="/home/usr/.local/share/telos/versions/custom">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="input-label" style="margin-bottom: 0;">Game Directory</label>
+              <label style="font-size: 11px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                <input type="checkbox" id="chk-custom-dir"> Custom Directory
+              </label>
+            </div>
+            <input type="text" id="inp-install-dir" class="text-input" placeholder="<Default Directory: ~/.telos>" disabled>
+            <span style="font-size: 11px; color: #777; margin-top: 4px; display: block;">
+              Isolates world saves and configs to <code>&lt;directory&gt;/worlds</code>.
+            </span>
+          </div>
+          <div class="input-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="input-label" for="inp-install-ram" style="margin-bottom: 0;">Memory Allocation (RAM)</label>
+              <span id="inp-install-ram-val" style="font-weight: 600; color: var(--accent-green-light); font-size: 13px;">4 GB</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <input type="range" id="inp-install-ram" min="2" max="32" step="1" value="4" style="flex: 1; cursor: pointer;">
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 8px;">
+              <button type="button" class="btn-preset-ram ubuntu-btn" data-ram="2" style="padding: 4px 10px; font-size: 11px;">2 GB</button>
+              <button type="button" class="btn-preset-ram ubuntu-btn" data-ram="4" style="padding: 4px 10px; font-size: 11px;">4 GB</button>
+              <button type="button" class="btn-preset-ram ubuntu-btn" data-ram="8" style="padding: 4px 10px; font-size: 11px;">8 GB</button>
+              <button type="button" class="btn-preset-ram ubuntu-btn" data-ram="16" style="padding: 4px 10px; font-size: 11px;">16 GB</button>
+            </div>
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="inp-install-resolution">Resolution</label>
+            <select id="inp-install-resolution" class="select-input">
+              <option value="Auto">Auto (Default 1280x720)</option>
+              <option value="1280x720">1280 x 720 (HD 720p)</option>
+              <option value="1920x1080">1920 x 1080 (Full HD 1080p)</option>
+              <option value="2560x1440">2560 x 1440 (QHD 1440p)</option>
+              <option value="3840x2160">3840 x 2160 (4K UHD)</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label class="input-label" for="inp-install-args">Additional Arguments</label>
+            <input type="text" id="inp-install-args" class="text-input" placeholder="e.g. --fullscreen">
           </div>
         </div>
         <div class="ubuntu-dialog-footer">
           <button class="ubuntu-btn" id="btn-cancel-new-install">Cancel</button>
-          <button class="ubuntu-btn primary" id="btn-save-new-install">Create</button>
+          <button class="ubuntu-btn primary" id="btn-save-new-install">Save</button>
         </div>
       </div>
     </div>

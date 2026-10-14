@@ -203,6 +203,18 @@ struct Args {
     /// Rendering backend selection ('vulkan', 'opengl', or 'auto').
     #[arg(long, default_value = "auto")]
     backend: String,
+
+    /// Maximum memory limit in megabytes.
+    #[arg(long)]
+    max_memory_mb: Option<u32>,
+
+    /// Window width override in pixels.
+    #[arg(long)]
+    width: Option<u32>,
+
+    /// Window height override in pixels.
+    #[arg(long)]
+    height: Option<u32>,
 }
 
 fn key_code_to_input_key(code: KeyCode) -> InputKey {
@@ -8394,9 +8406,11 @@ impl ApplicationHandler for App {
         let use_opengl = requested_backend == "opengl" || requested_backend == "gl";
         let auto = requested_backend == "auto";
 
+        let win_width = self.args.width.unwrap_or(1280) as f64;
+        let win_height = self.args.height.unwrap_or(720) as f64;
         let attributes = Window::default_attributes()
             .with_title("Telos")
-            .with_inner_size(winit::dpi::LogicalSize::new(1280.0, 720.0));
+            .with_inner_size(winit::dpi::LogicalSize::new(win_width, win_height));
 
         if use_opengl {
             info!("Initializing OpenGL 4.5 fallback renderer (explicit CLI flag)");
@@ -14109,6 +14123,7 @@ fn main() -> Result<()> {
         view_distance = args.view_distance,
         portable = args.portable,
         world_dir = ?args.world_dir,
+        max_memory_mb = ?args.max_memory_mb,
         "Starting Telos client"
     );
 

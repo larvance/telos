@@ -21,7 +21,8 @@ use tauri::{AppHandle, Emitter, Manager, State, Window};
 use build_coordinator::{resolve_repo_dir, start_build_worker, BuildEvent};
 use profile::{load_profile, save_profile as persist_profile, LauncherProfile};
 use version_manager::{
-    fetch_remote_versions, get_default_installations, ChannelKind, Installation,
+    ensure_version_cached, fetch_remote_versions, get_telos_base_dir,
+    load_or_init_installations, persist_installations, ChannelKind, Installation,
     RemoteVersionInfo,
 };
 
@@ -207,6 +208,7 @@ fn save_installations(
     state: State<'_, AppState>,
     installations: Vec<Installation>,
 ) -> Result<(), String> {
+    persist_installations(&installations)?;
     *state.installations.lock().unwrap() = installations;
     Ok(())
 }
@@ -280,6 +282,40 @@ fn trigger_launch(
     let repo_dir = state.repo_dir.clone();
     let is_building_flag = state.is_building.clone();
 
+    // Assemble launch arguments and environment overrides from the selected installation
+    let mut cmd_args: Vec<String> = Vec::new();
+    let mut max_memory: Option<u32> = None;
+
+    if let Some(ref inst) = selected_inst {
+        if let Some(ref dir) = inst.custom_dir {
+            cmd_args.push("--data-dir".into());
+            cmd_args.push(dir.to_string_lossy().into());
+        }
+        if let Some(mb) = inst.max_memory_mb {
+            cmd_args.push("--max-memory-mb".into());
+            cmd_args.push(mb.to_string());
+            max_memory = Some(mb);
+        }
+        if let Some(ref res) = inst.resolution {
+            if res != "Auto" && res.contains('x') {
+                let parts: Vec<&str> = res.split('x').collect();
+                if parts.len() == 2 {
+                    if let (Ok(w), Ok(h)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                        cmd_args.push("--width".into());
+                        cmd_args.push(w.to_string());
+                        cmd_args.push("--height".into());
+                        cmd_args.push(h.to_string());
+                    }
+                }
+            }
+        }
+        if let Some(ref extra) = inst.custom_args {
+            for arg in extra.split_whitespace() {
+                cmd_args.push(arg.to_string());
+            }
+        }
+    }
+
     if is_dev {
         if is_building_flag.load(Ordering::SeqCst) {
             return Ok(LaunchResult {
@@ -300,6 +336,8 @@ fn trigger_launch(
         let repo_dir_clone = repo_dir.clone();
         let auto_close = profile.auto_close_on_play;
         let is_building_for_thread = is_building_flag.clone();
+        let cmd_args_dev = cmd_args.clone();
+        let max_memory_dev = max_memory;
 
         std::thread::spawn(move || {
             while let Ok(event) = rx.recv() {
@@ -315,9 +353,13 @@ fn trigger_launch(
                         };
                         let target_bin = repo_dir_clone.join(bin_subpath);
                         if target_bin.exists() {
-                            let _ = Command::new(&target_bin)
-                                .current_dir(&repo_dir_clone)
-                                .spawn();
+                            let mut cmd = Command::new(&target_bin);
+                            cmd.args(&cmd_args_dev);
+                            cmd.current_dir(&repo_dir_clone);
+                            if let Some(mb) = max_memory_dev {
+                                cmd.env("TELOS_MAX_MEMORY_MB", mb.to_string());
+                            }
+                            let _ = cmd.spawn();
                             if auto_close {
                                 if let Some(win) = app_handle.get_webview_window("main") {
                                     let _ = win.close();
@@ -341,77 +383,50 @@ fn trigger_launch(
             is_building: true,
         })
     } else {
-        // Release channel
-        let release_bin = repo_dir.join("target/release/telos");
-        if release_bin.exists() {
-            let _ = Command::new(&release_bin)
-                .current_dir(&repo_dir)
-                .spawn()
-                .map_err(|e| e.to_string())?;
+        // Cached Release / Snapshot / Custom installation
+        let version_tag = selected_inst
+            .as_ref()
+            .map_or("0.1.0", |i| i.version_tag.as_str());
 
-            if profile.auto_close_on_play {
-                if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.close();
+        // Resolve binary from ~/.telos/versions/<version_tag>/ or fallback to target/release/telos
+        let bin_path = ensure_version_cached(&repo_dir, version_tag)
+            .or_else(|_| {
+                let rel = repo_dir.join("target/release/telos");
+                if rel.exists() {
+                    Ok(rel)
+                } else {
+                    Err(format!("Binary for version '{version_tag}' not found in cache."))
                 }
-            }
-            Ok(LaunchResult {
-                success: true,
-                message: "Launched release executable.".into(),
-                is_building: false,
             })
-        } else {
-            // Build release first
-            if is_building_flag.load(Ordering::SeqCst) {
-                return Ok(LaunchResult {
-                    success: true,
-                    message: "Release build is currently in progress...".into(),
-                    is_building: true,
-                });
-            }
+            .map_err(|e| e.to_string())?;
 
-            is_building_flag.store(true, Ordering::SeqCst);
-            let (tx, rx) = channel::<BuildEvent>();
-            start_build_worker(repo_dir.clone(), false, tx, SystemTime::now());
+        let working_dir = selected_inst
+            .as_ref()
+            .and_then(|i| i.custom_dir.clone())
+            .unwrap_or_else(get_telos_base_dir);
+        let _ = std::fs::create_dir_all(&working_dir);
 
-            let app_handle = app.clone();
-            let repo_dir_clone = repo_dir.clone();
-            let auto_close = profile.auto_close_on_play;
-            let is_building_for_thread = is_building_flag.clone();
-
-            std::thread::spawn(move || {
-                while let Ok(event) = rx.recv() {
-                    let _ = app_handle.emit("build_event", &event);
-                    match &event {
-                        BuildEvent::Success { .. } => {
-                            is_building_for_thread.store(false, Ordering::SeqCst);
-                            let target_bin = repo_dir_clone.join("target/release/telos");
-                            if target_bin.exists() {
-                                let _ = Command::new(&target_bin)
-                                    .current_dir(&repo_dir_clone)
-                                    .spawn();
-                                if auto_close {
-                                    if let Some(win) = app_handle.get_webview_window("main") {
-                                        let _ = win.close();
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                        BuildEvent::Failed(_) => {
-                            is_building_for_thread.store(false, Ordering::SeqCst);
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-            });
-
-            Ok(LaunchResult {
-                success: true,
-                message: "Compiling release binary before launch...".into(),
-                is_building: true,
-            })
+        let mut cmd = Command::new(&bin_path);
+        cmd.args(&cmd_args);
+        cmd.current_dir(&working_dir);
+        if let Some(mb) = max_memory {
+            cmd.env("TELOS_MAX_MEMORY_MB", mb.to_string());
         }
+
+        cmd.spawn().map_err(|e| e.to_string())?;
+
+        if profile.auto_close_on_play {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.close();
+            }
+        }
+
+        let inst_name = selected_inst.as_ref().map_or("Installation", |i| i.name.as_str());
+        Ok(LaunchResult {
+            success: true,
+            message: format!("Launched {inst_name} ({version_tag})"),
+            is_building: false,
+        })
     }
 }
 
@@ -468,7 +483,7 @@ fn main() {
     let repo_dir = resolve_repo_dir();
     let profile = load_profile();
     let remote_versions = fetch_remote_versions(&repo_dir);
-    let installations = get_default_installations(&repo_dir, &remote_versions);
+    let installations = load_or_init_installations(&repo_dir, &remote_versions);
     let servers = load_servers();
 
     let app_state = AppState {

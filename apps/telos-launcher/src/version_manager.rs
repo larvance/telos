@@ -32,6 +32,10 @@ pub struct Installation {
     #[serde(default)]
     pub custom_dir: Option<PathBuf>,
     #[serde(default)]
+    pub max_memory_mb: Option<u32>,
+    #[serde(default)]
+    pub resolution: Option<String>,
+    #[serde(default)]
     pub custom_args: Option<String>,
     #[serde(default)]
     pub is_dev: bool,
@@ -52,6 +56,8 @@ impl Installation {
             channel: ChannelKind::LatestRelease,
             version_tag: ver,
             custom_dir: None,
+            max_memory_mb: Some(4096),
+            resolution: Some("Auto".into()),
             custom_args: None,
             is_dev: false,
             icon_type: Some("voxel".into()),
@@ -66,6 +72,8 @@ impl Installation {
             channel: ChannelKind::Snapshot,
             version_tag: commit_str,
             custom_dir: None,
+            max_memory_mb: Some(4096),
+            resolution: Some("Auto".into()),
             custom_args: None,
             is_dev: false,
             icon_type: Some("package".into()),
@@ -79,6 +87,8 @@ impl Installation {
             channel: ChannelKind::LocalDev,
             version_tag: format!("local @ {commit}"),
             custom_dir: Some(path),
+            max_memory_mb: Some(8192),
+            resolution: Some("Auto".into()),
             custom_args: None,
             is_dev: true,
             icon_type: Some("wrench".into()),
@@ -242,3 +252,186 @@ pub fn get_default_installations(repo_dir: &Path, remote: &RemoteVersionInfo) ->
 
     installs
 }
+
+/// Returns the path to the launcher installations JSON file.
+pub fn get_installations_path() -> PathBuf {
+    if let Some(config_dir) = dirs::config_dir() {
+        config_dir.join("telos").join("installations.json")
+    } else {
+        PathBuf::from(".telos_installations.json")
+    }
+}
+
+/// Loads configured installations from disk, migrating or inserting defaults if needed.
+pub fn load_or_init_installations(repo_dir: &Path, remote: &RemoteVersionInfo) -> Vec<Installation> {
+    let path = get_installations_path();
+    let is_dev_repo = detect_local_dev_repo(repo_dir);
+
+    let mut saved_installs: Vec<Installation> = if let Ok(data) = std::fs::read_to_string(&path) {
+        serde_json::from_str(&data).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    if saved_installs.is_empty() {
+        let defaults = get_default_installations(repo_dir, remote);
+        let _ = persist_installations(&defaults);
+        return defaults;
+    }
+
+    // Ensure dev environment profile is present if in dev repo, or removed if not in dev repo
+    if is_dev_repo {
+        if !saved_installs.iter().any(|i| i.id == "local-dev") {
+            saved_installs.insert(
+                0,
+                Installation::new_local_dev(repo_dir.to_path_buf(), &remote.latest_commit_hash),
+            );
+        } else {
+            // Keep local-dev up-to-date with current commit & dir
+            if let Some(dev_inst) = saved_installs.iter_mut().find(|i| i.id == "local-dev") {
+                dev_inst.version_tag = format!("local @ {}", remote.latest_commit_hash);
+                dev_inst.custom_dir = Some(repo_dir.to_path_buf());
+                dev_inst.is_dev = true;
+            }
+        }
+    } else {
+        saved_installs.retain(|i| i.id != "local-dev");
+    }
+
+    // Ensure default latest-release exists
+    if !saved_installs.iter().any(|i| i.id == "latest-release" || i.channel == ChannelKind::LatestRelease) {
+        saved_installs.push(Installation::new_release(&remote.latest_release_tag));
+    }
+
+    // Ensure default latest-snapshot exists
+    if !saved_installs.iter().any(|i| i.id == "latest-snapshot" || i.channel == ChannelKind::Snapshot) {
+        saved_installs.push(Installation::new_snapshot(format!("snapshot-{}", remote.latest_commit_hash)));
+    }
+
+    let _ = persist_installations(&saved_installs);
+    saved_installs
+}
+
+/// Persists installations list to disk.
+pub fn persist_installations(installations: &[Installation]) -> Result<(), String> {
+    let path = get_installations_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let data = serde_json::to_string_pretty(installations).map_err(|e| e.to_string())?;
+    std::fs::write(path, data).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Returns the root Telos base directory (~/.telos).
+pub fn get_telos_base_dir() -> PathBuf {
+    if let Some(home) = dirs::home_dir() {
+        home.join(".telos")
+    } else {
+        PathBuf::from(".telos")
+    }
+}
+
+/// Returns the version cache directory for a given version tag: `~/.telos/versions/<version_tag>`.
+pub fn get_version_cache_dir(version_tag: &str) -> PathBuf {
+    get_telos_base_dir().join("versions").join(version_tag)
+}
+
+/// Returns the path to the executable inside the version cache.
+pub fn get_version_binary_path(version_tag: &str) -> PathBuf {
+    get_version_cache_dir(version_tag).join("telos")
+}
+
+/// Recursively copy a directory and its contents.
+fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(&entry.path(), &dst.join(entry.file_name()))?;
+        } else {
+            std::fs::copy(entry.path(), dst.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Ensures the given version tag is extracted in the version cache (`~/.telos/versions/<version_tag>/`).
+/// Multiple installations referencing the same version tag share this single cached extraction!
+pub fn ensure_version_cached(repo_dir: &Path, version_tag: &str) -> Result<PathBuf, String> {
+    let bin_path = get_version_binary_path(version_tag);
+    if bin_path.exists() {
+        return Ok(bin_path);
+    }
+
+    let version_dir = get_version_cache_dir(version_tag);
+    let _ = std::fs::create_dir_all(&version_dir);
+
+    // 1. Check if a prebuilt .tar.zst archive exists in repo dist/ (e.g. dist/telos-0.1.0-linux-x86_64.tar.zst)
+    let candidate_archives = [
+        repo_dir.join(format!("dist/telos-{version_tag}-linux-x86_64.tar.zst")),
+        repo_dir.join(format!("dist/telos-{version_tag}.tar.zst")),
+        repo_dir.join("dist/telos-0.1.0-linux-x86_64.tar.zst"),
+    ];
+
+    for archive in &candidate_archives {
+        if archive.exists() {
+            let status = Command::new("tar")
+                .args(["--zstd", "-xf", archive.to_str().unwrap(), "-C", version_dir.to_str().unwrap()])
+                .status();
+            if let Ok(s) = status {
+                if s.success() && bin_path.exists() {
+                    return Ok(bin_path);
+                }
+            }
+        }
+    }
+
+    // 2. Local dev environment fallback: copy from target/release/telos + assets
+    let target_release = repo_dir.join("target/release/telos");
+    if target_release.exists() {
+        std::fs::copy(&target_release, &bin_path).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&bin_path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o755);
+                let _ = std::fs::set_permissions(&bin_path, perms);
+            }
+        }
+        let assets_src = repo_dir.join("assets");
+        if assets_src.exists() {
+            let _ = copy_dir_all(&assets_src, &version_dir.join("assets"));
+        }
+        return Ok(bin_path);
+    }
+
+    // 3. Fallback to target/debug/telos if release isn't built yet
+    let target_debug = repo_dir.join("target/debug/telos");
+    if target_debug.exists() {
+        std::fs::copy(&target_debug, &bin_path).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(&bin_path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o755);
+                let _ = std::fs::set_permissions(&bin_path, perms);
+            }
+        }
+        let assets_src = repo_dir.join("assets");
+        if assets_src.exists() {
+            let _ = copy_dir_all(&assets_src, &version_dir.join("assets"));
+        }
+        return Ok(bin_path);
+    }
+
+    Err(format!(
+        "Version '{}' binary is not present in cache ({:?}) and no prebuilt release archive was found.",
+        version_tag,
+        bin_path
+    ))
+}
+
