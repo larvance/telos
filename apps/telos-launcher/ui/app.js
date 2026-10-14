@@ -11,6 +11,7 @@
     e.preventDefault();
   });
 
+  const DEFAULT_NEWS_URL = 'https://news.telos.larvance.com/news.json';
   const RAW_NEWS_URL = 'https://raw.githubusercontent.com/larvance/telos/main/apps/telos-launcher/ui/assets/news/news.json';
 
   // --- Tauri IPC Wrappers ---
@@ -37,7 +38,7 @@
       selected_installation_id: 'local-dev',
       auto_close_on_play: false,
       language: 'English (US)',
-      news_url: RAW_NEWS_URL,
+      news_url: DEFAULT_NEWS_URL,
       ram_gb: 8,
       graphics_backend: 'vulkan',
     },
@@ -211,7 +212,7 @@
   let selectedInstallId = 'local-dev';
   let isBuilding = false;
   let editingServerId = null;
-  let newsEndpoint = 'https://news.telos.larvance.com/news.json';
+  let newsEndpoint = DEFAULT_NEWS_URL;
 
   // --- DOM Elements ---
   const elLoginScreen = document.getElementById('login-screen');
@@ -625,9 +626,9 @@
     `;
 
     let articles = null;
-    const endpoint = newsEndpoint || RAW_NEWS_URL;
+    const endpoint = newsEndpoint || DEFAULT_NEWS_URL;
 
-    // 1. Attempt live remote fetch with timeout
+    // 1. Attempt primary live remote fetch with timeout
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000);
@@ -641,7 +642,22 @@
         articles = parseAndValidateNewsJson(json);
       }
     } catch (e) {
-      // Remote fetch failed, fall through to bundled cache
+      // Primary fetch failed, attempt secondary fallback if endpoint was not raw GitHub
+      if (endpoint !== RAW_NEWS_URL) {
+        try {
+          const controller2 = new AbortController();
+          const timeoutId2 = setTimeout(() => controller2.abort(), 3000);
+          const res2 = await fetch(RAW_NEWS_URL, {
+            signal: controller2.signal,
+            cache: 'no-cache',
+          });
+          clearTimeout(timeoutId2);
+          if (res2.ok) {
+            const json2 = await res2.json();
+            articles = parseAndValidateNewsJson(json2);
+          }
+        } catch (_) {}
+      }
     }
 
     // 2. Fallback to bundled offline news cache
@@ -1662,8 +1678,8 @@
 
   function getNewsUrlHistory() {
     const defaultUrls = [
+      DEFAULT_NEWS_URL,
       RAW_NEWS_URL,
-      'https://news.telos.larvance.com/news.json',
     ];
     const seen = new Set(defaultUrls);
     const result = [...defaultUrls];
@@ -1706,7 +1722,7 @@
       item.setAttribute('data-index', idx);
       item.setAttribute('data-value', url);
 
-      const isDefault = url === RAW_NEWS_URL || url === 'https://news.telos.larvance.com/news.json';
+      const isDefault = url === DEFAULT_NEWS_URL || url === RAW_NEWS_URL;
       const badgeText = isDefault ? 'Default' : 'Verified';
 
       item.innerHTML = `
@@ -1829,7 +1845,7 @@
 
   if (elBtnSyncNews) {
     elBtnSyncNews.addEventListener('click', async () => {
-      const targetUrl = elSettingNewsUrl.value.trim() || RAW_NEWS_URL;
+      const targetUrl = elSettingNewsUrl.value.trim() || DEFAULT_NEWS_URL;
       elBtnSyncNews.disabled = true;
       elBtnSyncNews.textContent = 'Syncing...';
 
@@ -1864,11 +1880,11 @@
 
   elBtnResetDefaults.addEventListener('click', async () => {
     elSettingKeepOpen.checked = true;
-    elSettingNewsUrl.value = RAW_NEWS_URL;
+    elSettingNewsUrl.value = DEFAULT_NEWS_URL;
     elSettingGraphics.value = 'vulkan';
     elSettingRamSlider.value = '8';
     elSettingRamLabel.textContent = '8 GB';
-    newsEndpoint = RAW_NEWS_URL;
+    newsEndpoint = DEFAULT_NEWS_URL;
     if (appProfile) {
       appProfile.auto_close_on_play = false;
       appProfile.news_url = newsEndpoint;
