@@ -487,8 +487,80 @@ fn get_cli_args() -> Result<Vec<String>, String> {
     Ok(std::env::args().collect())
 }
 
+/// Synchronizes system desktop entries:
+/// - Ensures the raw game ("Telos") does not appear as a standalone app in the system app list.
+/// - If local development is set up (repo with Cargo.toml), installs "Telos Dev" (`telos-dev.desktop`)
+///   which immediately opens the local game binary.
+/// - If dev is not set up, ensures "Telos Dev" is not present in the app list.
+fn sync_desktop_integration(repo_dir: &std::path::Path) {
+    let Some(data_dir) = dirs::data_dir() else { return; };
+    let apps_dir = data_dir.join("applications");
+    if !apps_dir.exists() {
+        let _ = fs::create_dir_all(&apps_dir);
+    }
+
+    // 1. Never show raw "Telos" standalone in the desktop app list
+    let old_telos_desktop = apps_dir.join("telos.desktop");
+    if old_telos_desktop.exists() {
+        let _ = fs::remove_file(&old_telos_desktop);
+    }
+
+    // 2. Manage "Telos Dev"
+    let is_dev_setup = repo_dir.join("Cargo.toml").exists();
+    let dev_desktop = apps_dir.join("telos-dev.desktop");
+
+    if is_dev_setup {
+        // Ensure ~/.local/bin/telos-dev symlink or script is present
+        if let Some(home) = dirs::home_dir() {
+            let bin_dir = home.join(".local/bin");
+            let _ = fs::create_dir_all(&bin_dir);
+            let dev_script = repo_dir.join("scripts/telos-dev.sh");
+            let dev_symlink = bin_dir.join("telos-dev");
+            if dev_script.exists() && !dev_symlink.exists() {
+                #[cfg(unix)]
+                let _ = std::os::unix::fs::symlink(&dev_script, &dev_symlink);
+            }
+        }
+
+        let dev_exec = dirs::home_dir()
+            .map(|h| h.join(".local/bin/telos-dev").to_string_lossy().to_string())
+            .unwrap_or_else(|| "telos-dev".into());
+
+        let icon_path = dirs::data_dir()
+            .map(|d| d.join("icons/hicolor/256x256/apps/telos.png").to_string_lossy().to_string())
+            .unwrap_or_else(|| "telos".into());
+
+        let dev_desktop_content = format!(
+            "[Desktop Entry]\n\
+            Name=Telos Dev\n\
+            GenericName=Voxel Game (Dev)\n\
+            Comment=Telos Voxel Engine - Local Development Build\n\
+            Exec={} %U\n\
+            Icon={}\n\
+            Path={}\n\
+            Terminal=false\n\
+            Type=Application\n\
+            Categories=Game;\n\
+            Keywords=telos;voxel;dev;game;sandbox;3d;vulkan;\n\
+            StartupNotify=true\n\
+            StartupWMClass=telos\n",
+            dev_exec,
+            icon_path,
+            repo_dir.to_string_lossy()
+        );
+        let _ = fs::write(&dev_desktop, dev_desktop_content);
+    } else if dev_desktop.exists() {
+        let _ = fs::remove_file(&dev_desktop);
+    }
+
+    // Update system desktop database if tool is installed
+    let _ = Command::new("update-desktop-database").arg(&apps_dir).status();
+}
+
 fn main() {
     let repo_dir = resolve_repo_dir();
+    sync_desktop_integration(&repo_dir);
+
     let profile = load_profile();
     let remote_versions = fetch_remote_versions(&repo_dir);
     let installations = load_or_init_installations(&repo_dir, &remote_versions);

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Telos Dev
+GenericName=Voxel Game (Dev)
+Comment=Telos Voxel Engine - Local Development Build
+Exec=telos-dev %U
+Icon=telos
+Terminal=false
+Type=Application
+Categories=Game;
+Keywords=telos;voxel;dev;game;sandbox;3d;vulkan;
+StartupNotify=true
+StartupWMClass=telos

@@ -10,3 +10,4 @@ Categories=Game;Simulation;
 Keywords=telos;voxel;game;sandbox;3d;vulkan;
 StartupNotify=true
 StartupWMClass=telos
+NoDisplay=true
