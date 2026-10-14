@@ -228,6 +228,7 @@
 
   // Titlebar controls & window dragging
   const elTitlebar = document.getElementById('titlebar');
+  const elNavbar = document.querySelector('.navbar');
   const elBtnMinimize = document.getElementById('btn-minimize');
   const elBtnMaximize = document.getElementById('btn-maximize');
   const elBtnClose = document.getElementById('btn-close');
@@ -249,62 +250,89 @@
     }
   }
 
+  let lastToggleTime = 0;
+  async function toggleMaximize() {
+    const now = Date.now();
+    if (now - lastToggleTime < 300) return;
+    lastToggleTime = now;
+    try {
+      const isMax = await invoke('window_toggle_maximize');
+      if (elBtnMaximize) {
+        if (isMax) {
+          elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-restore"></use></svg>';
+          elBtnMaximize.title = 'Restore';
+        } else {
+          elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-maximize"></use></svg>';
+          elBtnMaximize.title = 'Maximize';
+        }
+      }
+    } catch (err) {
+      console.error('Toggle maximize error:', err);
+    }
+  }
+
   if (elBtnMinimize) {
     elBtnMinimize.addEventListener('click', () => invoke('window_minimize'));
   }
   if (elBtnMaximize) {
-    elBtnMaximize.addEventListener('click', async () => {
-      try {
-        const isMax = await invoke('window_toggle_maximize');
-        if (elBtnMaximize) {
-          if (isMax) {
-            elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-restore"></use></svg>';
-            elBtnMaximize.title = 'Restore';
-          } else {
-            elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-maximize"></use></svg>';
-            elBtnMaximize.title = 'Maximize';
-          }
-        }
-      } catch (err) {
-        console.error('Toggle maximize error:', err);
-      }
-    });
+    elBtnMaximize.addEventListener('click', toggleMaximize);
   }
   if (elBtnClose) {
     elBtnClose.addEventListener('click', () => invoke('window_close'));
   }
 
-  if (elTitlebar) {
-    // Unmaximize on the spot and initiate dragging when grabbed
-    elTitlebar.addEventListener('mousedown', async (e) => {
-      if (e.button !== 0) return;
-      if (e.target.closest('button, a, input, select, textarea, .window-btn')) return;
-      try {
-        await invoke('window_drag_start');
-        updateMaximizeState();
-      } catch (err) {
-        console.error('Drag start error:', err);
-      }
-    });
+  function setupDraggableFrame(element) {
+    if (!element) return;
 
-    // Double click titlebar to toggle maximize/restore
-    elTitlebar.addEventListener('dblclick', async (e) => {
-      if (e.target.closest('button, a, input, select, textarea, .window-btn')) return;
-      try {
-        const isMax = await invoke('window_toggle_maximize');
-        if (elBtnMaximize) {
-          if (isMax) {
-            elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-restore"></use></svg>';
-            elBtnMaximize.title = 'Restore';
-          } else {
-            elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-maximize"></use></svg>';
-            elBtnMaximize.title = 'Maximize';
+    element.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('button, a, input, select, textarea, .window-btn, .nav-tab')) return;
+
+      if (e.detail > 1) {
+        toggleMaximize();
+        return;
+      }
+
+      const startX = e.screenX;
+      const startY = e.screenY;
+      let hasDragged = false;
+
+      const onMouseMove = async (moveEvent) => {
+        if (hasDragged) return;
+        const dist = Math.hypot(moveEvent.screenX - startX, moveEvent.screenY - startY);
+        if (dist > 5) {
+          hasDragged = true;
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+          try {
+            await invoke('window_drag_start');
+            updateMaximizeState();
+          } catch (err) {
+            console.error('Drag start error:', err);
           }
         }
-      } catch (err) {
-        console.error('Toggle maximize error:', err);
-      }
+      };
+
+      const onMouseUp = () => {
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+      };
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
     });
+
+    element.addEventListener('dblclick', (e) => {
+      if (e.target.closest('button, a, input, select, textarea, .window-btn, .nav-tab')) return;
+      toggleMaximize();
+    });
+  }
+
+  if (elTitlebar) {
+    setupDraggableFrame(elTitlebar);
+  }
+  if (elNavbar) {
+    setupDraggableFrame(elNavbar);
   }
 
   window.addEventListener('resize', updateMaximizeState);

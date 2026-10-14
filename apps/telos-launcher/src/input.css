@@ -128,13 +128,13 @@ html, body {
    Window Frame & Controls
    ========================================================================== */
 .titlebar-drag {
-  -webkit-app-region: drag;
+  user-select: none;
   cursor: default;
 }
 
 .titlebar-controls,
 .titlebar-controls * {
-  -webkit-app-region: no-drag;
+  user-select: none;
 }
 
 .window-btn {
@@ -386,16 +386,26 @@ html, body {
   flex-shrink: 0 !important;
   z-index: 20 !important;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45) !important;
+  position: relative !important;
 }
 
 .launch-left {
+  flex: 1 !important;
   display: flex !important;
   align-items: center !important;
-  gap: 16px !important;
+  justify-content: flex-start !important;
+  min-width: 0 !important;
+}
+
+.launch-center {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
 }
 
 .install-selector-btn {
-  height: 48px !important;
+  height: 50px !important;
   background-color: #282828 !important;
   border: 1px solid #444444 !important;
   color: #ffffff !important;
@@ -405,7 +415,8 @@ html, body {
   align-items: center !important;
   gap: 14px !important;
   cursor: pointer !important;
-  min-width: 280px !important;
+  min-width: 260px !important;
+  max-width: 320px !important;
   text-align: left !important;
   transition: all 0.15s ease !important;
 }
@@ -434,21 +445,27 @@ html, body {
 }
 
 .btn-play-large {
-  height: 48px !important;
-  min-width: 190px !important;
-  padding: 0 38px !important;
-  font-size: 17px !important;
+  height: 50px !important;
+  min-width: 220px !important;
+  padding: 0 44px !important;
+  font-size: 18px !important;
   font-weight: 700 !important;
-  letter-spacing: 1.5px !important;
+  letter-spacing: 2px !important;
   border-radius: 6px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .launch-right {
+  flex: 1 !important;
   display: flex !important;
   flex-direction: column !important;
   align-items: flex-end !important;
+  justify-content: center !important;
   gap: 4px !important;
   padding-right: 4px !important;
+  min-width: 0 !important;
 }
 
 /* ==========================================================================
