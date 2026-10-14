@@ -157,6 +157,35 @@ impl UserCache {
             Ok(())
         }
     }
+
+    /// Binds or overrides a usercache entry without checking for TOFU key conflicts.
+    /// Used when `enforce_tofu` is disabled (e.g. singleplayer or administrative override).
+    pub fn bind_override(
+        &mut self,
+        username: &str,
+        uuid: PlayerUuid,
+        public_key: Option<[u8; 32]>,
+        now_secs: u64,
+    ) {
+        let key = username.trim().to_ascii_lowercase();
+        if let Some(entry) = self.entries.get_mut(&key) {
+            entry.public_key = public_key;
+            entry.player_uuid = uuid;
+            entry.last_seen_secs = now_secs;
+            entry.username = username.to_string();
+        } else {
+            self.entries.insert(
+                key,
+                UserCacheEntry {
+                    username: username.to_string(),
+                    player_uuid: uuid,
+                    public_key,
+                    first_seen_secs: now_secs,
+                    last_seen_secs: now_secs,
+                },
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -215,5 +244,26 @@ mod tests {
         assert_eq!(entry.username, "Miner");
         assert_eq!(entry.player_uuid, uuid);
         assert_eq!(entry.public_key, Some(key));
+    }
+
+    #[test]
+    fn test_bind_override() {
+        let mut cache = UserCache::new();
+        let key_1 = [0x11u8; 32];
+        let uuid_1 = PlayerUuid::from_public_key(&key_1);
+        cache
+            .verify_or_bind("Alice", uuid_1, Some(key_1), 1000)
+            .expect("bind");
+
+        let key_2 = [0x22u8; 32];
+        let uuid_2 = PlayerUuid::from_public_key(&key_2);
+        // Overriding the key without error
+        cache.bind_override("Alice", uuid_2, Some(key_2), 2000);
+
+        let entry = cache.lookup_by_username("alice").expect("lookup");
+        assert_eq!(entry.public_key, Some(key_2));
+        assert_eq!(entry.player_uuid, uuid_2);
+        assert_eq!(entry.first_seen_secs, 1000);
+        assert_eq!(entry.last_seen_secs, 2000);
     }
 }

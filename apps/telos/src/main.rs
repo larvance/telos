@@ -774,6 +774,12 @@ impl<K: std::hash::Hash + Eq + Copy> SlotAllocator<K> {
             None
         }
     }
+
+    fn clear(&mut self) {
+        self.free_slots.clear();
+        self.allocated.clear();
+        self.next_fresh = 0;
+    }
 }
 
 struct MdiBuffers {
@@ -1409,6 +1415,7 @@ struct App {
 
     server_running: Arc<AtomicBool>,
     server_handle: Option<std::thread::JoinHandle<()>>,
+    server_panic: Arc<std::sync::Mutex<Option<String>>>,
     client_conn: Box<dyn Connection<C2sMessage, S2cMessage>>,
     client_phase: ConnectionPhase,
 
@@ -1737,31 +1744,49 @@ impl App {
                 f64::from(spawn_pos.z),
             ]
         });
+        let server_panic = Arc::new(std::sync::Mutex::new(None::<String>));
+        let server_panic_clone = server_panic.clone();
         let server_handle = if is_direct_ingame {
             let s_registries = Arc::clone(&server_registries);
             let handle = std::thread::Builder::new()
                 .name("telos-server".into())
                 .spawn(move || {
-                    let config = telos_server::ServerConfig {
-                        tps: 20,
-                        view_distance,
-                        vertical_view_distance,
-                        simulation_distance,
-                        chunks_per_tick_per_player: 16,
-                        save_directory: Some(default_save_dir),
-                        default_spawn: custom_spawn,
-                        ..Default::default()
-                    };
-                    let mut server =
-                        telos_server::Server::with_registries(seed, config, s_registries);
-                    server.add_connection(server_conn);
+                    let run_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let config = telos_server::ServerConfig {
+                            tps: 20,
+                            view_distance,
+                            vertical_view_distance,
+                            simulation_distance,
+                            chunks_per_tick_per_player: 16,
+                            save_directory: Some(default_save_dir),
+                            default_spawn: custom_spawn,
+                            enforce_tofu: false,
+                            ..Default::default()
+                        };
+                        let mut server =
+                            telos_server::Server::with_registries(seed, config, s_registries);
+                        server.add_connection(server_conn);
 
-                    let mut timestep = FixedTimestep::new(20);
-                    while running_clone.load(Ordering::Relaxed) {
-                        timestep.advance(|_| {
-                            server.tick();
-                        });
-                        std::thread::sleep(Duration::from_millis(1));
+                        let mut timestep = FixedTimestep::new(20);
+                        while running_clone.load(Ordering::Relaxed) {
+                            timestep.advance(|_| {
+                                server.tick();
+                            });
+                            std::thread::sleep(Duration::from_millis(1));
+                        }
+                    }));
+                    if let Err(panic_err) = run_res {
+                        let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                            (*s).to_string()
+                        } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                            s.clone()
+                        } else {
+                            "Unknown panic in singleplayer server".to_string()
+                        };
+                        tracing::error!("Singleplayer server thread panicked: {msg}");
+                        if let Ok(mut lock) = server_panic_clone.lock() {
+                            *lock = Some(msg);
+                        }
                     }
                 })
                 .expect("Failed to spawn background singleplayer server thread");
@@ -1969,6 +1994,7 @@ impl App {
 
             server_running,
             server_handle,
+            server_panic,
             client_conn,
             client_phase: ConnectionPhase::Hello,
 
@@ -2177,8 +2203,13 @@ impl App {
         self.chunks.clear();
         self.chunk_meshes.clear();
         self.dirty_chunks.clear();
+        self.chunk_slots.clear();
         self.lod_meshes.clear();
+        self.lod_slots.clear();
         self.pending_lod_uploads.clear();
+        self.client_tick = 0;
+        self.last_acked_server_tick = 0;
+        self.sim_time_acc = 0.0;
         self.entity_store = ClientEntityStore::new();
         self.client_effects.clear();
         self.advancements_open = false;
@@ -2210,6 +2241,7 @@ impl App {
             chunks_per_tick_per_player: 16,
             save_directory: Some(world_dir),
             worlds: vec![world_cfg],
+            enforce_tofu: false,
             ..Default::default()
         };
 
@@ -2227,26 +2259,47 @@ impl App {
         let running_clone = server_running;
         let server_registries = Arc::clone(&self.registries);
 
+        let server_panic_clone = self.server_panic.clone();
+        if let Ok(mut lock) = self.server_panic.lock() {
+            *lock = None;
+        }
+
         let server_handle = std::thread::Builder::new()
             .name("telos-server".into())
             .spawn(move || {
-                let mut server =
-                    telos_server::Server::with_registries(seed, config, server_registries);
-                server.add_connection(server_conn);
+                let run_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let mut server =
+                        telos_server::Server::with_registries(seed, config, server_registries);
+                    server.add_connection(server_conn);
 
-                let mut timestep = FixedTimestep::new(20);
-                while running_clone.load(Ordering::Relaxed) {
-                    if let Ok(listener) = listener_rx.try_recv() {
-                        let port = listener.local_addr().port();
-                        let beacon = telos_net::LanBeacon::new(port, &server.config().motd);
-                        server.lan_emitter = telos_net::LanBeaconEmitter::spawn(beacon, port).ok();
-                        server.listener = Some(listener);
-                        info!(port, "Server opened to LAN & P2P with active QUIC listener");
+                    let mut timestep = FixedTimestep::new(20);
+                    while running_clone.load(Ordering::Relaxed) {
+                        if let Ok(listener) = listener_rx.try_recv() {
+                            let port = listener.local_addr().port();
+                            let beacon = telos_net::LanBeacon::new(port, &server.config().motd);
+                            server.lan_emitter =
+                                telos_net::LanBeaconEmitter::spawn(beacon, port).ok();
+                            server.listener = Some(listener);
+                            info!(port, "Server opened to LAN & P2P with active QUIC listener");
+                        }
+                        timestep.advance(|_| {
+                            server.tick();
+                        });
+                        std::thread::sleep(Duration::from_millis(1));
                     }
-                    timestep.advance(|_| {
-                        server.tick();
-                    });
-                    std::thread::sleep(Duration::from_millis(1));
+                }));
+                if let Err(panic_err) = run_res {
+                    let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                        (*s).to_string()
+                    } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "Unknown panic in singleplayer server".to_string()
+                    };
+                    tracing::error!("Singleplayer server thread panicked: {msg}");
+                    if let Ok(mut lock) = server_panic_clone.lock() {
+                        *lock = Some(msg);
+                    }
                 }
             })
             .expect("Failed to spawn singleplayer server thread");
@@ -2299,6 +2352,7 @@ impl App {
         self.lan_opened_port = None;
         self.last_invite_link = None;
         self.client_phase = ConnectionPhase::Hello;
+        self.physics.waiting_for_chunks = false;
         info!("Stopped singleplayer server session");
     }
 
@@ -2315,8 +2369,13 @@ impl App {
                 self.chunks.clear();
                 self.chunk_meshes.clear();
                 self.dirty_chunks.clear();
+                self.chunk_slots.clear();
                 self.lod_meshes.clear();
+                self.lod_slots.clear();
                 self.pending_lod_uploads.clear();
+                self.client_tick = 0;
+                self.last_acked_server_tick = 0;
+                self.sim_time_acc = 0.0;
                 self.entity_store = ClientEntityStore::new();
                 self.client_effects.clear();
                 self.advancements_open = false;
@@ -3172,6 +3231,35 @@ impl App {
                 continue;
             };
 
+            if let S2cMessage::Disconnect(disc) = &msg {
+                tracing::error!(
+                    reason = ?disc.reason,
+                    message = %disc.message,
+                    "Disconnected from server"
+                );
+                let toast = ToastState {
+                    id: "disconnect_err".to_string(),
+                    title: format!("Disconnected: {}", disc.message),
+                    icon_item: 0,
+                    frame: 0,
+                    elapsed_secs: 0.0,
+                    duration_secs: 6.0,
+                };
+                if self.hud_state.active_toast.is_none() {
+                    self.hud_state.active_toast = Some(toast);
+                } else {
+                    self.toast_queue.push_back(toast);
+                }
+                self.stop_singleplayer_server();
+                self.is_paused = false;
+                self.advancements_open = false;
+                self.current_screen = AppScreen::MainMenu;
+                self.controller.mouse_captured = false;
+                self.set_cursor_captured(false);
+                self.physics.waiting_for_chunks = false;
+                return;
+            }
+
             match self.client_phase {
                 ConnectionPhase::Hello => {
                     if let S2cMessage::HelloReply(reply) = msg {
@@ -3878,6 +3966,61 @@ impl App {
                     _ => {}
                 },
             }
+        }
+
+        if self.current_screen == AppScreen::InGame && self.client_conn.is_closed() {
+            tracing::warn!("Server connection closed unexpectedly");
+            let toast = ToastState {
+                id: "disconnect_err".to_string(),
+                title: "Connection Lost".to_string(),
+                icon_item: 0,
+                frame: 0,
+                elapsed_secs: 0.0,
+                duration_secs: 6.0,
+            };
+            if self.hud_state.active_toast.is_none() {
+                self.hud_state.active_toast = Some(toast);
+            } else {
+                self.toast_queue.push_back(toast);
+            }
+            self.stop_singleplayer_server();
+            self.is_paused = false;
+            self.advancements_open = false;
+            self.current_screen = AppScreen::MainMenu;
+            self.controller.mouse_captured = false;
+            self.set_cursor_captured(false);
+            self.physics.waiting_for_chunks = false;
+            return;
+        }
+
+        if self.current_screen == AppScreen::InGame
+            && let Some(ref handle) = self.server_handle
+            && handle.is_finished()
+        {
+            let panic_msg = self.server_panic.lock().ok().and_then(|mut g| g.take());
+            let err_desc = panic_msg.unwrap_or_else(|| "Server exited unexpectedly".to_string());
+            tracing::error!("{err_desc}");
+            let toast = ToastState {
+                id: "server_crash".to_string(),
+                title: format!("Server Error: {err_desc}"),
+                icon_item: 0,
+                frame: 0,
+                elapsed_secs: 0.0,
+                duration_secs: 6.0,
+            };
+            if self.hud_state.active_toast.is_none() {
+                self.hud_state.active_toast = Some(toast);
+            } else {
+                self.toast_queue.push_back(toast);
+            }
+            self.stop_singleplayer_server();
+            self.is_paused = false;
+            self.advancements_open = false;
+            self.current_screen = AppScreen::MainMenu;
+            self.controller.mouse_captured = false;
+            self.set_cursor_captured(false);
+            self.physics.waiting_for_chunks = false;
+            return;
         }
 
         if let Some(listener) = &mut self.lan_listener {

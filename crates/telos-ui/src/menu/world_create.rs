@@ -189,13 +189,21 @@ impl WorldCreateWizard {
                                 }
                             })
                             .collect::<String>();
-                        let dir_name = if dir_sanitized.is_empty() {
+                        let dir_base = if dir_sanitized.is_empty() {
                             "world".to_string()
                         } else {
                             dir_sanitized
                         };
 
-                        let path = worlds_base_dir.join(&dir_name);
+                        let mut dir_name = dir_base.clone();
+                        let mut path = worlds_base_dir.join(&dir_name);
+                        let mut counter = 1;
+                        while path.exists() {
+                            dir_name = format!("{dir_base}_{counter}");
+                            path = worlds_base_dir.join(&dir_name);
+                            counter += 1;
+                        }
+
                         let generator = Self::GENERATORS[self.generator_index].to_string();
 
                         // Write metadata world.toml

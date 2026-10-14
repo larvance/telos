@@ -2974,6 +2974,12 @@ impl Server {
                                             now,
                                         )
                                     } else {
+                                        self.usercache.bind_override(
+                                            login.username.as_str(),
+                                            uuid,
+                                            None,
+                                            now,
+                                        );
                                         Ok(())
                                     };
 
@@ -3109,6 +3115,12 @@ impl Server {
                                                 now,
                                             )
                                         } else {
+                                            self.usercache.bind_override(
+                                                &username,
+                                                uuid,
+                                                Some(proof.public_key),
+                                                now,
+                                            );
                                             Ok(())
                                         };
 
