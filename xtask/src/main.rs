@@ -93,6 +93,24 @@ enum Commands {
         #[arg(long, default_value = "target/dist")]
         output_dir: String,
     },
+    /// Prune build cache, stale test binaries, and distribution packages to keep target/ small
+    Prune {
+        /// Remove all test and benchmark executables in target/
+        #[arg(long, default_value_t = false)]
+        all_tests: bool,
+
+        /// Remove older superseded builds (keeping only latest binary per target)
+        #[arg(long, default_value_t = true)]
+        stale: bool,
+
+        /// Clean packaging & distribution artifacts (dist, deb, tar-*, doc, tmp)
+        #[arg(long, default_value_t = true)]
+        packages: bool,
+
+        /// Perform dry-run without deleting files
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -129,6 +147,12 @@ fn main() -> Result<()> {
             version,
             output_dir,
         } => run_deb(&version, &output_dir)?,
+        Commands::Prune {
+            all_tests,
+            stale,
+            packages,
+            dry_run,
+        } => run_prune(all_tests, stale, packages, dry_run),
     }
 
     Ok(())
@@ -280,6 +304,22 @@ fn run_doctor() {
             "! Original assets directory NOT found at {}",
             original_assets.display()
         );
+    }
+
+    println!("\n--- Build Cache & Target Directory ---");
+    let target_dir = Path::new("target");
+    if target_dir.exists() {
+        let size = get_dir_size(target_dir);
+        print!("Target cache size: {}", format_bytes(size));
+        if size > 10 * 1024 * 1024 * 1024 {
+            println!(
+                " [WARNING: target directory exceeds 10 GiB. Run 'cargo prune' to clean stale artifacts]"
+            );
+        } else {
+            println!(" (healthy)");
+        }
+    } else {
+        println!("target/ directory is clean (not yet populated)");
     }
 
     println!("============================================================");
@@ -682,7 +722,10 @@ fn run_dist(
 
         let launcher_desktop = root_dir.join("packaging/linux/telos-launcher.desktop");
         if launcher_desktop.exists() {
-            std::fs::copy(&launcher_desktop, launcher_stage.join("telos-launcher.desktop"))?;
+            std::fs::copy(
+                &launcher_desktop,
+                launcher_stage.join("telos-launcher.desktop"),
+            )?;
         }
 
         let launcher_icons = root_dir.join("apps/telos-launcher/icons");
@@ -1001,4 +1044,249 @@ fn format_bytes(bytes: u64) -> String {
     } else {
         format!("{bytes} B")
     }
+}
+
+#[allow(clippy::too_many_lines, clippy::fn_params_excessive_bools)]
+fn run_prune(all_tests: bool, stale: bool, packages: bool, dry_run: bool) {
+    println!("============================================================");
+    println!("             TELOS TARGET CACHE PRUNING UTILITY            ");
+    println!("============================================================");
+    if dry_run {
+        println!("Mode: DRY-RUN (no files will be deleted)\n");
+    }
+
+    let target_dir = Path::new("target");
+    if !target_dir.exists() {
+        println!("target/ directory does not exist. Nothing to prune.");
+        return;
+    }
+
+    let mut removed_count = 0usize;
+    let mut reclaimed_bytes = 0u64;
+
+    // 1. Packaging & temp directories
+    if packages {
+        let pkg_dirs = [
+            "dist",
+            "deb",
+            "tar-client",
+            "tar-server",
+            "tar-launcher",
+            "doc",
+            "tmp",
+            "ios-build",
+        ];
+        for dir_name in pkg_dirs {
+            let dir_path = target_dir.join(dir_name);
+            if dir_path.is_dir() {
+                let size = get_dir_size(&dir_path);
+                let count = count_files(&dir_path);
+                reclaimed_bytes += size;
+                removed_count += count;
+
+                if dry_run {
+                    println!(
+                        "[DRY-RUN] Would remove packaging dir: {} ({}, {} files)",
+                        dir_path.display(),
+                        format_bytes(size),
+                        count
+                    );
+                } else if let Err(e) = std::fs::remove_dir_all(&dir_path) {
+                    eprintln!("Warning: failed to remove {}: {e}", dir_path.display());
+                } else {
+                    println!(
+                        "Removed packaging dir: {} ({}, {} files)",
+                        dir_path.display(),
+                        format_bytes(size),
+                        count
+                    );
+                }
+            }
+        }
+    }
+
+    // 2. Profiles: target/debug/deps, target/release/deps, target/profiling/deps
+    let profiles = ["debug", "release", "profiling"];
+    for profile in profiles {
+        let deps_dir = target_dir.join(profile).join("deps");
+        if !deps_dir.is_dir() {
+            continue;
+        }
+
+        prune_deps_dir(
+            &deps_dir,
+            all_tests,
+            stale,
+            dry_run,
+            &mut removed_count,
+            &mut reclaimed_bytes,
+        );
+    }
+
+    let total_remaining = get_dir_size(target_dir);
+    println!("------------------------------------------------------------");
+    println!(
+        "Summary: {} {} files ({})",
+        if dry_run { "Would remove" } else { "Removed" },
+        removed_count,
+        format_bytes(reclaimed_bytes)
+    );
+    println!("Current target/ size: {}", format_bytes(total_remaining));
+    println!("============================================================");
+}
+
+#[allow(clippy::too_many_lines, clippy::similar_names)]
+fn prune_deps_dir(
+    deps_dir: &Path,
+    all_tests: bool,
+    stale: bool,
+    dry_run: bool,
+    removed_count: &mut usize,
+    reclaimed_bytes: &mut u64,
+) {
+    use std::collections::HashMap;
+
+    struct FileEntry {
+        file_name: String,
+        mtime: std::time::SystemTime,
+        size: u64,
+        is_exec: bool,
+    }
+
+    let mut groups: HashMap<String, Vec<FileEntry>> = HashMap::new();
+
+    let Ok(read_dir) = std::fs::read_dir(deps_dir) else {
+        return;
+    };
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if Path::new(&file_name)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("d"))
+        {
+            continue;
+        }
+
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+
+        let is_exec = {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                metadata.permissions().mode() & 0o111 != 0
+            }
+            #[cfg(not(unix))]
+            {
+                !file_name.contains('.')
+            }
+        };
+
+        let (base_name, _hash) = parse_stem_and_hash(&file_name);
+        let mtime = metadata
+            .modified()
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        let size = metadata.len();
+
+        groups.entry(base_name).or_default().push(FileEntry {
+            file_name,
+            mtime,
+            size,
+            is_exec,
+        });
+    }
+
+    for (base_name, mut entries) in groups {
+        entries.sort_by_key(|a| std::cmp::Reverse(a.mtime));
+
+        let is_main_app = matches!(
+            base_name.as_str(),
+            "telos" | "telos_server" | "telos_launcher" | "xtask"
+        );
+
+        for (idx, entry) in entries.iter().enumerate() {
+            let is_stale = stale && idx > 0;
+            let is_test_to_remove = all_tests && entry.is_exec && !is_main_app;
+
+            if is_stale || is_test_to_remove {
+                let file_path = deps_dir.join(&entry.file_name);
+                let d_file_path = deps_dir.join(format!("{}.d", entry.file_name));
+
+                let mut to_delete = vec![(file_path, entry.size)];
+                if d_file_path.exists() {
+                    let d_size = d_file_path.metadata().map_or(0, |m| m.len());
+                    to_delete.push((d_file_path, d_size));
+                }
+
+                for (p, sz) in to_delete {
+                    *removed_count += 1;
+                    *reclaimed_bytes += sz;
+
+                    if dry_run {
+                        println!(
+                            "[DRY-RUN] Would remove: {} ({})",
+                            p.file_name().unwrap_or_default().to_string_lossy(),
+                            format_bytes(sz)
+                        );
+                    } else if let Err(e) = std::fs::remove_file(&p) {
+                        eprintln!("Warning: failed to remove {}: {e}", p.display());
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn parse_stem_and_hash(filename: &str) -> (String, String) {
+    let (stem, _ext) = if let Some(dot_idx) = filename.rfind('.') {
+        (&filename[..dot_idx], &filename[dot_idx..])
+    } else {
+        (filename, "")
+    };
+
+    if let Some(dash_idx) = stem.rfind('-') {
+        let hash = &stem[dash_idx + 1..];
+        if hash.len() == 16 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            return (stem[..dash_idx].to_string(), hash.to_string());
+        }
+    }
+
+    (filename.to_string(), String::new())
+}
+
+fn get_dir_size(path: &Path) -> u64 {
+    let mut total = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                total += get_dir_size(&p);
+            } else if let Ok(meta) = entry.metadata() {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+fn count_files(path: &Path) -> usize {
+    let mut count = 0;
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                count += count_files(&p);
+            } else {
+                count += 1;
+            }
+        }
+    }
+    count
 }

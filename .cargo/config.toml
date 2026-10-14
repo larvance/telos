@@ -2,3 +2,5 @@
 xtask = "run --package xtask --"
 ci = "run --package xtask -- ci"
 doctor = "run --package xtask -- doctor"
+prune = "run --package xtask -- prune"
+clean-cache = "run --package xtask -- prune"

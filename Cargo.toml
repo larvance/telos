@@ -169,6 +169,15 @@ codegen-units = 1
 panic = "unwind"
 strip = "debuginfo"
 
+[profile.test]
+inherits = "dev"
+debug = "line-tables-only"
+strip = "debuginfo"
+
+[profile.bench]
+inherits = "release"
+strip = "debuginfo"
+
 [profile.profiling]
 inherits = "release"
 debug = "line-tables-only"
