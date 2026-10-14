@@ -667,6 +667,9 @@
     if (img.startsWith('assets/images/')) {
       return img.replace('assets/images/', 'assets/news/');
     }
+    if (!img.startsWith('assets/') && !img.startsWith('/')) {
+      return 'assets/news/' + img;
+    }
     return img;
   }
 

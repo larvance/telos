@@ -1,0 +1,3 @@
+/feed /news.json 301
+/api/news /news.json 301
+/articles / 302

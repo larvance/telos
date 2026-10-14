@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telos — News & Announcements</title>
+  <meta name="description" content="Official development announcements, updates, and releases for Telos Voxel Adventure Engine.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235aa832'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>">
+  <style>
+    :root {
+      --bg-dark: #121212;
+      --bg-card: #1e1e1e;
+      --border-color: #2e2e2e;
+      --accent-gold: #d4a34b;
+      --accent-green: #3d8b22;
+      --accent-green-hover: #48a028;
+      --text-main: #f0f0f0;
+      --text-muted: #888888;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Ubuntu', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: #181818;
+      border-bottom: 1px solid var(--border-color);
+      padding: 20px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .logo-badge {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #3d8b22, #5aa832);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .logo-badge svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: #fff;
+      stroke-width: 2;
+    }
+    .logo-text h1 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .logo-text span {
+      font-size: 11px;
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .header-links {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-json {
+      background: #282828;
+      border: 1px solid var(--border-color);
+      color: #ccc;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: monospace;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-json:hover {
+      background: #333;
+      color: #fff;
+      border-color: var(--accent-gold);
+    }
+    main {
+      flex: 1;
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 40px 24px;
+    }
+    .hero {
+      margin-bottom: 36px;
+      text-align: left;
+    }
+    .hero h2 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .hero p {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .news-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 24px;
+    }
+    .news-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      cursor: pointer;
+    }
+    .news-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--accent-gold);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+    }
+    .card-thumb-wrap {
+      width: 100%;
+      height: 190px;
+      position: relative;
+      background: #151515;
+    }
+    .card-thumb {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .card-badge {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.75);
+      border: 1px solid rgba(212, 163, 75, 0.4);
+      color: var(--accent-gold);
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      backdrop-filter: blur(4px);
+    }
+    .card-body {
+      padding: 18px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .card-date {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1.4;
+      margin-bottom: 10px;
+      color: #fff;
+    }
+    .card-snippet {
+      font-size: 13px;
+      color: #bbb;
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      flex: 1;
+    }
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 24px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      background: #141414;
+    }
+    footer a {
+      color: var(--accent-gold);
+      text-decoration: none;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.8);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+      backdrop-filter: blur(4px);
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal-dialog {
+      background: #222;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      max-width: 640px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      background: #242424;
+      z-index: 10;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 20px;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: #fff;
+    }
+    .modal-body {
+      padding: 24px;
+    }
+    .modal-img {
+      width: 100%;
+      height: 260px;
+      object-fit: cover;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+    }
+    .modal-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .modal-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+    .modal-lead {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #e0e0e0;
+      border-left: 3px solid var(--accent-gold);
+      padding-left: 14px;
+      margin-bottom: 18px;
+    }
+    .modal-text {
+      font-size: 13.5px;
+      line-height: 1.7;
+      color: #cccccc;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="logo-container">
+      <div class="logo-badge">
+        <svg viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+      </div>
+      <div class="logo-text">
+        <h1>TELOS</h1>
+        <span>Live News Feed</span>
+      </div>
+    </a>
+    <div class="header-links">
+      <a href="news.json" class="btn-json" target="_blank">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        news.json (Raw Feed)
+      </a>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h2>Announcements & Release Notes</h2>
+      <p>Official announcements, graphics overhauls, engine architecture, and netcode updates for Telos.</p>
+    </div>
+
+    <div class="news-grid" id="news-grid">
+      <!-- Populated dynamically via news.json -->
+    </div>
+  </main>
+
+  <div class="modal-overlay" id="article-modal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <span id="modal-category" style="font-size: 11px; text-transform: uppercase; color: var(--accent-gold); font-weight: 600;">Update</span>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <img src="" alt="" id="modal-img" class="modal-img">
+        <h3 id="modal-title" class="modal-title"></h3>
+        <div id="modal-meta" class="modal-meta"></div>
+        <p id="modal-lead" class="modal-lead"></p>
+        <div id="modal-text" class="modal-text"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Powered by Telos News Engine &bull; Hosted on Cloudflare Pages (Unlimited Bandwidth & Requests)</p>
+  </footer>
+
+  <script>
+    async function loadNews() {
+      const container = document.getElementById('news-grid');
+      try {
+        const res = await fetch('news.json', { cache: 'no-cache' });
+        if (!res.ok) throw new Error('Failed to load news');
+        const data = await res.json();
+        const articles = data.articles || (Array.isArray(data) ? data : []);
+
+        container.innerHTML = '';
+        articles.forEach(art => {
+          const card = document.createElement('div');
+          card.className = 'news-card';
+          card.innerHTML = `
+            <div class="card-thumb-wrap">
+              <img src="${art.image.replace('assets/images/', '').replace('assets/news/', '')}" alt="${art.title}" class="card-thumb" onerror="this.src='underwater_overhaul.jpg'">
+              <span class="card-badge">${art.category || 'Update'}</span>
+            </div>
+            <div class="card-body">
+              <span class="card-date">${art.date || ''}</span>
+              <h4 class="card-title">${art.title}</h4>
+              <p class="card-snippet">${art.summary || ''}</p>
+            </div>
+          `;
+          card.addEventListener('click', () => openModal(art));
+          container.appendChild(card);
+        });
+      } catch (e) {
+        container.innerHTML = '<p style="color: #888; text-align: center; grid-column: 1/-1;">Could not load news feed.</p>';
+      }
+    }
+
+    const modal = document.getElementById('article-modal');
+    const modalClose = document.getElementById('modal-close');
+    modalClose.addEventListener('click', () => modal.classList.remove('active'));
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.classList.remove('active');
+    });
+
+    function openModal(art) {
+      document.getElementById('modal-category').textContent = art.category || 'Announcement';
+      document.getElementById('modal-title').textContent = art.title;
+      document.getElementById('modal-meta').textContent = `${art.date || ''} • By ${art.author || 'Telos Dev Team'}`;
+      document.getElementById('modal-img').src = art.image.replace('assets/images/', '').replace('assets/news/', '');
+      document.getElementById('modal-lead').textContent = art.summary || '';
+      document.getElementById('modal-text').textContent = art.content || '';
+      modal.classList.add('active');
+    }
+
+    loadNews();
+  </script>
+</body>
+</html>
