@@ -53,24 +53,40 @@ build_with_os_progress() {
         {
             local build_pid
             trap 'kill "$build_pid" 2>/dev/null || true' EXIT INT TERM
+            echo "5"
             echo "# $initial_text"
-            echo "10"
             "$@" > "$build_log" 2>&1 &
             build_pid=$!
-            local pct=15
+            local pct=8
+            local last_crate=""
+            local idle_ticks=0
 
             while kill -0 "$build_pid" 2>/dev/null; do
                 local last_line
                 last_line="$(tail -n 1 "$build_log" 2>/dev/null || true)"
                 if [[ "$last_line" =~ Compiling[[:space:]]+([a-zA-Z0-9_-]+) ]]; then
-                    echo "# Compiling ${BASH_REMATCH[1]}..."
-                    pct=$(( (pct + 4) < 92 ? (pct + 4) : 92 ))
-                    echo "$pct"
+                    local cur_crate="${BASH_REMATCH[1]}"
+                    if [[ "$cur_crate" != "$last_crate" ]]; then
+                        last_crate="$cur_crate"
+                        echo "# Compiling $cur_crate..."
+                        pct=$(( (pct + 7) < 92 ? (pct + 7) : 92 ))
+                        echo "$pct"
+                        idle_ticks=0
+                    fi
                 elif [[ "$last_line" =~ Finished ]]; then
                     echo "# Finalizing binary..."
                     echo "96"
                 fi
-                sleep 0.2
+
+                idle_ticks=$((idle_ticks + 1))
+                if [[ $idle_ticks -ge 5 ]]; then
+                    idle_ticks=0
+                    if [[ $pct -lt 92 ]]; then
+                        pct=$((pct + 1))
+                        echo "$pct"
+                    fi
+                fi
+                sleep 0.15
             done
 
             wait "$build_pid"
@@ -79,14 +95,14 @@ build_with_os_progress() {
             if [[ "$exit_code" -eq 0 ]]; then
                 echo "100"
                 echo "# Launching $title..."
-                sleep 0.25
+                sleep 0.2
             else
                 exit "$exit_code"
             fi
         } | zenity --progress \
             --title="$title" \
             --text="$initial_text" \
-            --pulsate \
+            --percentage=5 \
             --auto-close \
             --auto-kill \
             --width=460 \

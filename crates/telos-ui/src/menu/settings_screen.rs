@@ -1193,19 +1193,30 @@ impl SettingsScreen {
             return;
         }
 
+        let content_top = 48.0;
+
         for btn in &mut self.tab_buttons {
             btn.hovered = btn.contains(mouse_x, mouse_y);
         }
+
+        let in_content_zone = mouse_y >= content_top;
+
         for slider in &mut self.sliders {
-            slider.hovered = slider.contains(mouse_x, mouse_y);
+            let is_visible = slider.y + slider.height > content_top;
+            slider.hovered = in_content_zone && is_visible && slider.contains(mouse_x, mouse_y);
         }
         for btn in &mut self.toggle_buttons {
-            btn.hovered = btn.contains(mouse_x, mouse_y);
+            let is_visible = btn.y + btn.height > content_top;
+            btn.hovered = in_content_zone && is_visible && btn.contains(mouse_x, mouse_y);
         }
         for (_, btn) in &mut self.keybind_buttons {
-            btn.hovered = btn.contains(mouse_x, mouse_y);
+            let is_visible = btn.y + btn.height > content_top;
+            btn.hovered = in_content_zone && is_visible && btn.contains(mouse_x, mouse_y);
         }
-        self.reset_keybinds_button.hovered = self.reset_keybinds_button.contains(mouse_x, mouse_y);
+        let reset_kb_vis = self.reset_keybinds_button.y + self.reset_keybinds_button.height > content_top;
+        self.reset_keybinds_button.hovered =
+            in_content_zone && reset_kb_vis && self.reset_keybinds_button.contains(mouse_x, mouse_y);
+
         self.reset_defaults_button.hovered = self.reset_defaults_button.contains(mouse_x, mouse_y);
         self.back_button.hovered = self.back_button.contains(mouse_x, mouse_y);
         self.done_button.hovered = self.done_button.contains(mouse_x, mouse_y);
@@ -1262,9 +1273,20 @@ impl SettingsScreen {
             }
         }
 
+        let content_top = 48.0;
+
+        // Clicks in top header area do not pass through to rows underneath
+        if mouse_y < content_top {
+            return false;
+        }
+
         // Keybind buttons in Controls tab
         if self.active_tab == SettingsTab::Controls {
             for (action, btn) in &self.keybind_buttons {
+                let is_visible = btn.y + btn.height > content_top;
+                if !is_visible {
+                    continue;
+                }
                 let row_contains = mouse_x >= col_x
                     && mouse_x <= col_x + col_w
                     && mouse_y >= btn.y - 3.0
@@ -1282,7 +1304,8 @@ impl SettingsScreen {
             }
 
             // Reset keybinds button
-            if self.reset_keybinds_button.contains(mouse_x, mouse_y) {
+            let reset_kb_vis = self.reset_keybinds_button.y + self.reset_keybinds_button.height > content_top;
+            if reset_kb_vis && self.reset_keybinds_button.contains(mouse_x, mouse_y) {
                 self.settings.controls.keybinds.reset_defaults();
                 self.listening_action = None;
                 self.update_layout_i18n(width_gui, height_gui, catalog);
@@ -1292,7 +1315,8 @@ impl SettingsScreen {
 
         // Sliders
         for (i, slider) in self.sliders.iter_mut().enumerate() {
-            if slider.contains(mouse_x, mouse_y) {
+            let is_visible = slider.y + slider.height > content_top;
+            if is_visible && slider.contains(mouse_x, mouse_y) {
                 slider.dragging = true;
                 slider.update_from_mouse_x(mouse_x);
                 self.active_drag_slider = Some(i);
@@ -1303,6 +1327,10 @@ impl SettingsScreen {
 
         // Toggles & language selectors
         for btn in &mut self.toggle_buttons {
+            let is_visible = btn.y + btn.height > content_top;
+            if !is_visible {
+                continue;
+            }
             let row_contains = mouse_x >= col_x
                 && mouse_x <= col_x + col_w
                 && mouse_y >= btn.y - 3.0
@@ -1456,78 +1484,11 @@ impl SettingsScreen {
             UiQuad::rgba(10, 13, 20, 248),
         ));
 
-        // Grand centered golden title: "SETTINGS"
-        let title_text = "SETTINGS";
-        let (tw, _) = font.measure_text(title_text);
-        font.layout_text(
-            title_text,
-            (width_gui - tw) * 0.5,
-            12.0,
-            UiQuad::rgba(255, 209, 84, 255),
-            true,
-            scale,
-            out,
-        );
-
-        // Horizontal separator line under tabs
-        let tab_line_y = 48.0;
-        let px_lx = snap_to_physical(col_x, scale);
-        let px_ly = snap_to_physical(tab_line_y, scale);
-        let px_lw = snap_to_physical(col_w, scale) as u16;
-        out.push(UiQuad::solid(
-            [px_lx, px_ly],
-            [px_lw, scale.max(1) as u16],
-            UiQuad::rgba(32, 42, 60, 180),
-        ));
-
-        // Tab buttons with active golden underline
-        for (i, btn) in self.tab_buttons.iter().enumerate() {
-            let is_active = matches!(
-                (i, self.active_tab),
-                (0, SettingsTab::Video)
-                    | (1, SettingsTab::Audio)
-                    | (2, SettingsTab::Controls)
-                    | (3, SettingsTab::Language)
-            );
-
-            let (text_col, text_y_off) = if is_active {
-                // Golden active tab text
-                (UiQuad::rgba(255, 224, 102, 255), 0.0)
-            } else if btn.hovered {
-                (UiQuad::rgba(200, 218, 240, 255), -0.5)
-            } else {
-                (UiQuad::rgba(122, 139, 159, 255), 0.0)
-            };
-
-            let tab_label_upper = btn.label.to_uppercase();
-            let (bw, bh) = font.measure_text(&tab_label_upper);
-            font.layout_text(
-                &tab_label_upper,
-                btn.x + (btn.width - bw) * 0.5,
-                btn.y + (btn.height - bh) * 0.5 + text_y_off,
-                text_col,
-                true,
-                scale,
-                out,
-            );
-
-            if is_active {
-                // Golden underline indicator bar
-                let px_bx = snap_to_physical(btn.x, scale);
-                let px_by = snap_to_physical(tab_line_y - 1.0, scale);
-                let px_bw = snap_to_physical(btn.width, scale) as u16;
-                let px_bh = (scale.max(1) * 2) as u16;
-                out.push(UiQuad::solid(
-                    [px_bx, px_by],
-                    [px_bw, px_bh],
-                    UiQuad::rgba(220, 160, 50, 255),
-                ));
-            }
-        }
-
         // Visible scrolling bounds
-        let content_top = 52.0;
-        let content_bottom = height_gui - 36.0;
+        let tab_line_y = 48.0;
+        let content_top = 48.0;
+        let bar_h = 32.0;
+        let content_bottom = height_gui - bar_h;
 
         let conflicts = if self.active_tab == SettingsTab::Controls {
             self.settings.controls.keybinds.find_conflicts()
@@ -1535,9 +1496,9 @@ impl SettingsScreen {
             Vec::new()
         };
 
-        // Render Hytale capsule rows
+        // Render Hytale capsule rows (Content Layer - drawn underneath sticky bars)
         for row in &self.rows {
-            if row.y + row.height < content_top || row.y + 4.0 > content_bottom {
+            if row.y + row.height <= content_top || row.y >= content_bottom {
                 continue;
             }
 
@@ -1952,6 +1913,82 @@ impl SettingsScreen {
                 [px_tw, px_sh],
                 UiQuad::rgba(220, 160, 50, 240),
             ));
+        }
+
+        // Sticky Top Header (Occlusion Shield + Tabs + Title - Layered ON TOP of content rows)
+        let px_top_h = snap_to_physical(content_top, scale) as u16;
+        out.push(UiQuad::solid(
+            [0, 0],
+            [px_w, px_top_h],
+            UiQuad::rgba(10, 13, 20, 255),
+        ));
+
+        // Grand centered golden title: "SETTINGS"
+        let title_text = "SETTINGS";
+        let (tw, _) = font.measure_text(title_text);
+        font.layout_text(
+            title_text,
+            (width_gui - tw) * 0.5,
+            12.0,
+            UiQuad::rgba(255, 209, 84, 255),
+            true,
+            scale,
+            out,
+        );
+
+        // Horizontal separator line under tabs
+        let px_lx = snap_to_physical(col_x, scale);
+        let px_ly = snap_to_physical(tab_line_y, scale);
+        let px_lw = snap_to_physical(col_w, scale) as u16;
+        out.push(UiQuad::solid(
+            [px_lx, px_ly],
+            [px_lw, scale.max(1) as u16],
+            UiQuad::rgba(32, 42, 60, 220),
+        ));
+
+        // Tab buttons with active golden underline
+        for (i, btn) in self.tab_buttons.iter().enumerate() {
+            let is_active = matches!(
+                (i, self.active_tab),
+                (0, SettingsTab::Video)
+                    | (1, SettingsTab::Audio)
+                    | (2, SettingsTab::Controls)
+                    | (3, SettingsTab::Language)
+            );
+
+            let (text_col, text_y_off) = if is_active {
+                // Golden active tab text
+                (UiQuad::rgba(255, 224, 102, 255), 0.0)
+            } else if btn.hovered {
+                (UiQuad::rgba(200, 218, 240, 255), -0.5)
+            } else {
+                (UiQuad::rgba(122, 139, 159, 255), 0.0)
+            };
+
+            let tab_label_upper = btn.label.to_uppercase();
+            let (bw, bh) = font.measure_text(&tab_label_upper);
+            font.layout_text(
+                &tab_label_upper,
+                btn.x + (btn.width - bw) * 0.5,
+                btn.y + (btn.height - bh) * 0.5 + text_y_off,
+                text_col,
+                true,
+                scale,
+                out,
+            );
+
+            if is_active {
+                // Golden underline indicator bar
+                let px_bx = snap_to_physical(btn.x, scale);
+                let px_by = snap_to_physical(tab_line_y - 1.0, scale);
+                let px_bw = snap_to_physical(btn.width, scale) as u16;
+                let px_bh = (scale.max(1) * 2) as u16;
+                out.push(UiQuad::solid(
+                    [px_bx, px_by],
+                    [px_bw, px_bh],
+                    UiQuad::rgba(220, 160, 50, 255),
+                ));
+            }
         }
 
         // Bottom backdrop bar behind Action buttons
