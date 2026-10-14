@@ -505,23 +505,70 @@ fn sync_desktop_integration(repo_dir: &std::path::Path) {
         let _ = fs::remove_file(&old_telos_desktop);
     }
 
-    // 2. Manage "Telos Dev"
+    // 2. Manage "Telos Launcher" and "Telos Dev" desktop integrations
     let is_dev_setup = repo_dir.join("Cargo.toml").exists();
     let dev_desktop = apps_dir.join("telos-dev.desktop");
+    let launcher_desktop = apps_dir.join("telos-launcher.desktop");
 
-    if is_dev_setup {
-        // Ensure ~/.local/bin/telos-dev symlink or script is present
-        if let Some(home) = dirs::home_dir() {
-            let bin_dir = home.join(".local/bin");
-            let _ = fs::create_dir_all(&bin_dir);
+    if let Some(home) = dirs::home_dir() {
+        let bin_dir = home.join(".local/bin");
+        let _ = fs::create_dir_all(&bin_dir);
+
+        if is_dev_setup {
+            // Launcher auto-build wrapper symlink
+            let launcher_script = repo_dir.join("scripts/telos-launcher.sh");
+            let launcher_symlink = bin_dir.join("telos-launcher");
+            if launcher_script.exists() {
+                if launcher_symlink.is_symlink() || launcher_symlink.exists() {
+                    let _ = fs::remove_file(&launcher_symlink);
+                }
+                #[cfg(unix)]
+                let _ = std::os::unix::fs::symlink(&launcher_script, &launcher_symlink);
+            }
+
+            // Dev direct game wrapper symlink
             let dev_script = repo_dir.join("scripts/telos-dev.sh");
             let dev_symlink = bin_dir.join("telos-dev");
-            if dev_script.exists() && !dev_symlink.exists() {
+            if dev_script.exists() {
+                if dev_symlink.is_symlink() || dev_symlink.exists() {
+                    let _ = fs::remove_file(&dev_symlink);
+                }
                 #[cfg(unix)]
                 let _ = std::os::unix::fs::symlink(&dev_script, &dev_symlink);
             }
         }
+    }
 
+    // Configure Telos Launcher desktop entry (points to dev auto-building wrapper if in dev repo)
+    let launcher_exec = if is_dev_setup {
+        dirs::home_dir()
+            .map(|h| h.join(".local/bin/telos-launcher").to_string_lossy().to_string())
+            .unwrap_or_else(|| "telos-launcher".into())
+    } else {
+        "telos-launcher".to_string()
+    };
+
+    let launcher_desktop_content = format!(
+        "[Desktop Entry]\n\
+        Name=Telos Launcher\n\
+        GenericName=Game Launcher\n\
+        Comment=Launcher, version manager, and profile manager for Telos Voxel Engine\n\
+        Exec={} %U\n\
+        Icon=telos-launcher\n\
+        Path={}\n\
+        Terminal=false\n\
+        Type=Application\n\
+        Categories=Game;Simulation;\n\
+        Keywords=telos;voxel;launcher;game;manager;\n\
+        StartupNotify=true\n\
+        StartupWMClass=telos-launcher\n",
+        launcher_exec,
+        repo_dir.to_string_lossy()
+    );
+    let _ = fs::write(&launcher_desktop, launcher_desktop_content);
+
+    // 3. Manage "Telos Dev"
+    if is_dev_setup {
         let dev_exec = dirs::home_dir()
             .map(|h| h.join(".local/bin/telos-dev").to_string_lossy().to_string())
             .unwrap_or_else(|| "telos-dev".into());

@@ -39,6 +39,9 @@ elif [[ -n "$(find "$REPO_DIR/apps/telos-launcher/src" "$REPO_DIR/apps/telos-lau
 fi
 
 if [[ "$NEED_LAUNCHER_BUILD" == "1" && -z "${TELOS_NO_DEV:-}" && -z "${TELOS_NO_BUILD:-}" ]] && command -v cargo >/dev/null 2>&1; then
+    if ! [ -t 1 ] && command -v notify-send >/dev/null 2>&1; then
+        notify-send -i telos-launcher "Telos Launcher" "Building latest launcher updates..." -t 4000 2>/dev/null || true
+    fi
     if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
         cargo build -p telos-launcher --bin telos-launcher --quiet || true
     else

@@ -2,7 +2,7 @@
 Name=Telos Launcher
 GenericName=Game Launcher
 Comment=Launcher, version manager, and profile manager for Telos Voxel Engine
-Exec=/home/usr/Projects/larvance/telos/target/release/telos-launcher
+Exec=telos-launcher %U
 Icon=telos-launcher
 Path=/home/usr/Projects/larvance/telos
 Terminal=false
