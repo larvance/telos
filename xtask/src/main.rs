@@ -537,15 +537,17 @@ fn run_dist(
     println!("------------------------------------------------------------");
 
     // 1. Build release binaries
-    println!("\n>> 1. Building release binaries (telos, telos-server)...");
+    println!("\n>> 1. Building release binaries (telos, telos-server, telos-launcher)...");
     let status = Command::new("cargo")
         .args([
             "build",
             "--release",
-            "--bin",
+            "-p",
             "telos",
-            "--bin",
+            "-p",
             "telos-server",
+            "-p",
+            "telos-launcher",
         ])
         .status()
         .context("Failed to execute cargo build --release")?;
@@ -559,9 +561,10 @@ fn run_dist(
 
     let client_bin = root_dir.join("target/release/telos");
     let server_bin = root_dir.join("target/release/telos-server");
+    let launcher_bin = root_dir.join("target/release/telos-launcher");
 
-    // 2. Build portable tarballs
-    println!("\n>> 2. Assembling portable tarballs (.tar.gz)...");
+    // 2. Build portable archives (.tar.zst and .tar.gz)
+    println!("\n>> 2. Assembling portable archives (zstd .tar.zst & gzip .tar.gz)...");
 
     // Stage client
     let client_stage_dir = root_dir.join("target/tar-client");
@@ -591,9 +594,25 @@ fn run_dist(
     std::fs::write(client_stage.join("run.sh"), client_run_script)?;
     set_executable_perms(&client_stage.join("run.sh"))?;
 
+    // Client zstd (.tar.zst)
+    let client_zst_name = format!("telos-{ver}-linux-x86_64.tar.zst");
+    let client_zst_path = dist_dir.join(&client_zst_name);
+    let _ = Command::new("tar")
+        .args([
+            "--zstd",
+            "-cf",
+            client_zst_path.to_str().unwrap(),
+            "-C",
+            client_stage_dir.to_str().unwrap(),
+            &format!("telos-{ver}"),
+        ])
+        .status();
+    println!("   ✓ Created client zstd archive: {client_zst_name}");
+
+    // Client gzip (.tar.gz)
     let client_tar_name = format!("telos-{ver}-linux-x86_64.tar.gz");
     let client_tar_path = dist_dir.join(&client_tar_name);
-    let tar_client_status = Command::new("tar")
+    let _ = Command::new("tar")
         .args([
             "-czf",
             client_tar_path.to_str().unwrap(),
@@ -601,12 +620,8 @@ fn run_dist(
             client_stage_dir.to_str().unwrap(),
             &format!("telos-{ver}"),
         ])
-        .status()
-        .context("Failed to run tar for client archive")?;
-    if !tar_client_status.success() {
-        bail!("Failed to create client tarball");
-    }
-    println!("   ✓ Created client tarball: {client_tar_name}");
+        .status();
+    println!("   ✓ Created client gzip archive: {client_tar_name}");
 
     // Stage server
     let server_stage_dir = root_dir.join("target/tar-server");
@@ -626,9 +641,25 @@ fn run_dist(
     std::fs::write(server_stage.join("run.sh"), server_run_script)?;
     set_executable_perms(&server_stage.join("run.sh"))?;
 
+    // Server zstd (.tar.zst)
+    let server_zst_name = format!("telos-server-{ver}-linux-x86_64.tar.zst");
+    let server_zst_path = dist_dir.join(&server_zst_name);
+    let _ = Command::new("tar")
+        .args([
+            "--zstd",
+            "-cf",
+            server_zst_path.to_str().unwrap(),
+            "-C",
+            server_stage_dir.to_str().unwrap(),
+            &format!("telos-server-{ver}"),
+        ])
+        .status();
+    println!("   ✓ Created server zstd archive: {server_zst_name}");
+
+    // Server gzip (.tar.gz)
     let server_tar_name = format!("telos-server-{ver}-linux-x86_64.tar.gz");
     let server_tar_path = dist_dir.join(&server_tar_name);
-    let tar_server_status = Command::new("tar")
+    let _ = Command::new("tar")
         .args([
             "-czf",
             server_tar_path.to_str().unwrap(),
@@ -636,12 +667,63 @@ fn run_dist(
             server_stage_dir.to_str().unwrap(),
             &format!("telos-server-{ver}"),
         ])
-        .status()
-        .context("Failed to run tar for server archive")?;
-    if !tar_server_status.success() {
-        bail!("Failed to create server tarball");
+        .status();
+    println!("   ✓ Created server gzip archive: {server_tar_name}");
+
+    // Stage launcher (if built)
+    if launcher_bin.exists() {
+        let launcher_stage_dir = root_dir.join("target/tar-launcher");
+        let launcher_stage = launcher_stage_dir.join(format!("telos-launcher-{ver}"));
+        let _ = std::fs::remove_dir_all(&launcher_stage);
+        std::fs::create_dir_all(&launcher_stage)?;
+
+        std::fs::copy(&launcher_bin, launcher_stage.join("telos-launcher"))?;
+        set_executable_perms(&launcher_stage.join("telos-launcher"))?;
+
+        let launcher_desktop = root_dir.join("packaging/linux/telos-launcher.desktop");
+        if launcher_desktop.exists() {
+            std::fs::copy(&launcher_desktop, launcher_stage.join("telos-launcher.desktop"))?;
+        }
+
+        let launcher_icons = root_dir.join("apps/telos-launcher/icons");
+        if launcher_icons.exists() {
+            let dest_icons = launcher_stage.join("icons");
+            copy_dir_all(&launcher_icons, &dest_icons)?;
+        }
+
+        let launcher_run_script = "#!/bin/sh\nDIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nexec \"$DIR/telos-launcher\" \"$@\"\n";
+        std::fs::write(launcher_stage.join("run.sh"), launcher_run_script)?;
+        set_executable_perms(&launcher_stage.join("run.sh"))?;
+
+        // Launcher zstd (.tar.zst)
+        let launcher_zst_name = format!("telos-launcher-{ver}-linux-x86_64.tar.zst");
+        let launcher_zst_path = dist_dir.join(&launcher_zst_name);
+        let _ = Command::new("tar")
+            .args([
+                "--zstd",
+                "-cf",
+                launcher_zst_path.to_str().unwrap(),
+                "-C",
+                launcher_stage_dir.to_str().unwrap(),
+                &format!("telos-launcher-{ver}"),
+            ])
+            .status();
+        println!("   ✓ Created launcher zstd archive: {launcher_zst_name}");
+
+        // Launcher gzip (.tar.gz)
+        let launcher_tar_name = format!("telos-launcher-{ver}-linux-x86_64.tar.gz");
+        let launcher_tar_path = dist_dir.join(&launcher_tar_name);
+        let _ = Command::new("tar")
+            .args([
+                "-czf",
+                launcher_tar_path.to_str().unwrap(),
+                "-C",
+                launcher_stage_dir.to_str().unwrap(),
+                &format!("telos-launcher-{ver}"),
+            ])
+            .status();
+        println!("   ✓ Created launcher gzip archive: {launcher_tar_name}");
     }
-    println!("   ✓ Created server tarball: {server_tar_name}");
 
     // 3. Debian packages
     if !portable_only && !no_deb {
