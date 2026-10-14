@@ -43,6 +43,8 @@
   stroke-linejoin: round;
   display: inline-block;
   vertical-align: middle;
+  overflow: visible;
+  flex-shrink: 0;
 }
 
 .icon-sm {
@@ -95,6 +97,7 @@ html, body {
   padding: 0 12px;
   z-index: 1000;
   position: relative;
+  cursor: default;
 }
 
 .titlebar-drag {
@@ -102,7 +105,7 @@ html, body {
   height: 100%;
   display: flex;
   align-items: center;
-  cursor: grab;
+  cursor: default;
 }
 
 .titlebar-brand {
@@ -113,6 +116,7 @@ html, body {
   font-size: 13px;
   color: #d0d0d0;
   letter-spacing: 0.3px;
+  cursor: default;
 }
 
 .titlebar-brand img {
@@ -148,6 +152,7 @@ html, body {
   width: 10px;
   height: 10px;
   stroke: currentColor;
+  stroke-width: 2.2;
 }
 
 .window-btn:hover {

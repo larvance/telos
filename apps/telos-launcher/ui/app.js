@@ -141,9 +141,13 @@
           is_building: args.installation_id === 'local-dev' || args.installation_id === 'dev-local',
         };
       case 'window_minimize':
-      case 'window_toggle_maximize':
       case 'window_close':
+      case 'window_drag_start':
         return;
+      case 'is_window_maximized':
+        return false;
+      case 'window_toggle_maximize':
+        return false;
       default:
         return null;
     }
@@ -201,10 +205,89 @@
   const elUserAvatar = document.getElementById('user-avatar');
   const elUserTag = document.getElementById('user-account-tag');
 
-  // Titlebar controls
-  document.getElementById('btn-minimize').addEventListener('click', () => invoke('window_minimize'));
-  document.getElementById('btn-maximize').addEventListener('click', () => invoke('window_toggle_maximize'));
-  document.getElementById('btn-close').addEventListener('click', () => invoke('window_close'));
+  // Titlebar controls & window dragging
+  const elTitlebar = document.getElementById('titlebar');
+  const elBtnMinimize = document.getElementById('btn-minimize');
+  const elBtnMaximize = document.getElementById('btn-maximize');
+  const elBtnClose = document.getElementById('btn-close');
+
+  async function updateMaximizeState() {
+    try {
+      const isMax = await invoke('is_window_maximized');
+      if (elBtnMaximize) {
+        if (isMax) {
+          elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-restore"></use></svg>';
+          elBtnMaximize.title = 'Restore';
+        } else {
+          elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-maximize"></use></svg>';
+          elBtnMaximize.title = 'Maximize';
+        }
+      }
+    } catch (e) {
+      console.debug('Failed to query window maximized state:', e);
+    }
+  }
+
+  if (elBtnMinimize) {
+    elBtnMinimize.addEventListener('click', () => invoke('window_minimize'));
+  }
+  if (elBtnMaximize) {
+    elBtnMaximize.addEventListener('click', async () => {
+      try {
+        const isMax = await invoke('window_toggle_maximize');
+        if (elBtnMaximize) {
+          if (isMax) {
+            elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-restore"></use></svg>';
+            elBtnMaximize.title = 'Restore';
+          } else {
+            elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-maximize"></use></svg>';
+            elBtnMaximize.title = 'Maximize';
+          }
+        }
+      } catch (err) {
+        console.error('Toggle maximize error:', err);
+      }
+    });
+  }
+  if (elBtnClose) {
+    elBtnClose.addEventListener('click', () => invoke('window_close'));
+  }
+
+  if (elTitlebar) {
+    // Unmaximize on the spot and initiate dragging when grabbed
+    elTitlebar.addEventListener('mousedown', async (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('button, a, input, select, textarea, .window-btn')) return;
+      try {
+        await invoke('window_drag_start');
+        updateMaximizeState();
+      } catch (err) {
+        console.error('Drag start error:', err);
+      }
+    });
+
+    // Double click titlebar to toggle maximize/restore
+    elTitlebar.addEventListener('dblclick', async (e) => {
+      if (e.target.closest('button, a, input, select, textarea, .window-btn')) return;
+      try {
+        const isMax = await invoke('window_toggle_maximize');
+        if (elBtnMaximize) {
+          if (isMax) {
+            elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-restore"></use></svg>';
+            elBtnMaximize.title = 'Restore';
+          } else {
+            elBtnMaximize.innerHTML = '<svg class="icon icon-sm"><use href="#icon-maximize"></use></svg>';
+            elBtnMaximize.title = 'Maximize';
+          }
+        }
+      } catch (err) {
+        console.error('Toggle maximize error:', err);
+      }
+    });
+  }
+
+  window.addEventListener('resize', updateMaximizeState);
+  updateMaximizeState();
 
   // Navigation tabs
   const navTabs = document.querySelectorAll('.nav-tab');

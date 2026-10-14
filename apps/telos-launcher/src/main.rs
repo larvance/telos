@@ -422,12 +422,36 @@ fn window_minimize(window: Window) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn window_toggle_maximize(window: Window) -> Result<(), String> {
+fn window_toggle_maximize(window: Window) -> Result<bool, String> {
     if window.is_maximized().map_err(|e| e.to_string())? {
-        window.unmaximize().map_err(|e| e.to_string())
+        window.unmaximize().map_err(|e| e.to_string())?;
+        Ok(false)
     } else {
-        window.maximize().map_err(|e| e.to_string())
+        window.maximize().map_err(|e| e.to_string())?;
+        Ok(true)
     }
+}
+
+#[tauri::command]
+fn window_drag_start(window: Window) -> Result<(), String> {
+    if window.is_maximized().map_err(|e| e.to_string())? {
+        let cursor = window.cursor_position().ok();
+        window.unmaximize().map_err(|e| e.to_string())?;
+        if let (Some(cursor), Ok(size)) = (cursor, window.outer_size()) {
+            let target_x = (cursor.x as i32) - (size.width as i32 / 2);
+            let target_y = (cursor.y as i32) - 18;
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(
+                target_x.max(0),
+                target_y.max(0),
+            )));
+        }
+    }
+    window.start_dragging().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn is_window_maximized(window: Window) -> Result<bool, String> {
+    window.is_maximized().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -473,6 +497,8 @@ fn main() {
             trigger_launch,
             window_minimize,
             window_toggle_maximize,
+            window_drag_start,
+            is_window_maximized,
             window_close,
             get_cli_args,
         ])
