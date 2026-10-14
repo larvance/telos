@@ -481,6 +481,13 @@ fn main() {
     };
 
     tauri::Builder::default()
+        .setup(|app| {
+            if let Some(win) = app.get_webview_window("main") {
+                let icon = tauri::include_image!("icons/128x128@2x.png");
+                let _ = win.set_icon(icon);
+            }
+            Ok(())
+        })
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             get_profile,

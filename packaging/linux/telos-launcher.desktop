@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Telos Launcher
+GenericName=Game Launcher
+Comment=Launcher, version manager, and profile manager for Telos Voxel Engine
+Exec=/home/usr/Projects/larvance/telos/target/release/telos-launcher
+Icon=telos-launcher
+Path=/home/usr/Projects/larvance/telos
+Terminal=false
+Type=Application
+Categories=Game;Simulation;
+Keywords=telos;voxel;launcher;game;manager;
+StartupNotify=true
+StartupWMClass=telos-launcher
