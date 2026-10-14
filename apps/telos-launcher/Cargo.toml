@@ -36,6 +36,13 @@ tauri-build = { version = "2", features = [] }
 [dev-dependencies]
 tempfile = { workspace = true }
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+pedantic = { level = "allow", priority = -1 }
+collapsible_if = "allow"
+unnecessary_map_or = "allow"
+trim_split_whitespace = "allow"
+
 

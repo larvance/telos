@@ -394,10 +394,10 @@
       const opt = document.createElement('div');
       opt.className = 'install-option' + (inst.id === selectedInstallId ? ' selected' : '');
       opt.innerHTML = `
-        <span style="font-size: 16px; display: flex; align-items: center;">${getInstIcon(inst)}</span>
-        <div style="display: flex; flex-direction: column;">
-          <span style="font-size: 13px; font-weight: 600; color: #fff;">${inst.name}</span>
-          <span style="font-size: 11px; color: #aaa;">${getInstVersion(inst)}</span>
+        <span class="text-base flex items-center shrink-0">${getInstIcon(inst)}</span>
+        <div class="flex flex-col">
+          <span class="text-[13px] font-semibold text-white">${inst.name}</span>
+          <span class="text-[11px] text-neutral-400">${getInstVersion(inst)}</span>
         </div>
       `;
       opt.addEventListener('click', async () => {
@@ -900,15 +900,15 @@
           <svg class="icon icon-sm inst-drag-handle" title="Drag to reorder"><use href="#icon-drag"></use></svg>
           <div class="inst-icon">${getInstIcon(inst)}</div>
           <div class="inst-texts">
-            <div style="display: flex; align-items: center;">
+            <div class="flex items-center">
               <span class="inst-title">${inst.name}</span>
               ${badgeHtml}
             </div>
             <span class="inst-tag">Version: ${getInstVersion(inst)} • RAM: ${getInstRam(inst)} • ${inst.resolution || 'Auto'}</span>
-            <span class="inst-dir">${getInstDir(inst)}</span>
+            <span class="inst-dir font-mono text-[11px] text-neutral-500">${getInstDir(inst)}</span>
           </div>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
+        <div class="flex gap-2 items-center">
           <button class="btn-icon folder-inst-btn" title="Open Game Directory">
             <svg class="icon icon-sm"><use href="#icon-folder"></use></svg>
           </button>
@@ -926,7 +926,7 @@
                  </button>`
               : ''
           }
-          <button class="btn-green-3d" style="padding: 7px 18px; font-size: 13px;" data-play-id="${inst.id}">
+          <button class="btn-green-3d !py-1.5 !px-4.5 !text-[13px]" data-play-id="${inst.id}">
             PLAY
           </button>
         </div>
@@ -1091,7 +1091,7 @@
         card.setAttribute('data-id', srv.id);
 
         card.innerHTML = `
-          <div style="display: flex; align-items: center; gap: 12px;">
+          <div class="flex items-center gap-3">
             <svg class="icon icon-sm server-drag-handle" title="Drag to reorder"><use href="#icon-drag"></use></svg>
             <div class="server-icon"><svg class="icon"><use href="#icon-globe"></use></svg></div>
             <div class="server-meta">
@@ -1099,12 +1099,12 @@
               <span class="server-address">${srv.address}</span>
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 16px;">
+          <div class="flex items-center gap-4">
             <div class="server-ping-badge">
               <span class="status-dot"></span>
               <span>${srv.ping_ms ? srv.ping_ms + 'ms' : 'Online'}</span>
             </div>
-            <div class="server-actions">
+            <div class="server-actions flex gap-1.5">
               <button class="btn-icon edit-btn" title="Edit Server"><svg class="icon icon-sm"><use href="#icon-edit"></use></svg></button>
               <button class="btn-icon delete-btn" title="Delete Server"><svg class="icon icon-sm"><use href="#icon-trash"></use></svg></button>
             </div>

@@ -3,6 +3,14 @@
 //! A rich desktop launcher providing authentication, repository release/snapshot fetching,
 //! local development build coordination, installations management, and multiplayer server lists.
 
+#![allow(
+    clippy::needless_pass_by_value,
+    clippy::unnecessary_wraps,
+    clippy::collapsible_if,
+    clippy::implicit_clone,
+    clippy::cast_possible_wrap
+)]
+
 mod build_coordinator;
 mod profile;
 mod version_manager;
