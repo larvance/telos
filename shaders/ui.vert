@@ -58,6 +58,22 @@ void main() {
     vec2 local_pos = corner * quad_size;
     vec2 physical_pos = vec2(quad.pos) + local_pos;
 
+    // Apply 2D rotation around pivot if specified (param1 = angle in mrad, param0 = pivot)
+    uint kind = quad.kind_flags & 0xFFFFu;
+    int angle_mrad = int(quad.param1);
+    if (kind != 3u && angle_mrad != 0) {
+        float rad = float(angle_mrad) * 0.001;
+        float c = cos(rad);
+        float s = sin(rad);
+        uint low16 = quad.param0 & 0xFFFFu;
+        uint high16 = (quad.param0 >> 16u) & 0xFFFFu;
+        float px = float(low16 >= 0x8000u ? int(low16) - 65536 : int(low16));
+        float py = float(high16 >= 0x8000u ? int(high16) - 65536 : int(high16));
+        vec2 pivot = vec2(px, py);
+        vec2 d = physical_pos - pivot;
+        physical_pos = vec2(d.x * c - d.y * s, d.x * s + d.y * c) + pivot;
+    }
+
     // Convert physical pixels [0..W, 0..H] to Vulkan NDC [-1..1, -1..1]
     vec2 ndc = (physical_pos / pc.viewport_size) * 2.0 - 1.0;
     gl_Position = vec4(ndc, 0.0, 1.0);

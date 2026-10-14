@@ -116,7 +116,12 @@ impl MenuButton {
         };
 
         let pulse = if self.hovered && tick > 0 {
-            ((tick as f32 * 0.15).sin() * 12.0).round() as i32
+            let t = if tick > 1000 {
+                (tick as f32) * 0.001
+            } else {
+                (tick as f32) / 20.0
+            };
+            ((t * std::f32::consts::PI * 2.0).sin() * 12.0).round() as i32
         } else {
             0
         };

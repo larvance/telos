@@ -278,6 +278,125 @@ impl BitmapFont {
         self.layout_text_pass(text, start_x, start_y, default_color, false, gui_scale, out);
     }
 
+    /// Lays out `text` into `out` quad buffer with optional drop shadows and color codes,
+    /// rotated by `angle_rad` around the pivot point `[pivot_x, pivot_y]` in GUI units,
+    /// with an optional scale multiplier `scale_mult`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn layout_text_rotated(
+        &self,
+        text: &str,
+        start_x: f32,
+        start_y: f32,
+        pivot_x: f32,
+        pivot_y: f32,
+        angle_rad: f32,
+        scale_mult: f32,
+        default_color: u32,
+        shadow: bool,
+        gui_scale: u32,
+        out: &mut Vec<UiQuad>,
+    ) {
+        let angle_mrad = (angle_rad * 1000.0).round() as i32;
+        let phys_px = snap_to_physical(pivot_x, gui_scale);
+        let phys_py = snap_to_physical(pivot_y, gui_scale);
+        let param0 = (phys_px as u16 as u32) | ((phys_py as u16 as u32) << 16);
+        let param1 = angle_mrad as u32;
+
+        if shadow {
+            let shadow_color = Self::darken_color(default_color);
+            self.layout_text_pass_rotated(
+                text,
+                start_x + 1.0,
+                start_y + 1.0,
+                scale_mult,
+                shadow_color,
+                true,
+                param0,
+                param1,
+                gui_scale,
+                out,
+            );
+        }
+
+        self.layout_text_pass_rotated(
+            text,
+            start_x,
+            start_y,
+            scale_mult,
+            default_color,
+            false,
+            param0,
+            param1,
+            gui_scale,
+            out,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn layout_text_pass_rotated(
+        &self,
+        text: &str,
+        start_x: f32,
+        start_y: f32,
+        scale_mult: f32,
+        initial_color: u32,
+        is_shadow: bool,
+        param0: u32,
+        param1: u32,
+        gui_scale: u32,
+        out: &mut Vec<UiQuad>,
+    ) {
+        let mut cur_x = start_x;
+        let mut cur_y = start_y;
+        let mut cur_color = initial_color;
+
+        let mut chars = text.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '§' {
+                if let Some(code) = chars.next() {
+                    let parsed_color = Self::parse_color_code(code, initial_color);
+                    cur_color = if is_shadow {
+                        Self::darken_color(parsed_color)
+                    } else {
+                        parsed_color
+                    };
+                }
+                continue;
+            }
+
+            if ch == '\n' {
+                cur_x = start_x;
+                cur_y += 9.0 * scale_mult;
+                continue;
+            }
+
+            let cp = unicode_to_cp437(ch);
+            let idx = cp as usize;
+            let glyph = &self.glyphs[idx];
+
+            if ch != ' ' && cp != 32 {
+                let px_x = snap_to_physical(cur_x, gui_scale);
+                let px_y = snap_to_physical(cur_y, gui_scale);
+                let glyph_w = (8.0 * scale_mult * gui_scale as f32).round() as u16;
+                let glyph_h = (8.0 * scale_mult * gui_scale as f32).round() as u16;
+
+                let mut quad = UiQuad::glyph(
+                    [px_x, px_y],
+                    [glyph_w, glyph_h],
+                    [glyph.uv[0], glyph.uv[1]],
+                    [glyph.uv[2], glyph.uv[3]],
+                    self.texture_layer,
+                    cur_color,
+                );
+                quad.param0 = param0;
+                quad.param1 = param1;
+                out.push(quad);
+            }
+
+            cur_x += glyph.advance * scale_mult;
+        }
+    }
+
     fn layout_text_pass(
         &self,
         text: &str,

@@ -1262,29 +1262,54 @@ pub fn ui_quads_to_gl_vertices(quads: &[telos_ui::UiQuad], out: &mut Vec<GlUiVer
 
         let mode = if kind == 0 { 0.0 } else { 1.0 }; // 0: solid, 1: texture/font
 
+        let mut tl = [x0, y0];
+        let mut tr = [x0 + w, y0];
+        let mut br = [x0 + w, y0 + h];
+        let mut bl = [x0, y0 + h];
+
+        let angle_mrad = q.param1 as i32;
+        if q.kind() != telos_ui::QuadKind::NineSlice && angle_mrad != 0 {
+            let rad = angle_mrad as f32 * 0.001;
+            let c = rad.cos();
+            let s = rad.sin();
+            let low16 = (q.param0 & 0xFFFF) as u16;
+            let high16 = ((q.param0 >> 16) & 0xFFFF) as u16;
+            let px = (low16 as i16) as f32;
+            let py = (high16 as i16) as f32;
+            let rotate = |p: [f32; 2]| -> [f32; 2] {
+                let dx = p[0] - px;
+                let dy = p[1] - py;
+                [dx * c - dy * s + px, dx * s + dy * c + py]
+            };
+            tl = rotate(tl);
+            tr = rotate(tr);
+            br = rotate(br);
+            bl = rotate(bl);
+        }
+
         let v_tl = GlUiVertex {
-            position: [x0, y0],
+            position: tl,
             uv: [u0, v0],
             color,
             mode,
             layer,
         };
         let v_tr = GlUiVertex {
-            position: [x0 + w, y0],
+            position: tr,
             uv: [u1, v0],
             color,
             mode,
             layer,
         };
         let v_br = GlUiVertex {
-            position: [x0 + w, y0 + h],
+            position: br,
             uv: [u1, v1],
             color,
             mode,
             layer,
         };
         let v_bl = GlUiVertex {
-            position: [x0, y0 + h],
+            position: bl,
             uv: [u0, v1],
             color,
             mode,

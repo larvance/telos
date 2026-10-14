@@ -7084,7 +7084,7 @@ impl App {
                             width_gui,
                             height_gui,
                             gui_scale,
-                            u64::from(self.frame_counter),
+                            self.start_time.elapsed().as_millis() as u64,
                             &mut ui_quads,
                         );
                     }
@@ -7689,7 +7689,7 @@ impl App {
                     width_gui,
                     height_gui,
                     gui_scale,
-                    u64::from(self.frame_counter),
+                    self.start_time.elapsed().as_millis() as u64,
                     &mut ui_quads,
                 );
             }

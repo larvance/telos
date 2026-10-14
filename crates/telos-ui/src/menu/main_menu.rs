@@ -66,7 +66,8 @@ impl MainMenuScreen {
         let btn_w = 200.0;
         let btn_h = 24.0;
         let btn_x = center_x - btn_w * 0.5;
-        let start_y = height_gui * 0.42;
+        let logo_h = 260.0f32.min(width_gui - 32.0) * (64.0 / 256.0);
+        let start_y = (height_gui * 0.44).max(12.0 + logo_h + 30.0);
 
         self.buttons = vec![
             MenuButton::new(
@@ -176,11 +177,11 @@ impl MainMenuScreen {
             UiQuad::rgba(0, 0, 0, 75),
         ));
 
-        // Long stylized logo banner "TELOS"
+        // Long stylized logo banner "TELOS" positioned at the very top
         let logo_w = 260.0f32.min(width_gui - 32.0);
         let logo_h = logo_w * (64.0 / 256.0);
         let logo_x = (width_gui - logo_w) * 0.5;
-        let logo_y = height_gui * 0.14;
+        let logo_y = 12.0f32.min(height_gui * 0.05);
 
         let phys_lx = snap_to_physical(logo_x, scale);
         let phys_ly = snap_to_physical(logo_y, scale);
@@ -196,28 +197,46 @@ impl MainMenuScreen {
             UiQuad::rgba(255, 255, 255, 255),
         ));
 
-        // Subtitle
+        // Subtitle centered neatly below the logo
         let subtitle = "§7Rust & Vulkan 1.3 Voxel Engine";
         let (sw, _) = font.measure_text(subtitle);
         font.layout_text(
             subtitle,
             (width_gui - sw) * 0.5,
-            logo_y + logo_h + 4.0,
-            UiQuad::rgba(180, 180, 190, 255),
+            logo_y + logo_h + 3.0,
+            UiQuad::rgba(160, 160, 170, 255),
             true,
             scale,
             out,
         );
 
-        // Animated pulsing splash text
-        let pulse = ((tick as f32 * 0.1).sin() * 2.0).round();
-        let splash = format!("§e* {} *", self.splash_text);
-        font.layout_text(
-            &splash,
-            logo_x + logo_w - 32.0,
-            logo_y + logo_h - 4.0 + pulse,
-            UiQuad::rgba(255, 255, 80, 255),
-            true,
+        // Animated pulsing splash text tilted at -20 degrees at bottom right of title banner
+        // Gentle 1.0 second per pulse heartbeat timing (independent of framerate)
+        let time_sec = if tick > 1000 {
+            (tick as f32) * 0.001
+        } else {
+            (tick as f32) / 20.0
+        };
+        let pulse = 1.0 + ((time_sec * std::f32::consts::PI).sin().abs() * 0.08);
+        let splash = self.splash_text.as_str();
+        let (splash_w, splash_h) = font.measure_text(splash);
+        let pivot_x = logo_x + logo_w - 8.0;
+        let pivot_y = logo_y + logo_h - 2.0;
+        let angle_rad = -20.0f32.to_radians();
+
+        let start_x = pivot_x - (splash_w * pulse) * 0.5;
+        let start_y = pivot_y - (splash_h * pulse) * 0.5;
+
+        font.layout_text_rotated(
+            splash,
+            start_x,
+            start_y,
+            pivot_x,
+            pivot_y,
+            angle_rad,
+            pulse,
+            UiQuad::rgba(255, 255, 0, 255), // Pure bright yellow
+            true,                            // with drop shadow
             scale,
             out,
         );
