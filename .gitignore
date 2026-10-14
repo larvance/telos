@@ -41,3 +41,5 @@ Thumbs.db
 GEMINI.md
 todo.md
 apps/telos-launcher/gen/
+node_modules/
+package-lock.json

@@ -1,0 +1,15 @@
+  "name": "telos-launcher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telos Voxel Game Launcher & Version Manager UI",
+  "scripts": {
+    "build": "tailwindcss -i src/input.css -o ui/styles.css --minify",
+    "build:css": "tailwindcss -i src/input.css -o ui/styles.css --minify",
+    "watch": "tailwindcss -i src/input.css -o ui/styles.css --watch",
+    "watch:css": "tailwindcss -i src/input.css -o ui/styles.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "tailwindcss": "^4.3.3"
+  }
+}
