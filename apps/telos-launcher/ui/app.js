@@ -70,37 +70,34 @@
     servers: [
       {
         id: 'srv-1',
-        name: 'Official Telos Alpha Server',
+        name: 'Telos Official Survival',
         address: 'play.telos.voxel:25565',
-        group: 'Featured & Official',
+        is_group: false,
+        group_id: null,
+        group: '',
         order: 0,
         ping_ms: 18,
         online: true,
       },
       {
         id: 'srv-2',
-        name: 'Survival & Builders Haven',
-        address: 'survival.telos.voxel:25565',
-        group: 'Featured & Official',
-        order: 1,
-        ping_ms: 24,
-        online: true,
-      },
-      {
-        id: 'srv-3',
-        name: 'Larvance Local Dev Server',
+        name: 'Local Dev Test Server',
         address: '127.0.0.1:25565',
-        group: 'Local LAN & Dev',
-        order: 0,
+        is_group: false,
+        group_id: null,
+        group: '',
+        order: 1,
         ping_ms: 1,
         online: true,
       },
       {
-        id: 'srv-4',
-        name: 'Community Anarchy Sandbox',
-        address: 'anarchy.telos.voxel:25565',
-        group: 'Community Servers',
-        order: 0,
+        id: 'srv-3',
+        name: 'Larvance Creative Sandbox',
+        address: 'creative.larvance.net:25565',
+        is_group: false,
+        group_id: null,
+        group: '',
+        order: 2,
         ping_ms: 45,
         online: true,
       },
@@ -345,9 +342,13 @@
     }
   }
 
+  let resizeDebounceTimer = null;
   window.addEventListener('resize', () => {
-    updateMaximizeState();
-    updateLaunchBarLayout();
+    requestAnimationFrame(updateLaunchBarLayout);
+    if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+    resizeDebounceTimer = setTimeout(() => {
+      updateMaximizeState();
+    }, 150);
   });
   updateMaximizeState();
   updateLaunchBarLayout();
@@ -597,6 +598,25 @@
   const elReaderContent = document.getElementById('reader-content');
   const elReaderWebLink = document.getElementById('reader-web-link');
 
+  function parseAndValidateNewsJson(json) {
+    if (!json) throw new Error('Empty news response');
+    // Standard format with fixed header
+    if (json.header && typeof json.header === 'object') {
+      if (json.header.format && json.header.format !== 'telos-news-feed') {
+        throw new Error(`Unrecognized news feed format: "${json.header.format}". Expected "telos-news-feed".`);
+      }
+      if (Array.isArray(json.articles)) {
+        return json.articles;
+      }
+      throw new Error('News feed contains header but "articles" list is missing.');
+    }
+    // Backward compatibility for raw array format
+    if (Array.isArray(json)) {
+      return json;
+    }
+    throw new Error('Invalid news JSON structure: missing fixed header and articles.');
+  }
+
   async function fetchAndRenderNews() {
     elNewsGrid.innerHTML = `
       <div style="grid-column: 1 / -1; padding: 20px; text-align: center; color: #888;">
@@ -610,17 +630,18 @@
     // 1. Attempt live remote fetch with timeout
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(endpoint, {
         signal: controller.signal,
         cache: 'no-cache',
       });
       clearTimeout(timeoutId);
       if (res.ok) {
-        articles = await res.json();
+        const json = await res.json();
+        articles = parseAndValidateNewsJson(json);
       }
     } catch (e) {
-      // Fallback silently if offline or domain not pointed yet
+      // Remote fetch failed, fall through to bundled cache
     }
 
     // 2. Fallback to bundled offline news cache
@@ -628,18 +649,15 @@
       try {
         const localRes = await fetch('assets/news/news.json');
         if (localRes.ok) {
-          articles = await localRes.json();
+          const json = await localRes.json();
+          articles = parseAndValidateNewsJson(json);
         }
       } catch (err) {
         console.error('Failed to load local news:', err);
       }
     }
 
-    if (!articles || !Array.isArray(articles)) {
-      articles = [];
-    }
-
-    appNews = articles;
+    appNews = Array.isArray(articles) ? articles : [];
     renderNewsGrid(appNews);
   }
 
@@ -887,46 +905,167 @@
     });
   }
 
+  /**
+   * Universal pointer-based sortable list engine.
+   * Visually removes the old element, holds a floating clone under cursor,
+   * and renders a low-opacity ghost landing indicator showing where it lands.
+   */
+  function setupPointerSortable({
+    container,
+    itemSelector,
+    handleSelector,
+    onReorder,
+  }) {
+    if (!container) return;
+
+    let activeDrag = null;
+
+    container.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('button, a, input, select, textarea, .btn-icon, .btn-green-3d')) {
+        return;
+      }
+
+      const item = e.target.closest(itemSelector);
+      if (!item || !container.contains(item)) return;
+
+      if (handleSelector && !e.target.closest(handleSelector)) {
+        if (e.target.closest('.inst-texts, .server-meta, .inst-title, .server-name, .server-address')) {
+          return;
+        }
+      }
+
+      const rect = item.getBoundingClientRect();
+      activeDrag = {
+        item,
+        startX: e.clientX,
+        startY: e.clientY,
+        offsetX: e.clientX - rect.left,
+        offsetY: e.clientY - rect.top,
+        rect,
+        isStarted: false,
+        pointerId: e.pointerId,
+        floatingClone: null,
+        placeholder: null,
+      };
+
+      const onPointerMove = (moveEvent) => {
+        if (!activeDrag) return;
+
+        if (!activeDrag.isStarted) {
+          const dist = Math.hypot(moveEvent.clientX - activeDrag.startX, moveEvent.clientY - activeDrag.startY);
+          if (dist < 5) return;
+
+          activeDrag.isStarted = true;
+          try {
+            item.setPointerCapture(activeDrag.pointerId);
+          } catch (_) {}
+
+          // 1. Create floating clone attached under cursor
+          const clone = item.cloneNode(true);
+          clone.classList.add('drag-floating-clone');
+          clone.style.width = `${activeDrag.rect.width}px`;
+          clone.style.height = `${activeDrag.rect.height}px`;
+          clone.style.left = `${moveEvent.clientX - activeDrag.offsetX}px`;
+          clone.style.top = `${moveEvent.clientY - activeDrag.offsetY}px`;
+          document.body.appendChild(clone);
+          activeDrag.floatingClone = clone;
+
+          // 2. Create landing placeholder copy with low opacity
+          const placeholder = item.cloneNode(true);
+          placeholder.classList.add('drag-landing-placeholder');
+          placeholder.style.height = `${activeDrag.rect.height}px`;
+          placeholder.style.pointerEvents = 'none';
+          item.parentNode.insertBefore(placeholder, item);
+          activeDrag.placeholder = placeholder;
+
+          // 3. Visually remove old element from slot
+          item.style.display = 'none';
+        }
+
+        if (activeDrag.isStarted && activeDrag.floatingClone) {
+          activeDrag.floatingClone.style.left = `${moveEvent.clientX - activeDrag.offsetX}px`;
+          activeDrag.floatingClone.style.top = `${moveEvent.clientY - activeDrag.offsetY}px`;
+
+          const currentPlaceholder = activeDrag.placeholder;
+          if (!currentPlaceholder) return;
+
+          const candidateItems = Array.from(container.querySelectorAll(itemSelector)).filter(
+            (el) => el !== activeDrag.item && el !== currentPlaceholder && el.style.display !== 'none'
+          );
+
+          let targetSibling = null;
+          for (const cand of candidateItems) {
+            const candRect = cand.getBoundingClientRect();
+            const candMidY = candRect.top + candRect.height / 2;
+            if (moveEvent.clientY < candMidY) {
+              targetSibling = cand;
+              break;
+            }
+          }
+
+          if (targetSibling) {
+            if (currentPlaceholder.nextSibling !== targetSibling) {
+              targetSibling.parentNode.insertBefore(currentPlaceholder, targetSibling);
+            }
+          } else {
+            if (candidateItems.length > 0) {
+              const lastCand = candidateItems[candidateItems.length - 1];
+              if (lastCand.nextSibling !== currentPlaceholder) {
+                lastCand.parentNode.appendChild(currentPlaceholder);
+              }
+            } else {
+              container.appendChild(currentPlaceholder);
+            }
+          }
+        }
+      };
+
+      const onPointerUp = (upEvent) => {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerUp);
+
+        if (!activeDrag) return;
+
+        if (activeDrag.isStarted) {
+          try {
+            activeDrag.item.releasePointerCapture(activeDrag.pointerId);
+          } catch (_) {}
+
+          if (activeDrag.floatingClone) {
+            activeDrag.floatingClone.remove();
+          }
+
+          if (activeDrag.placeholder) {
+            activeDrag.placeholder.parentNode.insertBefore(activeDrag.item, activeDrag.placeholder);
+            activeDrag.placeholder.remove();
+          }
+
+          activeDrag.item.style.display = '';
+
+          if (typeof onReorder === 'function') {
+            onReorder(activeDrag.item);
+          }
+        }
+
+        activeDrag = null;
+      };
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+    });
+  }
+
   function renderInstallationsTab() {
     const container = document.getElementById('installations-container');
     if (!container) return;
     container.innerHTML = '';
 
-    // Drag-over and drop event handlers on the installations container for reordering
-    container.ondragover = (e) => {
-      e.preventDefault();
-      const afterElement = getDragAfterElement(container, e.clientY, '.installation-card:not(.dragging)');
-      const dragging = document.querySelector('.installation-card.dragging');
-      if (dragging) {
-        if (afterElement == null) {
-          container.appendChild(dragging);
-        } else {
-          container.insertBefore(dragging, afterElement);
-        }
-      }
-    };
-
-    container.ondrop = async (e) => {
-      e.preventDefault();
-      const cardEls = container.querySelectorAll('.installation-card');
-      const newOrderIds = [...cardEls].map((el) => el.getAttribute('data-id'));
-      const reordered = [];
-      newOrderIds.forEach((id) => {
-        const item = appInstallations.find((x) => x.id === id);
-        if (item) reordered.push(item);
-      });
-      appInstallations.forEach((x) => {
-        if (!reordered.find((r) => r.id === x.id)) reordered.push(x);
-      });
-      appInstallations = reordered;
-      await invoke('save_installations', { installations: appInstallations });
-      renderInstallationSelector();
-    };
-
     appInstallations.forEach((inst) => {
       const card = document.createElement('div');
       card.className = 'installation-card';
-      card.draggable = true;
       card.setAttribute('data-id', inst.id);
 
       const isDev = inst.is_dev || inst.id === 'local-dev' || inst.id === 'dev-local';
@@ -981,9 +1120,6 @@
         </div>
       `;
 
-      card.addEventListener('dragstart', () => card.classList.add('dragging'));
-      card.addEventListener('dragend', () => card.classList.remove('dragging'));
-
       card.querySelector('[data-play-id]').addEventListener('click', () => {
         selectedInstallId = inst.id;
         renderInstallationSelector();
@@ -1023,9 +1159,35 @@
     });
   }
 
-  // --- Multiplayer Servers Tab (Collapsible & Draggable) ---
+  // Setup installations dragging
+  const elInstallationsContainer = document.getElementById('installations-container');
+  if (elInstallationsContainer) {
+    setupPointerSortable({
+      container: elInstallationsContainer,
+      itemSelector: '.installation-card',
+      handleSelector: '.inst-drag-handle',
+      onReorder: async () => {
+        const cardEls = elInstallationsContainer.querySelectorAll('.installation-card');
+        const newOrderIds = [...cardEls].map((el) => el.getAttribute('data-id'));
+        const reordered = [];
+        newOrderIds.forEach((id) => {
+          const item = appInstallations.find((x) => x.id === id);
+          if (item) reordered.push(item);
+        });
+        appInstallations.forEach((x) => {
+          if (!reordered.find((r) => r.id === x.id)) reordered.push(x);
+        });
+        appInstallations = reordered;
+        await invoke('save_installations', { installations: appInstallations });
+        renderInstallationSelector();
+      },
+    });
+  }
+
+  // --- Multiplayer Servers Tab (Normal Flat List + Draggable Custom Groups) ---
   const elServerGroupsContainer = document.getElementById('server-groups-container');
   const elBtnAddServer = document.getElementById('btn-add-server');
+  const elBtnAddServerGroup = document.getElementById('btn-add-server-group');
   const elServerModal = document.getElementById('server-modal');
   const elCloseServerModal = document.getElementById('btn-close-server-modal');
   const elCancelServer = document.getElementById('btn-cancel-server');
@@ -1035,196 +1197,327 @@
   const elServerGroupInput = document.getElementById('server-group-input');
   const elServerModalTitle = document.getElementById('server-modal-title');
 
-  elBtnAddServer.addEventListener('click', () => {
-    editingServerId = null;
-    elServerModalTitle.textContent = 'Add Multiplayer Server';
-    elServerNameInput.value = '';
-    elServerAddressInput.value = '';
-    elServerGroupInput.value = 'Community Servers';
-    elServerModal.classList.add('active');
-  });
+  // Server Group Modal elements
+  const elServerGroupModal = document.getElementById('server-group-modal');
+  const elCloseServerGroupModal = document.getElementById('btn-close-server-group-modal');
+  const elCancelServerGroup = document.getElementById('btn-cancel-server-group');
+  const elSaveServerGroup = document.getElementById('btn-save-server-group');
+  const elInpServerGroupName = document.getElementById('inp-server-group-name');
 
-  const closeServerModal = () => elServerModal.classList.remove('active');
-  elCloseServerModal.addEventListener('click', closeServerModal);
-  elCancelServer.addEventListener('click', closeServerModal);
-
-  elSaveServer.addEventListener('click', async () => {
-    const name = elServerNameInput.value.trim() || 'New Telos Server';
-    const address = elServerAddressInput.value.trim() || 'play.telos.voxel:25565';
-    const group = elServerGroupInput.value.trim() || 'Community Servers';
-
-    if (editingServerId) {
-      const s = appServers.find((x) => x.id === editingServerId);
-      if (s) {
-        s.name = name;
-        s.address = address;
-        s.group = group;
+  function normalizeServers() {
+    if (!Array.isArray(appServers)) {
+      appServers = [];
+      return;
+    }
+    const legacyGroups = [
+      'Featured & Official',
+      'Official Servers',
+      'Local LAN & Dev',
+      'LAN / Development',
+      'Community Servers',
+      'Favorites',
+      'Custom Servers',
+    ];
+    appServers.forEach((s, idx) => {
+      if (s.order === undefined) s.order = idx;
+      if (legacyGroups.includes(s.group)) {
+        s.group = '';
       }
-    } else {
-      const newServer = {
-        id: 'srv-' + Date.now(),
-        name,
-        address,
-        group,
-        order: appServers.filter((s) => s.group === group).length,
-        ping_ms: Math.floor(Math.random() * 30 + 10),
+      if (!s.is_group && !s.group_id) {
+        s.group_id = null;
+      }
+    });
+  }
+
+  function updateServerGroupSelectOptions(selectedGroupId = '') {
+    if (!elServerGroupInput) return;
+    elServerGroupInput.innerHTML = '<option value="">None (Top-Level Server)</option>';
+    const groups = appServers.filter((s) => s.is_group);
+    groups.forEach((g) => {
+      const opt = document.createElement('option');
+      opt.value = g.id;
+      opt.textContent = `Group: ${g.name}`;
+      if (g.id === selectedGroupId) {
+        opt.selected = true;
+      }
+      elServerGroupInput.appendChild(opt);
+    });
+  }
+
+  if (elBtnAddServer) {
+    elBtnAddServer.addEventListener('click', () => {
+      editingServerId = null;
+      elServerModalTitle.textContent = 'Add Multiplayer Server';
+      elServerNameInput.value = '';
+      elServerAddressInput.value = '';
+      updateServerGroupSelectOptions('');
+      elServerModal.classList.add('active');
+    });
+  }
+
+  if (elBtnAddServerGroup) {
+    elBtnAddServerGroup.addEventListener('click', () => {
+      if (elInpServerGroupName) elInpServerGroupName.value = '';
+      if (elServerGroupModal) elServerGroupModal.classList.add('active');
+    });
+  }
+
+  const closeServerGroupModal = () => {
+    if (elServerGroupModal) elServerGroupModal.classList.remove('active');
+  };
+  if (elCloseServerGroupModal) elCloseServerGroupModal.addEventListener('click', closeServerGroupModal);
+  if (elCancelServerGroup) elCancelServerGroup.addEventListener('click', closeServerGroupModal);
+
+  if (elSaveServerGroup) {
+    elSaveServerGroup.addEventListener('click', async () => {
+      const groupName = (elInpServerGroupName?.value || '').trim();
+      if (!groupName) return;
+
+      const newGroup = {
+        id: 'grp-' + Date.now(),
+        name: groupName,
+        address: '',
+        is_group: true,
+        group_id: null,
+        group: '',
+        collapsed: false,
+        order: appServers.length,
+        ping_ms: null,
         online: true,
       };
-      appServers.push(newServer);
-    }
 
-    closeServerModal();
-    await invoke('save_servers', { servers: appServers });
-    renderServersTab();
-  });
+      appServers.push(newGroup);
+      closeServerGroupModal();
+      await invoke('save_servers', { servers: appServers });
+      renderServersTab();
+    });
+  }
 
-  let draggedServerId = null;
+  const closeServerModal = () => elServerModal.classList.remove('active');
+  if (elCloseServerModal) elCloseServerModal.addEventListener('click', closeServerModal);
+  if (elCancelServer) elCancelServer.addEventListener('click', closeServerModal);
+
+  if (elSaveServer) {
+    elSaveServer.addEventListener('click', async () => {
+      const name = elServerNameInput.value.trim() || 'New Telos Server';
+      const address = elServerAddressInput.value.trim() || 'play.telos.voxel:25565';
+      const selectedGroupId = elServerGroupInput.value || null;
+
+      if (editingServerId) {
+        const s = appServers.find((x) => x.id === editingServerId);
+        if (s) {
+          s.name = name;
+          s.address = address;
+          s.group_id = selectedGroupId;
+          s.group = selectedGroupId ? (appServers.find((g) => g.id === selectedGroupId)?.name || '') : '';
+        }
+      } else {
+        const newServer = {
+          id: 'srv-' + Date.now(),
+          name,
+          address,
+          is_group: false,
+          group_id: selectedGroupId,
+          group: selectedGroupId ? (appServers.find((g) => g.id === selectedGroupId)?.name || '') : '',
+          order: appServers.length,
+          ping_ms: Math.floor(Math.random() * 30 + 10),
+          online: true,
+        };
+        appServers.push(newServer);
+      }
+
+      closeServerModal();
+      await invoke('save_servers', { servers: appServers });
+      renderServersTab();
+    });
+  }
+
+  function createServerCardElement(srv) {
+    const card = document.createElement('div');
+    card.className = 'server-card';
+    card.setAttribute('data-id', srv.id);
+
+    card.innerHTML = `
+      <div class="flex items-center gap-3">
+        <svg class="icon icon-sm server-drag-handle" title="Drag to reorder"><use href="#icon-drag"></use></svg>
+        <div class="server-icon"><svg class="icon"><use href="#icon-globe"></use></svg></div>
+        <div class="server-meta">
+          <span class="server-name">${srv.name}</span>
+          <span class="server-address font-mono">${srv.address}</span>
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <div class="server-ping-badge">
+          <span class="status-dot"></span>
+          <span>${srv.ping_ms ? srv.ping_ms + 'ms' : 'Online'}</span>
+        </div>
+        <div class="server-actions flex gap-1.5">
+          <button class="btn-icon edit-btn" title="Edit Server"><svg class="icon icon-sm"><use href="#icon-edit"></use></svg></button>
+          <button class="btn-icon delete-btn" title="Delete Server"><svg class="icon icon-sm"><use href="#icon-trash"></use></svg></button>
+        </div>
+      </div>
+    `;
+
+    card.querySelector('.edit-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      editingServerId = srv.id;
+      elServerModalTitle.textContent = 'Edit Multiplayer Server';
+      elServerNameInput.value = srv.name;
+      elServerAddressInput.value = srv.address;
+      updateServerGroupSelectOptions(srv.group_id || '');
+      elServerModal.classList.add('active');
+    });
+
+    card.querySelector('.delete-btn').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      appServers = appServers.filter((x) => x.id !== srv.id);
+      await invoke('save_servers', { servers: appServers });
+      renderServersTab();
+    });
+
+    return card;
+  }
 
   function renderServersTab() {
+    if (!elServerGroupsContainer) return;
+    normalizeServers();
     elServerGroupsContainer.innerHTML = '';
 
-    const groups = {};
-    appServers.forEach((srv) => {
-      const g = srv.group || 'Community Servers';
-      if (!groups[g]) groups[g] = [];
-      groups[g].push(srv);
-    });
+    const topLevelItems = appServers
+      .filter((s) => s.is_group || (!s.group_id && (!s.group || s.group === '')))
+      .sort((a, b) => a.order - b.order);
 
-    Object.keys(groups).forEach((g) => {
-      groups[g].sort((a, b) => a.order - b.order);
-    });
-
-    Object.entries(groups).forEach(([groupName, servers]) => {
-      const groupEl = document.createElement('div');
-      groupEl.className = 'server-group';
-
-      const headerEl = document.createElement('div');
-      headerEl.className = 'server-group-header';
-      headerEl.innerHTML = `
-        <span class="server-group-title">
-          <svg class="icon icon-sm chevron"><use href="#icon-chevron-down"></use></svg>
-          <span>${groupName} (${servers.length})</span>
-        </span>
+    if (topLevelItems.length === 0) {
+      elServerGroupsContainer.innerHTML = `
+        <div class="p-6 text-center text-neutral-400 text-sm">
+          No multiplayer servers configured. Click "+ Add Server" or "+ Add Group" above.
+        </div>
       `;
-      headerEl.addEventListener('click', () => {
-        groupEl.classList.toggle('collapsed');
-      });
+      return;
+    }
 
-      const listEl = document.createElement('div');
-      listEl.className = 'server-list';
-      listEl.setAttribute('data-group', groupName);
+    topLevelItems.forEach((item) => {
+      if (item.is_group) {
+        // Render Custom Group Card
+        const groupCard = document.createElement('div');
+        groupCard.className = 'server-group-card';
+        groupCard.setAttribute('data-id', item.id);
+        groupCard.setAttribute('data-is-group', 'true');
 
-      listEl.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        const afterElement = getDragAfterElement(listEl, e.clientY);
-        const dragging = document.querySelector('.server-card.dragging');
-        if (dragging) {
-          if (afterElement == null) {
-            listEl.appendChild(dragging);
-          } else {
-            listEl.insertBefore(dragging, afterElement);
-          }
-        }
-      });
+        const children = appServers
+          .filter((s) => !s.is_group && s.group_id === item.id)
+          .sort((a, b) => a.order - b.order);
 
-      listEl.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        updateServerOrdersFromDOM();
-        await invoke('save_servers', { servers: appServers });
-      });
-
-      servers.forEach((srv) => {
-        const card = document.createElement('div');
-        card.className = 'server-card';
-        card.draggable = true;
-        card.setAttribute('data-id', srv.id);
-
-        card.innerHTML = `
-          <div class="flex items-center gap-3">
-            <svg class="icon icon-sm server-drag-handle" title="Drag to reorder"><use href="#icon-drag"></use></svg>
-            <div class="server-icon"><svg class="icon"><use href="#icon-globe"></use></svg></div>
-            <div class="server-meta">
-              <span class="server-name">${srv.name}</span>
-              <span class="server-address">${srv.address}</span>
+        groupCard.innerHTML = `
+          <div class="server-group-header">
+            <div class="flex items-center gap-2.5">
+              <svg class="icon icon-sm server-drag-handle" title="Drag group"><use href="#icon-drag"></use></svg>
+              <svg class="icon icon-sm chevron ${item.collapsed ? '-rotate-90' : ''}"><use href="#icon-chevron-down"></use></svg>
+              <svg class="icon icon-sm text-telos-gold"><use href="#icon-folder"></use></svg>
+              <span class="text-sm font-semibold text-white">${item.name}</span>
+              <span class="text-xs text-neutral-400 font-mono">(${children.length})</span>
+            </div>
+            <div class="flex items-center gap-1.5" onclick="event.stopPropagation()">
+              <button class="btn-icon add-to-group-btn" title="Add Server to this Group">
+                <svg class="icon icon-sm"><use href="#icon-plus"></use></svg>
+              </button>
+              <button class="btn-icon delete-group-btn" title="Delete Group">
+                <svg class="icon icon-sm"><use href="#icon-trash"></use></svg>
+              </button>
             </div>
           </div>
-          <div class="flex items-center gap-4">
-            <div class="server-ping-badge">
-              <span class="status-dot"></span>
-              <span>${srv.ping_ms ? srv.ping_ms + 'ms' : 'Online'}</span>
-            </div>
-            <div class="server-actions flex gap-1.5">
-              <button class="btn-icon edit-btn" title="Edit Server"><svg class="icon icon-sm"><use href="#icon-edit"></use></svg></button>
-              <button class="btn-icon delete-btn" title="Delete Server"><svg class="icon icon-sm"><use href="#icon-trash"></use></svg></button>
-            </div>
+          <div class="server-group-children ${item.collapsed ? 'collapsed' : ''}" data-group-id="${item.id}">
           </div>
         `;
 
-        card.addEventListener('dragstart', () => {
-          draggedServerId = srv.id;
-          card.classList.add('dragging');
+        const headerEl = groupCard.querySelector('.server-group-header');
+        const childrenContainer = groupCard.querySelector('.server-group-children');
+
+        headerEl.addEventListener('click', async (e) => {
+          if (e.target.closest('button, .btn-icon, .server-drag-handle')) return;
+          item.collapsed = !item.collapsed;
+          childrenContainer.classList.toggle('collapsed', item.collapsed);
+          const chevron = headerEl.querySelector('.chevron');
+          if (chevron) chevron.classList.toggle('-rotate-90', item.collapsed);
+          await invoke('save_servers', { servers: appServers });
         });
 
-        card.addEventListener('dragend', () => {
-          draggedServerId = null;
-          card.classList.remove('dragging');
-        });
-
-        card.querySelector('.edit-btn').addEventListener('click', (e) => {
+        groupCard.querySelector('.add-to-group-btn').addEventListener('click', (e) => {
           e.stopPropagation();
-          editingServerId = srv.id;
-          elServerModalTitle.textContent = 'Edit Multiplayer Server';
-          elServerNameInput.value = srv.name;
-          elServerAddressInput.value = srv.address;
-          elServerGroupInput.value = srv.group;
+          editingServerId = null;
+          elServerModalTitle.textContent = `Add Server to "${item.name}"`;
+          elServerNameInput.value = '';
+          elServerAddressInput.value = '';
+          updateServerGroupSelectOptions(item.id);
           elServerModal.classList.add('active');
         });
 
-        card.querySelector('.delete-btn').addEventListener('click', async (e) => {
+        groupCard.querySelector('.delete-group-btn').addEventListener('click', async (e) => {
           e.stopPropagation();
-          appServers = appServers.filter((x) => x.id !== srv.id);
-          await invoke('save_servers', { servers: appServers });
-          renderServersTab();
+          if (confirm(`Delete group "${item.name}"? Contained servers will become top-level servers.`)) {
+            children.forEach((c) => {
+              c.group_id = null;
+              c.group = '';
+            });
+            appServers = appServers.filter((s) => s.id !== item.id);
+            await invoke('save_servers', { servers: appServers });
+            renderServersTab();
+          }
         });
 
-        listEl.appendChild(card);
-      });
+        if (children.length === 0) {
+          childrenContainer.innerHTML = `
+            <div class="text-xs text-neutral-500 italic p-2 text-center select-none">
+              Empty group. Click + above or select this group when editing a server.
+            </div>
+          `;
+        } else {
+          children.forEach((childSrv) => {
+            childrenContainer.appendChild(createServerCardElement(childSrv));
+          });
+        }
 
-      groupEl.appendChild(headerEl);
-      groupEl.appendChild(listEl);
-      elServerGroupsContainer.appendChild(groupEl);
+        // Setup sortable inside this group
+        setupPointerSortable({
+          container: childrenContainer,
+          itemSelector: '.server-card',
+          handleSelector: '.server-drag-handle',
+          onReorder: async () => {
+            const childCards = childrenContainer.querySelectorAll('.server-card');
+            childCards.forEach((c, idx) => {
+              const id = c.getAttribute('data-id');
+              const s = appServers.find((x) => x.id === id);
+              if (s) s.order = idx;
+            });
+            await invoke('save_servers', { servers: appServers });
+          },
+        });
+
+        elServerGroupsContainer.appendChild(groupCard);
+      } else {
+        // Render Top-Level Server Card
+        elServerGroupsContainer.appendChild(createServerCardElement(item));
+      }
     });
   }
 
-  function getDragAfterElement(container, y, selector = '.server-card:not(.dragging)') {
-    const draggableElements = [...container.querySelectorAll(selector)];
-    return draggableElements.reduce(
-      (closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
-        if (offset < 0 && offset > closest.offset) {
-          return { offset: offset, element: child };
-        } else {
-          return closest;
-        }
+  // Setup top-level dragging for #server-groups-container (drag servers and groups alike!)
+  if (elServerGroupsContainer) {
+    setupPointerSortable({
+      container: elServerGroupsContainer,
+      itemSelector: '.server-card, .server-group-card',
+      handleSelector: '.server-drag-handle',
+      onReorder: async () => {
+        const topEls = elServerGroupsContainer.children;
+        Array.from(topEls).forEach((el, idx) => {
+          const id = el.getAttribute('data-id');
+          const s = appServers.find((x) => x.id === id);
+          if (s) {
+            s.order = idx;
+          }
+        });
+        await invoke('save_servers', { servers: appServers });
       },
-      { offset: Number.NEGATIVE_INFINITY }
-    ).element;
-  }
-
-  function updateServerOrdersFromDOM() {
-    const allGroups = elServerGroupsContainer.querySelectorAll('.server-list');
-    allGroups.forEach((groupEl) => {
-      const gName = groupEl.getAttribute('data-group');
-      const cards = groupEl.querySelectorAll('.server-card');
-      cards.forEach((card, index) => {
-        const id = card.getAttribute('data-id');
-        const s = appServers.find((x) => x.id === id);
-        if (s) {
-          s.group = gName;
-          s.order = index;
-        }
-      });
     });
   }
 
@@ -1361,19 +1654,210 @@
     }
   });
 
-  elBtnSyncNews.addEventListener('click', async () => {
-    newsEndpoint = elSettingNewsUrl.value.trim() || RAW_NEWS_URL;
-    if (appProfile) {
-      appProfile.news_url = newsEndpoint;
-      await invoke('save_profile', { profile: appProfile });
+  // --- Live News Feed Autocomplete Dropdown & Endpoint Sync ---
+  const elSettingNewsDropdown = document.getElementById('setting-news-dropdown');
+
+  function getNewsUrlHistory() {
+    const defaultUrls = [
+      RAW_NEWS_URL,
+      'https://news.telos.larvance.com/news.json',
+    ];
+    const seen = new Set(defaultUrls);
+    const result = [...defaultUrls];
+
+    if (appProfile && Array.isArray(appProfile.successful_news_urls)) {
+      appProfile.successful_news_urls.forEach((u) => {
+        if (u && typeof u === 'string' && !seen.has(u)) {
+          seen.add(u);
+          result.push(u);
+        }
+      });
     }
-    elBtnSyncNews.textContent = 'Syncing...';
-    await fetchAndRenderNews();
-    elBtnSyncNews.textContent = 'Synced!';
-    setTimeout(() => {
+    return result;
+  }
+
+  let dropdownActiveIndex = -1;
+
+  function renderNewsDropdown(filterQuery = '') {
+    if (!elSettingNewsDropdown) return;
+    const history = getNewsUrlHistory();
+    const query = (filterQuery || '').trim().toLowerCase();
+
+    const matches = query === ''
+      ? history
+      : history.filter((url) => url.toLowerCase().includes(query));
+
+    if (matches.length === 0) {
+      elSettingNewsDropdown.innerHTML = '';
+      elSettingNewsDropdown.classList.add('hidden');
+      dropdownActiveIndex = -1;
+      return;
+    }
+
+    elSettingNewsDropdown.innerHTML = '';
+    dropdownActiveIndex = -1;
+
+    matches.forEach((url, idx) => {
+      const item = document.createElement('div');
+      item.className = 'autocomplete-item';
+      item.setAttribute('data-index', idx);
+      item.setAttribute('data-value', url);
+
+      const isDefault = url === RAW_NEWS_URL || url === 'https://news.telos.larvance.com/news.json';
+      const badgeText = isDefault ? 'Default' : 'Verified';
+
+      item.innerHTML = `
+        <span class="truncate" title="${url}">${url}</span>
+        <span class="badge shrink-0">${badgeText}</span>
+      `;
+
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        elSettingNewsUrl.value = url;
+        elSettingNewsDropdown.classList.add('hidden');
+        resetSyncButton();
+      });
+
+      elSettingNewsDropdown.appendChild(item);
+    });
+
+    elSettingNewsDropdown.classList.remove('hidden');
+  }
+
+  function resetSyncButton() {
+    if (elBtnSyncNews) {
       elBtnSyncNews.textContent = 'Sync Feed';
-    }, 2000);
-  });
+      elBtnSyncNews.disabled = false;
+    }
+  }
+
+  function updateActiveDropdownItem(items) {
+    items.forEach((item, idx) => {
+      if (idx === dropdownActiveIndex) {
+        item.classList.add('active');
+        item.scrollIntoView({ block: 'nearest' });
+      } else {
+        item.classList.remove('active');
+      }
+    });
+  }
+
+  if (elSettingNewsUrl) {
+    elSettingNewsUrl.addEventListener('focus', () => {
+      renderNewsDropdown(elSettingNewsUrl.value);
+    });
+
+    elSettingNewsUrl.addEventListener('click', () => {
+      renderNewsDropdown(elSettingNewsUrl.value);
+    });
+
+    elSettingNewsUrl.addEventListener('input', () => {
+      resetSyncButton();
+      renderNewsDropdown(elSettingNewsUrl.value);
+    });
+
+    elSettingNewsUrl.addEventListener('keydown', (e) => {
+      if (!elSettingNewsDropdown || elSettingNewsDropdown.classList.contains('hidden')) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          renderNewsDropdown(elSettingNewsUrl.value);
+          e.preventDefault();
+        }
+        return;
+      }
+
+      const items = elSettingNewsDropdown.querySelectorAll('.autocomplete-item');
+      if (items.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        dropdownActiveIndex = (dropdownActiveIndex + 1) % items.length;
+        updateActiveDropdownItem(items);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        dropdownActiveIndex = (dropdownActiveIndex - 1 + items.length) % items.length;
+        updateActiveDropdownItem(items);
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (dropdownActiveIndex >= 0 && items[dropdownActiveIndex]) {
+          e.preventDefault();
+          const selectedVal = items[dropdownActiveIndex].getAttribute('data-value');
+          elSettingNewsUrl.value = selectedVal;
+          elSettingNewsDropdown.classList.add('hidden');
+          resetSyncButton();
+        } else if (e.key === 'Enter') {
+          elSettingNewsDropdown.classList.add('hidden');
+        }
+      } else if (e.key === 'Escape') {
+        elSettingNewsDropdown.classList.add('hidden');
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.autocomplete-wrapper')) {
+        if (elSettingNewsDropdown) elSettingNewsDropdown.classList.add('hidden');
+      }
+    });
+  }
+
+  async function syncAndValidateEndpoint(url) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(url, {
+        signal: controller.signal,
+        cache: 'no-cache',
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      const data = await res.json();
+      const articles = parseAndValidateNewsJson(data);
+      if (Array.isArray(articles) && articles.length > 0) {
+        appNews = articles;
+        renderNewsGrid(appNews);
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Validation error for news endpoint:', err);
+      return false;
+    }
+  }
+
+  if (elBtnSyncNews) {
+    elBtnSyncNews.addEventListener('click', async () => {
+      const targetUrl = elSettingNewsUrl.value.trim() || RAW_NEWS_URL;
+      elBtnSyncNews.disabled = true;
+      elBtnSyncNews.textContent = 'Syncing...';
+
+      const success = await syncAndValidateEndpoint(targetUrl);
+      if (success) {
+        newsEndpoint = targetUrl;
+        if (appProfile) {
+          appProfile.news_url = targetUrl;
+          if (!Array.isArray(appProfile.successful_news_urls)) {
+            appProfile.successful_news_urls = [];
+          }
+          if (!appProfile.successful_news_urls.includes(targetUrl)) {
+            appProfile.successful_news_urls.push(targetUrl);
+          }
+          await invoke('save_profile', { profile: appProfile });
+        }
+        elBtnSyncNews.textContent = 'Synced!';
+        setTimeout(() => {
+          elBtnSyncNews.textContent = 'Sync Feed';
+          elBtnSyncNews.disabled = false;
+        }, 2000);
+      } else {
+        elBtnSyncNews.textContent = 'Failed!';
+        setTimeout(() => {
+          elBtnSyncNews.textContent = 'Sync Feed';
+          elBtnSyncNews.disabled = false;
+        }, 2500);
+        alert(`Failed to sync from:\n${targetUrl}\n\nMake sure the endpoint is accessible, CORS-enabled, and returns valid JSON conforming to the "telos-news-feed" schema.`);
+      }
+    });
+  }
 
   elBtnResetDefaults.addEventListener('click', async () => {
     elSettingKeepOpen.checked = true;
@@ -1393,9 +1877,65 @@
     alert('Settings reset to defaults.');
   });
 
+  // --- Game Crash Supervision & Modal Handlers ---
+  const elBtnCloseCrash = document.getElementById('btn-close-crash');
+  const elBtnDismissCrash = document.getElementById('btn-dismiss-crash');
+  const elBtnCopyCrash = document.getElementById('btn-copy-crash-log');
+  const elCrashModal = document.getElementById('crash-modal');
+
+  const closeCrashModal = () => {
+    if (elCrashModal) elCrashModal.classList.remove('active');
+  };
+  if (elBtnCloseCrash) elBtnCloseCrash.addEventListener('click', closeCrashModal);
+  if (elBtnDismissCrash) elBtnDismissCrash.addEventListener('click', closeCrashModal);
+  if (elBtnCopyCrash) {
+    elBtnCopyCrash.addEventListener('click', async () => {
+      const text = document.getElementById('crash-log-text')?.textContent || '';
+      try {
+        await navigator.clipboard.writeText(text);
+        const originalHtml = elBtnCopyCrash.innerHTML;
+        elBtnCopyCrash.textContent = 'Copied!';
+        setTimeout(() => {
+          elBtnCopyCrash.innerHTML = originalHtml;
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy to clipboard:', err);
+      }
+    });
+  }
+
+  async function listenGameLifecycleEvents() {
+    if (isTauri && window.__TAURI__.event && window.__TAURI__.event.listen) {
+      await window.__TAURI__.event.listen('game_crash', (event) => {
+        const payload = event.payload || {};
+        const code = payload.exit_code !== undefined ? payload.exit_code : -1;
+        const log = payload.error_log || 'Game process crashed unexpectedly.';
+
+        const elCrashCode = document.getElementById('crash-exit-code');
+        const elCrashLog = document.getElementById('crash-log-text');
+        if (elCrashCode) elCrashCode.textContent = `Exit Code: ${code}`;
+        if (elCrashLog) elCrashLog.textContent = log;
+        if (elCrashModal) elCrashModal.classList.add('active');
+
+        if (elPlayBtn) {
+          elPlayBtn.disabled = false;
+          elPlayBtn.textContent = 'PLAY';
+        }
+      });
+
+      await window.__TAURI__.event.listen('game_exited', () => {
+        if (elPlayBtn) {
+          elPlayBtn.disabled = false;
+          elPlayBtn.textContent = 'PLAY';
+        }
+      });
+    }
+  }
+
   // --- Initial Boot Sequence ---
   async function init() {
     try {
+      listenGameLifecycleEvents();
       appProfile = await invoke('get_profile');
       appInstallations = await invoke('get_installations');
       appServers = await invoke('get_servers');

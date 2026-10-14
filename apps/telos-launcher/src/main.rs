@@ -39,13 +39,21 @@ use version_manager::{
 pub struct ServerEntry {
     /// Unique identifier for the server entry.
     pub id: String,
-    /// User-visible server name.
+    /// User-visible server name or group title.
     pub name: String,
-    /// Host address and port.
+    /// Host address and port (empty for group containers).
+    #[serde(default)]
     pub address: String,
-    /// Group category for collapsible sections.
+    /// Whether this entry represents a group container.
+    #[serde(default)]
+    pub is_group: bool,
+    /// Parent group ID if placed inside a group.
+    #[serde(default)]
+    pub group_id: Option<String>,
+    /// Legacy group field for backwards compatibility.
+    #[serde(default)]
     pub group: String,
-    /// Ordering index within the group.
+    /// Ordering index within the server list.
     pub order: usize,
     /// Last measured ping latency in milliseconds.
     pub ping_ms: Option<u32>,
@@ -57,9 +65,11 @@ impl Default for ServerEntry {
     fn default() -> Self {
         Self {
             id: "default-1".into(),
-            name: "Official Telos Alpha Server".into(),
+            name: "Telos Official Survival".into(),
             address: "play.telos.voxel:25565".into(),
-            group: "Official Servers".into(),
+            is_group: false,
+            group_id: None,
+            group: String::new(),
             order: 0,
             ping_ms: Some(24),
             online: true,
@@ -87,28 +97,23 @@ fn load_servers() -> Vec<ServerEntry> {
     vec![
         ServerEntry {
             id: "official-1".into(),
-            name: "Official Telos Alpha Server".into(),
+            name: "Telos Official Survival".into(),
             address: "play.telos.voxel:25565".into(),
-            group: "Official Servers".into(),
+            is_group: false,
+            group_id: None,
+            group: String::new(),
             order: 0,
             ping_ms: Some(22),
-            online: true,
-        },
-        ServerEntry {
-            id: "official-2".into(),
-            name: "Survival Test Cluster".into(),
-            address: "survival.telos.voxel:25565".into(),
-            group: "Official Servers".into(),
-            order: 1,
-            ping_ms: Some(38),
             online: true,
         },
         ServerEntry {
             id: "local-1".into(),
             name: "Local Dev Test Server".into(),
             address: "127.0.0.1:25565".into(),
-            group: "LAN / Development".into(),
-            order: 2,
+            is_group: false,
+            group_id: None,
+            group: String::new(),
+            order: 1,
             ping_ms: Some(1),
             online: true,
         },
@@ -116,8 +121,10 @@ fn load_servers() -> Vec<ServerEntry> {
             id: "community-1".into(),
             name: "Larvance Creative Sandbox".into(),
             address: "creative.larvance.net:25565".into(),
-            group: "Community Servers".into(),
-            order: 3,
+            is_group: false,
+            group_id: None,
+            group: String::new(),
+            order: 2,
             ping_ms: Some(45),
             online: true,
         },
@@ -270,6 +277,105 @@ fn launch_updater(state: State<'_, AppState>) -> Result<(), String> {
     }
 }
 
+/// Spawns a game process, isolates its execution, and monitors for crashes or clean termination.
+fn spawn_and_supervise(
+    mut cmd: Command,
+    app_handle: AppHandle,
+    inst_name: String,
+    auto_close: bool,
+) -> Result<(), String> {
+    if auto_close {
+        if let Some(win) = app_handle.get_webview_window("main") {
+            let _ = win.hide();
+        }
+    }
+
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn game process: {e}"))?;
+
+    std::thread::spawn(move || {
+        let stderr_reader = child.stderr.take();
+        let stdout_reader = child.stdout.take();
+
+        let err_handle = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut r) = stderr_reader {
+                use std::io::Read;
+                let _ = r.read_to_string(&mut buf);
+            }
+            buf
+        });
+
+        let out_handle = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut r) = stdout_reader {
+                use std::io::Read;
+                let _ = r.read_to_string(&mut buf);
+            }
+            buf
+        });
+
+        let status = child.wait();
+        let stderr_output = err_handle.join().unwrap_or_default();
+        let stdout_output = out_handle.join().unwrap_or_default();
+
+        // Always show the launcher back when game exits or crashes
+        if let Some(win) = app_handle.get_webview_window("main") {
+            let _ = win.show();
+            let _ = win.unminimize();
+            let _ = win.set_focus();
+        }
+
+        match status {
+            Ok(exit_status) if exit_status.success() => {
+                let _ = app_handle.emit("game_exited", serde_json::json!({
+                    "success": true,
+                    "installation": inst_name,
+                    "exit_code": 0,
+                }));
+            }
+            Ok(exit_status) => {
+                let code = exit_status.code().unwrap_or(-1);
+                let mut combined = String::new();
+                if !stderr_output.trim().is_empty() {
+                    combined.push_str("STDERR:\n");
+                    combined.push_str(stderr_output.trim());
+                }
+                if !stdout_output.trim().is_empty() {
+                    if !combined.is_empty() {
+                        combined.push_str("\n\nSTDOUT:\n");
+                    } else {
+                        combined.push_str("STDOUT:\n");
+                    }
+                    combined.push_str(stdout_output.trim());
+                }
+                if combined.is_empty() {
+                    combined = format!("Game process terminated unexpectedly with exit code {code}.");
+                }
+
+                let _ = app_handle.emit("game_crash", serde_json::json!({
+                    "success": false,
+                    "installation": inst_name,
+                    "exit_code": code,
+                    "error_log": combined,
+                }));
+            }
+            Err(e) => {
+                let _ = app_handle.emit("game_crash", serde_json::json!({
+                    "success": false,
+                    "installation": inst_name,
+                    "exit_code": -1,
+                    "error_log": format!("Process supervision failed: {e}"),
+                }));
+            }
+        }
+    });
+
+    Ok(())
+}
+
 #[tauri::command(rename_all = "snake_case")]
 fn trigger_launch(
     app: AppHandle,
@@ -367,12 +473,12 @@ fn trigger_launch(
                             if let Some(mb) = max_memory_dev {
                                 cmd.env("TELOS_MAX_MEMORY_MB", mb.to_string());
                             }
-                            let _ = cmd.spawn();
-                            if auto_close {
-                                if let Some(win) = app_handle.get_webview_window("main") {
-                                    let _ = win.close();
-                                }
-                            }
+                            let _ = spawn_and_supervise(
+                                cmd,
+                                app_handle.clone(),
+                                "Dev Environment (Local Build)".to_string(),
+                                auto_close,
+                            );
                         }
                         break;
                     }
@@ -421,15 +527,13 @@ fn trigger_launch(
             cmd.env("TELOS_MAX_MEMORY_MB", mb.to_string());
         }
 
-        cmd.spawn().map_err(|e| e.to_string())?;
+        let inst_name = selected_inst
+            .as_ref()
+            .map_or("Installation", |i| i.name.as_str())
+            .to_string();
 
-        if profile.auto_close_on_play {
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.close();
-            }
-        }
+        spawn_and_supervise(cmd, app.clone(), inst_name.clone(), profile.auto_close_on_play)?;
 
-        let inst_name = selected_inst.as_ref().map_or("Installation", |i| i.name.as_str());
         Ok(LaunchResult {
             success: true,
             message: format!("Launched {inst_name} ({version_tag})"),

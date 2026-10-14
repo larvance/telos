@@ -99,6 +99,10 @@
       <symbol id="icon-check" viewBox="0 0 24 24">
         <polyline points="20 6 9 17 4 12"></polyline>
       </symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </symbol>
     </defs>
   </svg>
 
@@ -143,10 +147,11 @@
           <form class="login-form flex flex-col gap-4" id="login-form" onsubmit="return false;">
             <div class="input-group flex flex-col gap-1.5 text-left">
               <label class="input-label text-xs text-neutral-400 font-medium" for="login-username">Telos Username</label>
-              <input type="text" id="login-username" class="text-input" placeholder="e.g. Larvance" value="Larvance" required>
+              <input type="text" id="login-username" class="text-input" placeholder="Enter any username" value="Larvance" required>
+              <span class="text-[11px] text-neutral-400 mt-0.5">Use any username (offline auth, no password required).</span>
             </div>
             <button type="submit" id="btn-login-submit" class="btn-green-3d mt-2 w-full">
-              Sign In With Telos
+              Play With Telos
             </button>
           </form>
           <div class="login-links mt-[18px] flex justify-center items-center gap-4 text-[13px]">
@@ -305,11 +310,16 @@
             <div class="tab-header-row flex items-center justify-between">
               <div>
                 <h3 class="section-title text-lg font-semibold text-white">Multiplayer Servers</h3>
-                <p class="text-xs text-neutral-400 mt-1">Drag server cards to reorder. Group sections are collapsible.</p>
+                <p class="text-xs text-neutral-400 mt-1">Reorder servers and custom groups via drag-and-drop.</p>
               </div>
-              <button class="btn-secondary" id="btn-add-server">
-                <svg class="icon icon-sm"><use href="#icon-plus"></use></svg> Add Server
-              </button>
+              <div class="flex items-center gap-2">
+                <button class="btn-secondary" id="btn-add-server-group">
+                  <svg class="icon icon-sm"><use href="#icon-folder"></use></svg> Add Group
+                </button>
+                <button class="btn-secondary" id="btn-add-server">
+                  <svg class="icon icon-sm"><use href="#icon-plus"></use></svg> Add Server
+                </button>
+              </div>
             </div>
             <div id="server-groups-container" class="flex flex-col gap-3.5">
               <!-- Dynamically populated with collapsible groups & draggable cards -->
@@ -365,10 +375,13 @@
               <div class="setting-row flex items-center justify-between gap-5">
                 <div class="setting-info flex flex-col gap-1">
                   <span class="setting-title text-sm font-semibold text-white">Live News Feed Endpoint</span>
-                  <span class="setting-desc text-xs text-neutral-400">URL to fetch announcements and changelogs.</span>
+                  <span class="setting-desc text-xs text-neutral-400">URL to fetch announcements and changelogs. Type to search saved endpoints.</span>
                 </div>
-                <div class="flex gap-2 items-center">
-                  <input type="text" id="setting-news-url" class="text-input !w-[360px]" value="https://raw.githubusercontent.com/larvance/telos/main/apps/telos-launcher/ui/assets/news/news.json">
+                <div class="flex gap-2 items-center relative">
+                  <div class="autocomplete-wrapper relative !w-[380px]">
+                    <input type="text" id="setting-news-url" class="text-input w-full" value="https://raw.githubusercontent.com/larvance/telos/main/apps/telos-launcher/ui/assets/news/news.json" autocomplete="off" spellcheck="false">
+                    <div id="setting-news-dropdown" class="autocomplete-dropdown hidden"></div>
+                  </div>
                   <button class="btn-secondary whitespace-nowrap" id="btn-sync-news-settings">Sync Feed</button>
                 </div>
               </div>
@@ -498,8 +511,10 @@
             <input type="text" id="server-address-input" class="text-input" placeholder="e.g. play.example.org:25565">
           </div>
           <div class="input-group flex flex-col gap-1.5 text-left">
-            <label class="input-label text-xs text-neutral-400 font-medium" for="server-group-input">Server Group</label>
-            <input type="text" id="server-group-input" class="text-input" placeholder="e.g. Community Servers">
+            <label class="input-label text-xs text-neutral-400 font-medium" for="server-group-input">Group (Optional)</label>
+            <select id="server-group-input" class="select-input">
+              <option value="">None (Top-Level Server)</option>
+            </select>
           </div>
         </div>
         <div class="ubuntu-dialog-footer px-5 py-3.5 bg-[#242424] border-t border-telos-border flex justify-end gap-2.5">
@@ -693,6 +708,61 @@
         <div class="ubuntu-dialog-footer px-5 py-3.5 bg-[#242424] border-t border-telos-border flex justify-between gap-2.5">
           <button class="ubuntu-btn !text-red-400 hover:!bg-red-950/40" id="btn-account-logout">Sign Out</button>
           <button class="ubuntu-btn primary" id="btn-close-account-footer">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         Modal 8: Game Crash Report Modal
+         ===================================================================== -->
+    <div class="modal-overlay" id="crash-modal">
+      <div class="ubuntu-dialog bg-[#241e1e] border border-[#7a2e2e] rounded-lg shadow-[0_16px_40px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col w-[600px] max-w-[92vw]">
+        <div class="ubuntu-dialog-header h-10 bg-[#361e1e] border-b border-[#5c2424] flex items-center justify-between px-4">
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-red-500 inline-block shadow-sm"></span>
+            <span class="ubuntu-dialog-title text-sm font-semibold text-[#f8d7da]">Game Crash Detected</span>
+          </div>
+          <button class="window-btn close" id="btn-close-crash">
+            <svg class="icon icon-sm"><use href="#icon-close"></use></svg>
+          </button>
+        </div>
+        <div class="ubuntu-dialog-body p-5 flex flex-col gap-3">
+          <p class="text-xs text-[#e0a8a8]">
+            The game client process crashed or terminated unexpectedly (<span id="crash-exit-code" class="font-mono text-white font-bold">Exit Code: 101</span>).
+          </p>
+          <div class="crash-log-container bg-[#151212] border border-[#4d1f1f] rounded p-3 overflow-y-auto max-h-[280px]">
+            <pre id="crash-log-text" class="text-[11px] font-mono text-[#ffb3b3] whitespace-pre-wrap select-text leading-relaxed">Checking crash dump...</pre>
+          </div>
+        </div>
+        <div class="ubuntu-dialog-footer px-5 py-3.5 bg-[#1f1919] border-t border-[#4d1f1f] flex justify-between gap-2.5">
+          <button class="ubuntu-btn" id="btn-copy-crash-log">
+            <svg class="icon icon-sm inline mr-1"><use href="#icon-copy"></use></svg> Copy Log
+          </button>
+          <button class="ubuntu-btn primary !bg-red-700 hover:!bg-red-600" id="btn-dismiss-crash">Dismiss</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         Modal 9: Create Server Group Modal
+         ===================================================================== -->
+    <div class="modal-overlay" id="server-group-modal">
+      <div class="ubuntu-dialog bg-[#2b2b2b] border border-[#4a4a4a] rounded-lg shadow-[0_16px_40px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col w-[420px]">
+        <div class="ubuntu-dialog-header h-10 bg-[#222] border-b border-[#333] flex items-center justify-between px-4">
+          <span class="ubuntu-dialog-title text-sm font-semibold text-[#f0f0f0]">Create Server Group</span>
+          <button class="window-btn close" id="btn-close-server-group-modal">
+            <svg class="icon icon-sm"><use href="#icon-close"></use></svg>
+          </button>
+        </div>
+        <div class="ubuntu-dialog-body p-6 flex flex-col gap-4">
+          <div class="input-group flex flex-col gap-1.5 text-left">
+            <label class="input-label text-xs text-neutral-400 font-medium" for="inp-server-group-name">Group Title</label>
+            <input type="text" id="inp-server-group-name" class="text-input" placeholder="e.g. My Favorite SMPs" required>
+          </div>
+        </div>
+        <div class="ubuntu-dialog-footer px-5 py-3.5 bg-[#242424] border-t border-telos-border flex justify-end gap-2.5">
+          <button class="ubuntu-btn" id="btn-cancel-server-group">Cancel</button>
+          <button class="ubuntu-btn primary" id="btn-save-server-group">Save Group</button>
         </div>
       </div>
     </div>

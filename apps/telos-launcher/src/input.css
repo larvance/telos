@@ -587,23 +587,149 @@ html, body {
   to { transform: translateY(0); }
 }
 
+#titlebar {
+  position: relative !important;
+  z-index: 9999 !important;
+}
+
 /* ==========================================================================
    Ubuntu Window Dialogs & Modals
    ========================================================================== */
 .modal-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(0, 0, 0, 0.65);
+  position: fixed !important;
+  top: 38px !important; /* Always start below the 38px titlebar */
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  background-color: rgba(0, 0, 0, 0.65) !important;
   display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 2000 !important;
+  backdrop-filter: blur(3px) !important;
+  -webkit-backdrop-filter: blur(3px) !important;
 }
 
 .modal-overlay.active {
+  display: flex !important;
+}
+
+/* Autocomplete Dropdown */
+.autocomplete-wrapper {
+  position: relative;
+}
+
+.autocomplete-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background-color: #242424;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  max-height: 220px;
+  overflow-y: auto;
   display: flex;
+  flex-direction: column;
+}
+
+.autocomplete-dropdown.hidden {
+  display: none !important;
+}
+
+.autocomplete-item {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #dcdcdc;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #2e2e2e;
+  transition: background-color 0.1s ease;
+  font-family: monospace;
+}
+
+.autocomplete-item:last-child {
+  border-bottom: none;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+  background-color: #383838;
+  color: #ffffff;
+}
+
+.autocomplete-item .badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(212, 163, 75, 0.2);
+  color: var(--accent-gold);
+  border: 1px solid rgba(212, 163, 75, 0.4);
+  font-family: sans-serif;
+  flex-shrink: 0;
+}
+
+/* Drag and Drop Overhaul */
+.drag-floating-clone {
+  position: fixed !important;
+  pointer-events: none !important;
+  z-index: 9999 !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.75) !important;
+  opacity: 0.95 !important;
+  transform: scale(1.02) !important;
+  border-color: var(--accent-gold) !important;
+}
+
+.drag-landing-placeholder {
+  opacity: 0.35 !important;
+  border: 2px dashed var(--accent-gold) !important;
+  border-radius: 8px !important;
+  pointer-events: none !important;
+  transition: all 0.15s ease !important;
+  background: rgba(212, 163, 75, 0.05) !important;
+}
+
+.server-group-card {
+  background-color: #242424;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s ease;
+}
+
+.server-group-header {
+  background-color: #2a2a2a;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid #333333;
+}
+
+.server-group-header:hover {
+  background-color: #303030;
+}
+
+.server-group-children {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background-color: #1e1e1e;
+  min-height: 40px;
+}
+
+.server-group-children.collapsed {
+  display: none !important;
 }
 
 .ubuntu-btn {

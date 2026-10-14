@@ -24,6 +24,8 @@ pub struct LauncherProfile {
     pub last_used_installation: Option<String>,
     #[serde(default)]
     pub auth_token: Option<String>,
+    #[serde(default)]
+    pub successful_news_urls: Vec<String>,
 }
 
 impl Default for LauncherProfile {
@@ -41,6 +43,10 @@ impl Default for LauncherProfile {
             ram_gb: Some(8),
             last_used_installation: Some("local-dev".to_string()),
             auth_token: None,
+            successful_news_urls: vec![
+                "https://raw.githubusercontent.com/larvance/telos/main/apps/telos-launcher/ui/assets/news/news.json".to_string(),
+                "https://news.telos.larvance.com/news.json".to_string(),
+            ],
         }
     }
 }
