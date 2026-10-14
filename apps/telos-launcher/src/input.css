@@ -54,12 +54,10 @@
   --radius-lg: 10px;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  user-select: none;
-  -webkit-user-select: none;
+@layer base {
+  *, ::before, ::after {
+    box-sizing: border-box;
+  }
 }
 
 html, body {
@@ -71,6 +69,8 @@ html, body {
   font-family: var(--font-system);
   font-size: 14px;
   line-height: 1.4;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* Custom Scrollbars */
@@ -369,6 +369,122 @@ html, body {
 
 .install-dropdown-menu.open {
   display: flex;
+}
+
+/* ==========================================================================
+   Launch Control Bar & Input Components
+   ========================================================================== */
+.launch-bar {
+  background-color: #1e1e1e !important;
+  border-top: 1px solid var(--border-color) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  padding: 16px 36px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 24px !important;
+  flex-shrink: 0 !important;
+  z-index: 20 !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45) !important;
+}
+
+.launch-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 16px !important;
+}
+
+.install-selector-btn {
+  height: 48px !important;
+  background-color: #282828 !important;
+  border: 1px solid #444444 !important;
+  color: #ffffff !important;
+  padding: 0 18px !important;
+  border-radius: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+  cursor: pointer !important;
+  min-width: 280px !important;
+  text-align: left !important;
+  transition: all 0.15s ease !important;
+}
+
+.install-selector-btn:hover {
+  background-color: #333333 !important;
+  border-color: #555555 !important;
+}
+
+.install-icon-wrap {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 24px !important;
+  height: 24px !important;
+  flex-shrink: 0 !important;
+  margin-right: 4px !important;
+}
+
+.install-info {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+
+.btn-play-large {
+  height: 48px !important;
+  min-width: 190px !important;
+  padding: 0 38px !important;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1.5px !important;
+  border-radius: 6px !important;
+}
+
+.launch-right {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  gap: 4px !important;
+  padding-right: 4px !important;
+}
+
+/* ==========================================================================
+   News & Announcements Section
+   ========================================================================== */
+.news-section {
+  padding: 32px 36px 56px 36px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 24px !important;
+}
+
+.news-header-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 2px !important;
+}
+
+.news-heading {
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  letter-spacing: 0.3px !important;
+}
+
+.news-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+}
+
+.news-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+  gap: 22px !important;
 }
 
 /* ==========================================================================
@@ -716,110 +832,295 @@ input[type="range"]::-moz-range-thumb {
 
 /* News Cards */
 .news-card {
-  @apply bg-telos-card border border-telos-border rounded-lg cursor-pointer transition-all duration-200 flex flex-col overflow-hidden hover:-translate-y-1 hover:border-neutral-500 hover:shadow-2xl;
+  background-color: var(--color-telos-card) !important;
+  border: 1px solid var(--color-telos-border) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+.news-card:hover {
+  transform: translateY(-3px) !important;
+  border-color: #555555 !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6) !important;
 }
 .news-thumb-wrap {
-  @apply relative h-[140px] w-full overflow-hidden bg-black;
+  position: relative !important;
+  height: 140px !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  background-color: #000000 !important;
 }
 .news-card-img {
-  @apply w-full h-full object-cover transition-transform duration-300;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  transition: transform 0.3s ease !important;
 }
 .news-card:hover .news-card-img {
-  @apply scale-105;
+  transform: scale(1.05) !important;
 }
 .news-badge {
-  @apply absolute top-2 left-2 bg-black/80 backdrop-blur-[4px] border border-white/20 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-[0.5px];
+  position: absolute !important;
+  top: 8px !important;
+  left: 8px !important;
+  background-color: rgba(0, 0, 0, 0.8) !important;
+  backdrop-filter: blur(4px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
 }
 .news-body {
-  @apply p-4 flex flex-col gap-2;
+  padding: 16px 18px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
 }
 .news-date {
-  @apply text-[11px] text-neutral-400 font-medium;
+  font-size: 11px !important;
+  color: #a0a0a0 !important;
+  font-weight: 500 !important;
 }
 .news-title {
-  @apply text-[13px] font-semibold text-white leading-snug;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
+  line-height: 1.35 !important;
 }
 .news-snippet {
-  @apply text-xs text-neutral-400 line-clamp-2 leading-relaxed;
+  font-size: 12px !important;
+  color: #909090 !important;
+  line-height: 1.5 !important;
+}
+
+/* Tab Panels Spacing for Non-Play Tabs */
+#tab-installations,
+#tab-servers,
+#tab-patch-notes,
+#tab-settings {
+  padding: 28px 36px 56px 36px !important;
+  display: none;
+  flex-direction: column !important;
+  gap: 20px !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+}
+
+#tab-installations.active,
+#tab-servers.active,
+#tab-patch-notes.active,
+#tab-settings.active {
+  display: flex !important;
+}
+
+.tab-header-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-bottom: 8px !important;
 }
 
 /* Installation Cards */
 .installation-card {
-  @apply bg-[#242424] border border-neutral-700/60 rounded-lg px-5 py-4 flex items-center justify-between cursor-grab transition-all duration-150 select-none hover:bg-[#2b2b2b] hover:border-neutral-500;
+  background-color: #242424 !important;
+  border: 1px solid #3c3c3c !important;
+  border-radius: 8px !important;
+  padding: 14px 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  cursor: grab !important;
+  transition: all 0.15s ease !important;
+  user-select: none !important;
+}
+.installation-card:hover {
+  background-color: #2b2b2b !important;
+  border-color: #555555 !important;
 }
 .inst-meta {
-  @apply flex items-center gap-3;
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
 }
 .inst-drag-handle {
-  @apply text-neutral-500 cursor-grab mr-0.5 hover:text-white;
+  color: #707070 !important;
+  cursor: grab !important;
+  margin-right: 2px !important;
+}
+.inst-drag-handle:hover {
+  color: #ffffff !important;
 }
 .inst-badge-pill {
-  @apply text-[10px] uppercase tracking-[0.5px] px-1.5 py-0.5 rounded bg-[#1e3a5f] text-[#82b1ff] font-bold inline-block ml-1.5;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  background-color: #1e3a5f !important;
+  color: #82b1ff !important;
+  font-weight: 700 !important;
+  display: inline-block !important;
+  margin-left: 6px !important;
 }
 .inst-badge-custom {
-  @apply text-[10px] uppercase tracking-[0.5px] px-1.5 py-0.5 rounded bg-[#2c3e2d] text-[#81c784] font-bold inline-block ml-1.5;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  background-color: #2c3e2d !important;
+  color: #81c784 !important;
+  font-weight: 700 !important;
+  display: inline-block !important;
+  margin-left: 6px !important;
 }
 .inst-icon {
-  @apply w-[38px] h-[38px] rounded bg-[#1a1a1a] border border-neutral-700 flex items-center justify-center text-xl shrink-0;
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 6px !important;
+  background-color: #1a1a1a !important;
+  border: 1px solid #444444 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 20px !important;
+  flex-shrink: 0 !important;
 }
 .inst-texts {
-  @apply flex flex-col gap-0.5;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
 }
 .inst-title {
-  @apply text-sm font-semibold text-white;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
 }
 .inst-tag {
-  @apply text-xs text-neutral-400;
+  font-size: 12px !important;
+  color: #a0a0a0 !important;
 }
 .inst-dir {
-  @apply text-[11px] text-neutral-500 font-mono;
+  font-size: 11px !important;
+  color: #707070 !important;
+  font-family: var(--font-mono) !important;
 }
 
 /* Server Groups & Cards */
 .server-group {
-  @apply flex flex-col gap-2 bg-telos-secondary border border-telos-border rounded-md overflow-hidden;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  background-color: var(--color-telos-secondary) !important;
+  border: 1px solid var(--color-telos-border) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  margin-bottom: 12px !important;
 }
 .server-group-header {
-  @apply px-4 py-2.5 bg-[#272727] flex items-center justify-between cursor-pointer border-b border-telos-subtle;
+  padding: 12px 18px !important;
+  background-color: #272727 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  cursor: pointer !important;
+  border-bottom: 1px solid var(--color-telos-subtle) !important;
 }
 .server-group-title {
-  @apply text-sm font-semibold text-neutral-200 flex items-center gap-2;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #e0e0e0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
 }
 .server-group .chevron {
-  @apply text-xs transition-transform duration-200;
+  font-size: 12px !important;
+  transition: transform 0.2s ease !important;
 }
 .server-group.collapsed .chevron {
-  transform: rotate(-90deg);
+  transform: rotate(-90deg) !important;
 }
 .server-group.collapsed .server-list {
-  display: none;
+  display: none !important;
 }
 .server-list {
-  @apply flex flex-col gap-1.5 p-2;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  padding: 12px !important;
 }
 .server-card {
-  @apply bg-[#212121] border border-neutral-800 rounded px-3.5 py-3 flex items-center justify-between gap-3.5 cursor-grab transition-all duration-150 hover:bg-[#2b2b2b] hover:border-neutral-700;
+  background-color: #212121 !important;
+  border: 1px solid #333333 !important;
+  border-radius: 6px !important;
+  padding: 12px 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  cursor: grab !important;
+  transition: all 0.15s ease !important;
+}
+.server-card:hover {
+  background-color: #2a2a2a !important;
+  border-color: #484848 !important;
 }
 .server-drag-handle {
-  @apply text-neutral-500 text-base cursor-grab hover:text-white;
+  color: #707070 !important;
+  font-size: 16px !important;
+  cursor: grab !important;
+}
+.server-drag-handle:hover {
+  color: #ffffff !important;
 }
 .server-icon {
-  @apply w-9 h-9 rounded bg-[#1a1a1a] border border-neutral-800 flex items-center justify-center text-lg shrink-0;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 6px !important;
+  background-color: #1a1a1a !important;
+  border: 1px solid #333333 !important;
+  font-size: 18px !important;
+  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 .server-meta {
-  @apply flex-1 flex flex-col gap-0.5;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  flex: 1 !important;
 }
 .server-name {
-  @apply text-sm font-semibold text-white;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #ffffff !important;
 }
 .server-address {
-  @apply text-xs text-neutral-400 font-mono;
+  font-family: var(--font-mono) !important;
+  font-size: 12px !important;
+  color: #a0a0a0 !important;
 }
 .server-ping-badge {
-  @apply flex items-center gap-1.5 text-xs text-[#55dd77];
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 12px !important;
+  color: #55dd77 !important;
 }
 .server-actions {
-  @apply flex gap-1.5;
+  display: flex !important;
+  gap: 6px !important;
 }
 
 /* Draggable Cards State */

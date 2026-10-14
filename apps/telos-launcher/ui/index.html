@@ -228,15 +228,15 @@
             </div>
 
             <!-- Launch Control Bar -->
-            <div class="launch-bar bg-[#1e1e1e] border-y border-telos-border px-8 py-3.5 flex items-center justify-between gap-6 shrink-0 z-20 shadow-md">
-              <div class="launch-left flex items-center gap-4">
+            <div class="launch-bar" id="launch-bar">
+              <div class="launch-left">
                 <!-- Installation Selector -->
                 <div class="install-selector-wrapper relative">
-                  <button class="install-selector-btn h-[46px] bg-[#282828] border border-[#444] text-white px-4 py-2 rounded flex items-center gap-3 cursor-pointer min-w-[260px] text-left hover:bg-[#333] hover:border-[#555] transition-all duration-150" id="install-selector-btn">
-                    <span class="install-icon-wrap text-base flex items-center" id="curr-install-icon">
+                  <button class="install-selector-btn" id="install-selector-btn">
+                    <span class="install-icon-wrap" id="curr-install-icon">
                       <svg class="icon"><use href="#icon-wrench"></use></svg>
                     </span>
-                    <div class="install-info flex-1 flex flex-col leading-tight">
+                    <div class="install-info">
                       <span class="install-name text-[13px] font-semibold text-white truncate" id="curr-install-name">Dev Environment (Local Build)</span>
                       <span class="install-version text-[11px] text-neutral-400 font-mono mt-0.5" id="curr-install-version">0.1.0-dev (Local)</span>
                     </div>
@@ -249,12 +249,12 @@
                 </div>
 
                 <!-- Green 3D Play Button -->
-                <button class="btn-green-3d btn-play-large h-[46px] min-w-[190px] px-8 text-base font-bold tracking-wider rounded" id="play-btn">
+                <button class="btn-green-3d btn-play-large" id="play-btn">
                   PLAY
                 </button>
               </div>
 
-              <div class="launch-right flex flex-col items-end text-neutral-400 text-xs pr-1">
+              <div class="launch-right">
                 <div class="launch-status-indicator flex items-center gap-2 text-[#55dd77] font-semibold">
                   <span class="status-dot"></span>
                   <span id="launch-status-text">Ready to launch</span>
@@ -264,10 +264,10 @@
             </div>
 
             <!-- News & Updates Section -->
-            <div class="news-section px-8 py-7 pb-12 flex flex-col gap-5">
-              <div class="news-header-row flex justify-between items-center pb-0.5">
-                <h3 class="news-heading text-base font-bold text-white tracking-wide">News & Announcements</h3>
-                <div class="news-actions flex items-center gap-3">
+            <div class="news-section">
+              <div class="news-header-row">
+                <h3 class="news-heading">News & Announcements</h3>
+                <div class="news-actions">
                   <a href="https://news.telos.larvance.com" target="_blank" rel="noopener" class="news-portal-link text-xs text-telos-gold hover:text-telos-gold-light hover:underline flex items-center gap-1 transition-colors duration-150" title="Open Official Web News Portal">
                     news.telos.larvance.com <svg class="icon icon-sm"><use href="#icon-external"></use></svg>
                   </a>
@@ -276,7 +276,7 @@
                   </button>
                 </div>
               </div>
-              <div class="news-grid grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-5" id="news-grid-container">
+              <div class="news-grid" id="news-grid-container">
                 <!-- Populated dynamically with high-res artwork cards -->
               </div>
             </div>
