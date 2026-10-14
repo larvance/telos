@@ -7,7 +7,14 @@ fn main() {
         println!("cargo:rerun-if-changed=ui/app.js");
 
         let _ = std::process::Command::new("npx")
-            .args(["tailwindcss", "-i", "src/input.css", "-o", "ui/styles.css", "--minify"])
+            .args([
+                "tailwindcss",
+                "-i",
+                "src/input.css",
+                "-o",
+                "ui/styles.css",
+                "--minify",
+            ])
             .status();
     }
 

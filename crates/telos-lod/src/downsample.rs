@@ -1,6 +1,5 @@
 //! Server-side downsampling from level $L-1$ to level $L$ (2×2×2 → 1 voxel).
 
-use hashbrown::HashMap;
 use telos_voxel::state::BlockStateId;
 
 use crate::coords::LodNodeKey;
@@ -19,26 +18,36 @@ pub fn downsample_octants<S: LodVoxelSource>(
 ) -> LodNode {
     let mut node = LodNode::empty(parent_key);
 
-    for vz in 0..32u32 {
-        let oz = usize::from(vz >= 16);
-        let base_cz = (vz & 15) * 2;
+    for (octant, child_opt) in children.iter().enumerate() {
+        let Some(child) = child_opt else {
+            continue;
+        };
+        if child.is_empty() {
+            continue;
+        }
 
-        for vy in 0..32u32 {
-            let oy = usize::from(vy >= 16);
-            let base_cy = (vy & 15) * 2;
+        let ox = (octant & 1) as u32;
+        let oy = ((octant >> 1) & 1) as u32;
+        let oz = ((octant >> 2) & 1) as u32;
 
-            for vx in 0..32u32 {
-                let ox = usize::from(vx >= 16);
-                let base_cx = (vx & 15) * 2;
+        let base_vx = ox * 16;
+        let base_vy = oy * 16;
+        let base_vz = oz * 16;
 
-                let octant = ox | (oy << 1) | (oz << 2);
-                let Some(child) = children[octant] else {
-                    continue;
-                };
+        for lz in 0..16u32 {
+            let vz = base_vz + lz;
+            let cz = lz * 2;
+            for ly in 0..16u32 {
+                let vy = base_vy + ly;
+                let cy = ly * 2;
+                for lx in 0..16u32 {
+                    let vx = base_vx + lx;
+                    let cx = lx * 2;
 
-                let state = vote_representative(child, base_cx, base_cy, base_cz);
-                if !state.is_air() {
-                    node.set_state(vx, vy, vz, state);
+                    let state = vote_representative(*child, cx, cy, cz);
+                    if !state.is_air() {
+                        node.set_state(vx, vy, vz, state);
+                    }
                 }
             }
         }
@@ -47,12 +56,23 @@ pub fn downsample_octants<S: LodVoxelSource>(
     node
 }
 
+#[derive(Clone, Copy)]
+struct StateVote {
+    state: BlockStateId,
+    weight: f32,
+    count: u8,
+}
+
 /// Evaluates 8 child voxels in a 2×2×2 cube and votes for the representative `BlockStateId`.
 #[inline]
+#[allow(clippy::float_cmp)]
 fn vote_representative<S: LodVoxelSource>(child: &S, cx: u32, cy: u32, cz: u32) -> BlockStateId {
-    let mut any_solid = false;
-    let mut weights: HashMap<BlockStateId, f32> = HashMap::new();
-    let mut counts: HashMap<BlockStateId, u32> = HashMap::new();
+    let mut votes = [StateVote {
+        state: BlockStateId::AIR,
+        weight: 0.0,
+        count: 0,
+    }; 8];
+    let mut vote_len = 0usize;
 
     for dz in 0..=1u32 {
         for dy in 0..=1u32 {
@@ -65,9 +85,7 @@ fn vote_representative<S: LodVoxelSource>(child: &S, cx: u32, cy: u32, cz: u32) 
                     continue;
                 }
 
-                any_solid = true;
                 let state = child.get_state(x, y, z);
-                *counts.entry(state).or_insert(0) += 1;
 
                 // Evaluate directional exposures to air
                 let mut voxel_weight = 0.0f32;
@@ -94,31 +112,62 @@ fn vote_representative<S: LodVoxelSource>(child: &S, cx: u32, cy: u32, cz: u32) 
                     voxel_weight += 1.0;
                 }
 
-                if voxel_weight > 0.0 {
-                    *weights.entry(state).or_insert(0.0) += voxel_weight;
+                // Insert or update state in stack-allocated votes
+                let mut found = false;
+                for vote in &mut votes[..vote_len] {
+                    if vote.state == state {
+                        vote.count += 1;
+                        vote.weight += voxel_weight;
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    votes[vote_len] = StateVote {
+                        state,
+                        weight: voxel_weight,
+                        count: 1,
+                    };
+                    vote_len += 1;
                 }
             }
         }
     }
 
-    if !any_solid {
+    if vote_len == 0 {
         return BlockStateId::AIR;
     }
 
-    // 1. Pick maximum weighted exposed state
-    if let Some((&best_state, _)) = weights.iter().max_by(|(s_a, w_a), (s_b, w_b)| {
-        w_a.partial_cmp(w_b)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| s_b.0.cmp(&s_a.0)) // Ties break to lower BlockStateId
-    }) {
-        return best_state;
+    // 1. Pick maximum weighted exposed state (if any has weight > 0)
+    let mut best_weighted: Option<(BlockStateId, f32)> = None;
+    let mut best_count: Option<(BlockStateId, u8)> = None;
+
+    for vote in &votes[..vote_len] {
+        if vote.weight > 0.0 {
+            match best_weighted {
+                None => best_weighted = Some((vote.state, vote.weight)),
+                Some((best_s, best_w)) => {
+                    if vote.weight > best_w || (vote.weight == best_w && vote.state.0 < best_s.0) {
+                        best_weighted = Some((vote.state, vote.weight));
+                    }
+                }
+            }
+        }
+        match best_count {
+            None => best_count = Some((vote.state, vote.count)),
+            Some((best_s, best_c)) => {
+                if vote.count > best_c || (vote.count == best_c && vote.state.0 < best_s.0) {
+                    best_count = Some((vote.state, vote.count));
+                }
+            }
+        }
     }
 
-    // 2. Fallback: most frequent solid state
-    counts
-        .into_iter()
-        .max_by(|(s_a, c_a), (s_b, c_b)| c_a.cmp(c_b).then_with(|| s_b.0.cmp(&s_a.0)))
-        .map_or(BlockStateId::AIR, |(s, _)| s)
+    if let Some((best_s, _)) = best_weighted {
+        return best_s;
+    }
+
+    best_count.map_or(BlockStateId::AIR, |(s, _)| s)
 }
 
 #[cfg(test)]

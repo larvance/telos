@@ -75,7 +75,9 @@ pub struct TouchControls {
 impl Default for TouchControls {
     fn default() -> Self {
         Self {
-            enabled: std::env::var("TELOS_TOUCH").is_ok() || cfg!(target_os = "android") || cfg!(target_os = "ios"),
+            enabled: std::env::var("TELOS_TOUCH").is_ok()
+                || cfg!(target_os = "android")
+                || cfg!(target_os = "ios"),
             left_stick_id: None,
             left_stick_center: [70.0, 0.0], // Y resolved dynamically relative to screen height
             left_stick_pos: [70.0, 0.0],
@@ -177,7 +179,9 @@ impl TouchControls {
                     }
 
                     if dist > Self::DEADZONE_RADIUS {
-                        let norm = ((dist - Self::DEADZONE_RADIUS) / (Self::JOYSTICK_RADIUS - Self::DEADZONE_RADIUS)).min(1.0);
+                        let norm = ((dist - Self::DEADZONE_RADIUS)
+                            / (Self::JOYSTICK_RADIUS - Self::DEADZONE_RADIUS))
+                            .min(1.0);
                         self.joystick_vec = [(dx / dist) * norm, (dy / dist) * norm];
                     } else {
                         self.joystick_vec = [0.0, 0.0];
@@ -366,9 +370,17 @@ impl TouchControls {
         quads.push(UiQuad::solid([bx, by], [bw, bw], bg_color));
         // 1px border around stick base
         quads.push(UiQuad::solid([bx, by], [bw, border_px], border_color));
-        quads.push(UiQuad::solid([bx, by + bw as i32 - border_px as i32], [bw, border_px], border_color));
+        quads.push(UiQuad::solid(
+            [bx, by + bw as i32 - border_px as i32],
+            [bw, border_px],
+            border_color,
+        ));
         quads.push(UiQuad::solid([bx, by], [border_px, bw], border_color));
-        quads.push(UiQuad::solid([bx + bw as i32 - border_px as i32, by], [border_px, bw], border_color));
+        quads.push(UiQuad::solid(
+            [bx + bw as i32 - border_px as i32, by],
+            [border_px, bw],
+            border_color,
+        ));
 
         // Joystick knob
         let kr = 18.0f32;
@@ -378,34 +390,64 @@ impl TouchControls {
         quads.push(UiQuad::solid([kx, ky], [kw, kw], knob_color));
 
         // 2. Action Buttons Helper
-        let draw_btn = |quads: &mut Vec<UiQuad>, cx: f32, cy: f32, size: f32, label: &str, active: bool| {
-            let half = size * 0.5;
-            let px = snap(cx - half);
-            let py = snap(cy - half);
-            let s = snap_u16(size);
-            let col = if active { active_color } else { bg_color };
+        let draw_btn =
+            |quads: &mut Vec<UiQuad>, cx: f32, cy: f32, size: f32, label: &str, active: bool| {
+                let half = size * 0.5;
+                let px = snap(cx - half);
+                let py = snap(cy - half);
+                let s = snap_u16(size);
+                let col = if active { active_color } else { bg_color };
 
-            quads.push(UiQuad::solid([px, py], [s, s], col));
-            quads.push(UiQuad::solid([px, py], [s, border_px], border_color));
-            quads.push(UiQuad::solid([px, py + s as i32 - border_px as i32], [s, border_px], border_color));
-            quads.push(UiQuad::solid([px, py], [border_px, s], border_color));
-            quads.push(UiQuad::solid([px + s as i32 - border_px as i32, py], [border_px, s], border_color));
+                quads.push(UiQuad::solid([px, py], [s, s], col));
+                quads.push(UiQuad::solid([px, py], [s, border_px], border_color));
+                quads.push(UiQuad::solid(
+                    [px, py + s as i32 - border_px as i32],
+                    [s, border_px],
+                    border_color,
+                ));
+                quads.push(UiQuad::solid([px, py], [border_px, s], border_color));
+                quads.push(UiQuad::solid(
+                    [px + s as i32 - border_px as i32, py],
+                    [border_px, s],
+                    border_color,
+                ));
 
-            // Centered text label
-            let (text_w, text_h) = font.measure_text(label);
-            let tx = cx - text_w * 0.5;
-            let ty = cy - text_h * 0.5;
-            font.layout_text(label, tx, ty, 0xFFFFFFFF, true, gui_scale, quads);
-        };
+                // Centered text label
+                let (text_w, text_h) = font.measure_text(label);
+                let tx = cx - text_w * 0.5;
+                let ty = cy - text_h * 0.5;
+                font.layout_text(label, tx, ty, 0xFFFFFFFF, true, gui_scale, quads);
+            };
 
         // Jump button
         draw_btn(quads, gw - 55.0, gh - 55.0, 50.0, "JMP", self.jump_pressed);
         // Sneak button
-        draw_btn(quads, gw - 105.0, gh - 45.0, 40.0, "SNK", self.sneak_pressed);
+        draw_btn(
+            quads,
+            gw - 105.0,
+            gh - 45.0,
+            40.0,
+            "SNK",
+            self.sneak_pressed,
+        );
         // Break button
-        draw_btn(quads, gw - 55.0, gh - 110.0, 44.0, "HIT", self.break_pressed);
+        draw_btn(
+            quads,
+            gw - 55.0,
+            gh - 110.0,
+            44.0,
+            "HIT",
+            self.break_pressed,
+        );
         // Place button
-        draw_btn(quads, gw - 105.0, gh - 95.0, 40.0, "USE", self.place_pressed);
+        draw_btn(
+            quads,
+            gw - 105.0,
+            gh - 95.0,
+            40.0,
+            "USE",
+            self.place_pressed,
+        );
 
         // Pause Menu Button (top-right)
         draw_btn(quads, gw - 26.0, 26.0, 36.0, "||", false);

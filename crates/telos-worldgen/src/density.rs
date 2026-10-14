@@ -169,6 +169,19 @@ impl CoarseGrid {
             &mut details,
         );
 
+        let mut cave_noises = [0.0f32; TOTAL_CORNERS];
+        crate::noise::fbm3d_slice(
+            cave_seed,
+            &xs,
+            &ys,
+            &zs,
+            2,
+            1.0 / 48.0,
+            2.0,
+            0.5,
+            &mut cave_noises,
+        );
+
         for cz in 0..CORNERS_XZ {
             for cy in 0..CORNERS_Y {
                 let y = origin_y + (cy * 8) as f32;
@@ -179,13 +192,8 @@ impl CoarseGrid {
                     let mut density = (col.h - y) / col.softness;
                     density += details[idx] * 0.45;
 
-                    if y < col.h - 6.0 {
-                        let x = xs[idx];
-                        let z = zs[idx];
-                        let cave_noise = fbm3d(cave_seed, x, y, z, 2, 1.0 / 48.0, 2.0, 0.5);
-                        if cave_noise > 0.38 {
-                            density = density.min(-1.0);
-                        }
+                    if y < col.h - 6.0 && cave_noises[idx] > 0.38 {
+                        density = density.min(-1.0);
                     }
 
                     densities[idx] = density;
@@ -254,10 +262,10 @@ impl CoarseGrid {
                             for dy in 0..8 {
                                 let y = base_y + dy;
                                 let y_offset = (y << 10) | (z << 5);
-                                for dx in 0..4 {
-                                    let x = base_x + dx;
-                                    out[y_offset | x] = true;
-                                }
+                                out[y_offset | base_x] = true;
+                                out[y_offset | (base_x + 1)] = true;
+                                out[y_offset | (base_x + 2)] = true;
+                                out[y_offset | (base_x + 3)] = true;
                             }
                         }
                         continue;
@@ -286,16 +294,12 @@ impl CoarseGrid {
 
                             let c0 = lerp(c00, c01, ty);
                             let c1 = lerp(c10, c11, ty);
+                            let step_x = (c1 - c0) * 0.25;
 
-                            for dx in 0..4 {
-                                let tx = dx as f32 * 0.25;
-                                let x = base_x + dx;
-
-                                let d = lerp(c0, c1, tx);
-                                if d > 0.0 {
-                                    out[y_offset | x] = true;
-                                }
-                            }
+                            out[y_offset | base_x] = c0 > 0.0;
+                            out[y_offset | (base_x + 1)] = (c0 + step_x) > 0.0;
+                            out[y_offset | (base_x + 2)] = (c0 + step_x * 2.0) > 0.0;
+                            out[y_offset | (base_x + 3)] = (c0 + step_x * 3.0) > 0.0;
                         }
                     }
                 }

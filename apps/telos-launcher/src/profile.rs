@@ -1,8 +1,8 @@
 //! User profile, authentication state, and launcher settings persistence.
 
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 /// Persisted profile and authentication settings for Telos Launcher.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,12 +71,15 @@ pub fn load_profile() -> LauncherProfile {
                 profile.news_url = Some(new_default.to_string());
             }
             if profile.successful_news_urls.is_empty() {
-                profile.successful_news_urls = vec![
-                    new_default.to_string(),
-                    old_default.to_string(),
-                ];
-            } else if !profile.successful_news_urls.contains(&new_default.to_string()) {
-                profile.successful_news_urls.insert(0, new_default.to_string());
+                profile.successful_news_urls =
+                    vec![new_default.to_string(), old_default.to_string()];
+            } else if !profile
+                .successful_news_urls
+                .contains(&new_default.to_string())
+            {
+                profile
+                    .successful_news_urls
+                    .insert(0, new_default.to_string());
             }
             return profile;
         }

@@ -192,44 +192,77 @@ impl ChunkPayload {
     /// Encodes all sections into uncompressed payload bytes with canonical tag ordering.
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(16384);
+        self.encode_into(&mut out);
+        out
+    }
+
+    /// Encodes all sections directly into the provided output buffer.
+    pub fn encode_into(&self, out: &mut Vec<u8>) {
+        if self.unknown_sections.is_empty() {
+            // Fast path: known sections (BLOCKS 0x01, optional BLOCK_ENTITIES 0x05, STATUS 0x08)
+            // are strictly canonical in ascending order.
+            let has_be = !self.block_entities.is_empty();
+            let section_count = 2 + u32::from(has_be);
+            encode_varint_u32(section_count, out);
+
+            // 1. BLOCKS section (0x01)
+            out.push(TAG_BLOCKS);
+            out.push(0); // sflags
+            let blocks_len = blocks_section_len(&self.blocks);
+            encode_varint_u32(blocks_len as u32, out);
+            encode_blocks(&self.blocks, out);
+
+            // 2. BLOCK_ENTITIES section (0x05)
+            if has_be {
+                out.push(TAG_BLOCK_ENTITIES);
+                out.push(0);
+                let mut be_buf = Vec::new();
+                encode_block_entities(&self.block_entities, &mut be_buf);
+                encode_varint_u32(be_buf.len() as u32, out);
+                out.extend_from_slice(&be_buf);
+            }
+
+            // 3. STATUS section (0x08)
+            out.push(TAG_STATUS);
+            out.push(0);
+            let status_len = 1 + varint_u64_len(self.status.inhabited_ticks) + 2;
+            encode_varint_u32(status_len as u32, out);
+            self.status.encode(out);
+            return;
+        }
+
+        // Generic fallback when unknown_sections are present
         let mut sections: Vec<(u8, u8, Vec<u8>)> = Vec::new();
 
-        // 1. BLOCKS section (0x01)
         let mut blocks_buf = Vec::new();
         encode_blocks(&self.blocks, &mut blocks_buf);
         sections.push((TAG_BLOCKS, 0, blocks_buf));
 
-        // 2. BLOCK_ENTITIES section (0x05)
         if !self.block_entities.is_empty() {
             let mut be_buf = Vec::new();
             encode_block_entities(&self.block_entities, &mut be_buf);
             sections.push((TAG_BLOCK_ENTITIES, 0, be_buf));
         }
 
-        // 3. STATUS section (0x08)
         let mut status_buf = Vec::new();
         self.status.encode(&mut status_buf);
         sections.push((TAG_STATUS, 0, status_buf));
 
-        // 4. Unknown sections
         for s in &self.unknown_sections {
             sections.push((s.tag, s.sflags, s.data.clone()));
         }
 
-        // Sort by tag ascending for canonical output
         sections.sort_by_key(|&(tag, _, _)| tag);
 
-        let mut out = Vec::new();
-        encode_varint_u32(sections.len() as u32, &mut out);
+        encode_varint_u32(sections.len() as u32, out);
 
         for (tag, sflags, data) in sections {
             out.push(tag);
             out.push(sflags);
-            encode_varint_u32(data.len() as u32, &mut out);
+            encode_varint_u32(data.len() as u32, out);
             out.extend_from_slice(&data);
         }
-
-        out
     }
 
     /// Decodes chunk payload from uncompressed bytes.
@@ -303,6 +336,46 @@ impl ChunkPayload {
     }
 }
 
+#[inline]
+pub(crate) const fn varint_u32_len(val: u32) -> usize {
+    if val < (1 << 7) {
+        1
+    } else if val < (1 << 14) {
+        2
+    } else if val < (1 << 21) {
+        3
+    } else if val < (1 << 28) {
+        4
+    } else {
+        5
+    }
+}
+
+#[inline]
+pub(crate) const fn varint_u64_len(mut val: u64) -> usize {
+    let mut len = 1;
+    while val >= 0x80 {
+        len += 1;
+        val >>= 7;
+    }
+    len
+}
+
+#[inline]
+fn blocks_section_len(blocks: &Blocks) -> usize {
+    match blocks {
+        Blocks::Uniform(state) => 2 + varint_u32_len(state.as_u32()),
+        Blocks::Packed(packed) => {
+            let mut len = 1 + varint_u32_len(packed.palette().len() as u32);
+            for s in packed.palette() {
+                len += varint_u32_len(s.as_u32());
+            }
+            len += packed.words().len() * 8;
+            len
+        }
+    }
+}
+
 /// Encodes `Blocks` container into the binary BLOCKS section format.
 pub fn encode_blocks(blocks: &Blocks, buf: &mut Vec<u8>) {
     match blocks {
@@ -321,8 +394,19 @@ pub fn encode_blocks(blocks: &Blocks, buf: &mut Vec<u8>) {
                 encode_varint_u32(state.as_u32(), buf);
             }
 
-            for &word in packed.words() {
-                buf.extend_from_slice(&word.to_le_bytes());
+            #[cfg(target_endian = "little")]
+            {
+                let words = packed.words();
+                let bytes = unsafe {
+                    std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), words.len() * 8)
+                };
+                buf.extend_from_slice(bytes);
+            }
+            #[cfg(not(target_endian = "little"))]
+            {
+                for &word in packed.words() {
+                    buf.extend_from_slice(&word.to_le_bytes());
+                }
             }
         }
     }
@@ -384,17 +468,56 @@ pub fn decode_blocks(mut cursor: &[u8]) -> Result<Blocks> {
         });
     }
 
-    let mut words = vec![0u64; word_count].into_boxed_slice();
-    for word in &mut words {
-        *word = u64::from_le_bytes(cursor[0..8].try_into().unwrap());
-        cursor = &cursor[8..];
+    let mut words: Vec<u64> = Vec::with_capacity(word_count);
+    #[cfg(target_endian = "little")]
+    {
+        let u64_bytes = &cursor[..expected_words_bytes];
+        unsafe {
+            let dst = words.as_mut_ptr().cast::<u8>();
+            std::ptr::copy_nonoverlapping(u64_bytes.as_ptr(), dst, expected_words_bytes);
+            words.set_len(word_count);
+        }
+    }
+    #[cfg(not(target_endian = "little"))]
+    {
+        for chunk in cursor[..expected_words_bytes].chunks_exact(8) {
+            words.push(u64::from_le_bytes(chunk.try_into().unwrap()));
+        }
+    }
+    let words = words.into_boxed_slice();
+
+    // Fast SIMD / bounds-checked validation of packed palette indices
+    validate_packed_indices(&words, log2, bits, palette_len)?;
+
+    let packed = Packed::from_raw_parts(log2, palette.into_boxed_slice(), words);
+    Ok(Blocks::Packed(Box::new(packed)))
+}
+
+#[inline]
+fn validate_packed_indices(words: &[u64], log2: u8, bits: u8, palette_len: usize) -> Result<()> {
+    let max_palette_len = 1usize << bits;
+    // Fast path: if palette is at max capacity, all bit patterns are valid indices
+    if palette_len >= max_palette_len {
+        return Ok(());
     }
 
-    // Safety scan: verify that every packed index is within palette_len
-    for &w in &words {
-        let pw_log2 = 6 - u32::from(log2);
-        let entries_per_word = 1usize << pw_log2;
-        let mask = (1u64 << bits) - 1;
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            // SAFETY: target feature avx2 checked at runtime
+            unsafe {
+                if validate_packed_indices_avx2(words, bits, palette_len) {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    // Scalar fallback and exact error reporter
+    let pw_log2 = 6 - u32::from(log2);
+    let entries_per_word = 1usize << pw_log2;
+    let mask = (1u64 << bits) - 1;
+    for &w in words {
         for e in 0..entries_per_word {
             let slot = ((w >> (e * (bits as usize))) & mask) as usize;
             if slot >= palette_len {
@@ -405,8 +528,79 @@ pub fn decode_blocks(mut cursor: &[u8]) -> Result<Blocks> {
         }
     }
 
-    let packed = Packed::from_raw_parts(log2, palette.into_boxed_slice(), words);
-    Ok(Blocks::Packed(Box::new(packed)))
+    Ok(())
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[allow(
+    clippy::ptr_as_ptr,
+    clippy::cast_ptr_alignment,
+    clippy::wildcard_imports
+)]
+unsafe fn validate_packed_indices_avx2(words: &[u64], bits: u8, palette_len: usize) -> bool {
+    use std::arch::x86_64::*;
+
+    let byte_len = words.len() * 8;
+    let bytes_ptr = words.as_ptr() as *const u8;
+
+    match bits {
+        4 => {
+            let mask_0f = _mm256_set1_epi8(0x0F);
+            let mut max_vec = _mm256_setzero_si256();
+
+            let num_vectors = byte_len / 32;
+            for i in 0..num_vectors {
+                // SAFETY: caller guarantees words length is exact multiple of 32 bytes and non-null
+                let v = unsafe { _mm256_loadu_si256(bytes_ptr.add(i * 32) as *const __m256i) };
+                let low = _mm256_and_si256(v, mask_0f);
+                let high = _mm256_and_si256(_mm256_srli_epi16(v, 4), mask_0f);
+                let max_nibbles = _mm256_max_epu8(low, high);
+                max_vec = _mm256_max_epu8(max_vec, max_nibbles);
+            }
+
+            let mut buf = [0u8; 32];
+            // SAFETY: buf is 32 bytes, properly sized for 256-bit SIMD register store
+            unsafe {
+                _mm256_storeu_si256(buf.as_mut_ptr() as *mut __m256i, max_vec);
+            }
+            let mut max_slot = 0u8;
+            for &b in &buf {
+                max_slot = max_slot.max(b);
+            }
+
+            (max_slot as usize) < palette_len
+        }
+        8 => {
+            let mut max_vec = _mm256_setzero_si256();
+            let num_vectors = byte_len / 32;
+            for i in 0..num_vectors {
+                // SAFETY: caller guarantees words length is exact multiple of 32 bytes and non-null
+                let v = unsafe { _mm256_loadu_si256(bytes_ptr.add(i * 32) as *const __m256i) };
+                max_vec = _mm256_max_epu8(max_vec, v);
+            }
+
+            let mut buf = [0u8; 32];
+            // SAFETY: buf is 32 bytes, properly sized for 256-bit SIMD register store
+            unsafe {
+                _mm256_storeu_si256(buf.as_mut_ptr() as *mut __m256i, max_vec);
+            }
+            let mut max_slot = 0u8;
+            for &b in &buf {
+                max_slot = max_slot.max(b);
+            }
+
+            (max_slot as usize) < palette_len
+        }
+        1 => {
+            if palette_len >= 2 {
+                true
+            } else {
+                words.iter().all(|&w| w == 0)
+            }
+        }
+        _ => false,
+    }
 }
 
 /// Encodes `BlockEntityTable` into the binary `BLOCK_ENTITIES` section format.

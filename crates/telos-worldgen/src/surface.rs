@@ -402,7 +402,15 @@ pub fn apply_surface_rules(
 
                     depth_from_surface += 1;
                 } else {
-                    // Empty cavity: evaluate 3D noise-modulated aquifer level & fluid barriers
+                    // Empty cavity: if height is at or above the aquifer fluid ceiling, immediately emit air
+                    if wy >= aquifer_cache.max_fluid_level() {
+                        out_dense[idx] = blocks.air;
+                        depth_from_surface = 0;
+                        is_under_solid = false;
+                        continue;
+                    }
+
+                    // Otherwise evaluate 3D noise-modulated aquifer level & fluid barriers
                     match aquifer.sample(aquifer_cache, wx, wy, wz) {
                         crate::aquifer::AquiferSample::Barrier => {
                             out_dense[idx] = rock_at_height(wx, wy, wz, blocks);

@@ -79,14 +79,8 @@ fn mesh_blocks_with_sampler<S: VoxelLightSampler>(
     neighbors: &NeighborSlices,
     sampler: &S,
 ) -> T0Mesh {
-    let mut buckets: [Vec<T0Quad>; 6] = [
-        Vec::with_capacity(64),
-        Vec::with_capacity(64),
-        Vec::with_capacity(64),
-        Vec::with_capacity(64),
-        Vec::with_capacity(64),
-        Vec::with_capacity(64),
-    ];
+    let mut all_quads = Vec::with_capacity(384);
+    let mut ranges = [QuadRange::default(); 6];
     let mut pattern_table = LightPatternTable::new();
 
     let is_uniform = blocks.is_uniform();
@@ -96,8 +90,14 @@ fn mesh_blocks_with_sampler<S: VoxelLightSampler>(
         0
     };
 
+    // Generational cache across all slices in the chunk.
+    // 6 directions * 32 slices = 192 slices maximum. Tag starting at 1 never wraps u16::MAX.
+    let mut cache_tags = [0u16; 1024];
+    let mut cache_vals = [0u32; 1024];
+    let mut current_tag = 0u16;
+
     for dir in FaceDir::ALL {
-        let bucket = &mut buckets[dir as usize];
+        let start_offset = all_quads.len() as u32;
 
         for d in 0..32 {
             let slice = extract_face_slice(dir, d, occ, neighbors);
@@ -105,15 +105,14 @@ fn mesh_blocks_with_sampler<S: VoxelLightSampler>(
                 continue;
             }
 
-            // Per-slice 4 KiB stack cache to evaluate each exposed cell's lighting at most once
-            let mut cache = [0u32; 1024];
+            current_tag += 1;
 
             let mut get_cell = |u: u32, v: u32| -> (u16, u16, bool, bool) {
                 let cell_idx = ((v << 5) | u) as usize;
-                let cached = cache[cell_idx];
-                if (cached & 0x8000_0000) != 0 {
+                if cache_tags[cell_idx] == current_tag {
+                    let cached = cache_vals[cell_idx];
                     let mat = cached as u16;
-                    let pat_idx = ((cached >> 16) & 0x3FFF) as u16;
+                    let pat_idx = ((cached >> 16) & 0x1FFF) as u16;
                     let can_u = ((cached >> 30) & 1) != 0;
                     let can_v = ((cached >> 29) & 1) != 0;
                     return (mat, pat_idx, can_u, can_v);
@@ -133,23 +132,30 @@ fn mesh_blocks_with_sampler<S: VoxelLightSampler>(
                 let can_v = pattern.can_merge_v();
 
                 let packed = u32::from(mat)
-                    | ((u32::from(pat_idx) & 0x3FFF) << 16)
+                    | ((u32::from(pat_idx) & 0x1FFF) << 16)
                     | (u32::from(can_v) << 29)
-                    | (u32::from(can_u) << 30)
-                    | 0x8000_0000;
-                cache[cell_idx] = packed;
+                    | (u32::from(can_u) << 30);
+                cache_vals[cell_idx] = packed;
+                cache_tags[cell_idx] = current_tag;
 
                 (mat, pat_idx, can_u, can_v)
             };
 
             greedy_merge_slice_with_light(slice, &mut get_cell, |u, v, w, h, mat, pat_idx| {
                 let (x, y, z) = map_coords(dir, d as u32, u, v);
-                bucket.push(T0Quad::new(x, y, z, w, h, dir, mat, pat_idx));
+                all_quads.push(T0Quad::new(x, y, z, w, h, dir, mat, pat_idx));
             });
         }
+
+        let count = (all_quads.len() as u32) - start_offset;
+        ranges[dir as usize] = QuadRange::new(start_offset, count);
     }
 
-    assemble_t0_mesh(buckets, pattern_table)
+    T0Mesh {
+        quads: all_quads,
+        patterns: pattern_table.into_patterns(),
+        ranges,
+    }
 }
 
 fn assemble_t0_mesh(buckets: [Vec<T0Quad>; 6], pattern_table: LightPatternTable) -> T0Mesh {

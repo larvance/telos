@@ -3,9 +3,9 @@
 //! Queries repository releases and commits (remote via GitHub API/curl or local via git),
 //! detects local development workspaces, and tracks installed/configured launch profiles.
 
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use serde::{Deserialize, Serialize};
 
 /// Version channel type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,7 +173,12 @@ pub fn get_local_git_commits(repo_dir: &Path, count: usize) -> Vec<PatchNoteEntr
     let mut notes = Vec::new();
     let format = "%h%x09%cd%x09%s";
     if let Ok(output) = Command::new("git")
-        .args(["log", &format!("-n{count}"), "--date=short", &format!("--pretty=format:{format}")])
+        .args([
+            "log",
+            &format!("-n{count}"),
+            "--date=short",
+            &format!("--pretty=format:{format}"),
+        ])
         .current_dir(repo_dir)
         .output()
     {
@@ -212,7 +217,14 @@ pub fn fetch_remote_versions(repo_dir: &Path) -> RemoteVersionInfo {
     // 2. Attempt lightweight remote GitHub query via curl
     let gh_api = "https://api.github.com/repos/larvance/telos/commits/main";
     let curl_res = Command::new("curl")
-        .args(["-s", "--connect-timeout", "2", "-H", "User-Agent: Telos-Launcher", gh_api])
+        .args([
+            "-s",
+            "--connect-timeout",
+            "2",
+            "-H",
+            "User-Agent: Telos-Launcher",
+            gh_api,
+        ])
         .output();
 
     if let Ok(output) = curl_res {
@@ -222,8 +234,13 @@ pub fn fetch_remote_versions(repo_dir: &Path) -> RemoteVersionInfo {
                     let short_sha = if sha.len() >= 7 { &sha[..7] } else { sha };
                     info.latest_commit_hash = short_sha.to_string();
                 }
-                if let Some(msg) = val.get("commit").and_then(|c| c.get("message")).and_then(|m| m.as_str()) {
-                    info.latest_commit_msg = msg.lines().next().unwrap_or("Latest commit").to_string();
+                if let Some(msg) = val
+                    .get("commit")
+                    .and_then(|c| c.get("message"))
+                    .and_then(|m| m.as_str())
+                {
+                    info.latest_commit_msg =
+                        msg.lines().next().unwrap_or("Latest commit").to_string();
                 }
             }
         }
@@ -240,7 +257,10 @@ pub fn get_default_installations(repo_dir: &Path, remote: &RemoteVersionInfo) ->
     installs.push(Installation::new_release(&remote.latest_release_tag));
 
     // Always offer Latest Snapshot (commit hash)
-    installs.push(Installation::new_snapshot(format!("snapshot-{}", remote.latest_commit_hash)));
+    installs.push(Installation::new_snapshot(format!(
+        "snapshot-{}",
+        remote.latest_commit_hash
+    )));
 
     // If local dev environment is present, provide local dev build
     if detect_local_dev_repo(repo_dir) {
@@ -263,7 +283,10 @@ pub fn get_installations_path() -> PathBuf {
 }
 
 /// Loads configured installations from disk, migrating or inserting defaults if needed.
-pub fn load_or_init_installations(repo_dir: &Path, remote: &RemoteVersionInfo) -> Vec<Installation> {
+pub fn load_or_init_installations(
+    repo_dir: &Path,
+    remote: &RemoteVersionInfo,
+) -> Vec<Installation> {
     let path = get_installations_path();
     let is_dev_repo = detect_local_dev_repo(repo_dir);
 
@@ -299,13 +322,22 @@ pub fn load_or_init_installations(repo_dir: &Path, remote: &RemoteVersionInfo) -
     }
 
     // Ensure default latest-release exists
-    if !saved_installs.iter().any(|i| i.id == "latest-release" || i.channel == ChannelKind::LatestRelease) {
+    if !saved_installs
+        .iter()
+        .any(|i| i.id == "latest-release" || i.channel == ChannelKind::LatestRelease)
+    {
         saved_installs.push(Installation::new_release(&remote.latest_release_tag));
     }
 
     // Ensure default latest-snapshot exists
-    if !saved_installs.iter().any(|i| i.id == "latest-snapshot" || i.channel == ChannelKind::Snapshot) {
-        saved_installs.push(Installation::new_snapshot(format!("snapshot-{}", remote.latest_commit_hash)));
+    if !saved_installs
+        .iter()
+        .any(|i| i.id == "latest-snapshot" || i.channel == ChannelKind::Snapshot)
+    {
+        saved_installs.push(Installation::new_snapshot(format!(
+            "snapshot-{}",
+            remote.latest_commit_hash
+        )));
     }
 
     let _ = persist_installations(&saved_installs);
@@ -378,7 +410,13 @@ pub fn ensure_version_cached(repo_dir: &Path, version_tag: &str) -> Result<PathB
     for archive in &candidate_archives {
         if archive.exists() {
             let status = Command::new("tar")
-                .args(["--zstd", "-xf", archive.to_str().unwrap(), "-C", version_dir.to_str().unwrap()])
+                .args([
+                    "--zstd",
+                    "-xf",
+                    archive.to_str().unwrap(),
+                    "-C",
+                    version_dir.to_str().unwrap(),
+                ])
                 .status();
             if let Ok(s) = status {
                 if s.success() && bin_path.exists() {
@@ -430,8 +468,6 @@ pub fn ensure_version_cached(repo_dir: &Path, version_tag: &str) -> Result<PathB
 
     Err(format!(
         "Version '{}' binary is not present in cache ({:?}) and no prebuilt release archive was found.",
-        version_tag,
-        bin_path
+        version_tag, bin_path
     ))
 }
-

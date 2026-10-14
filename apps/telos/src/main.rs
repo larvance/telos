@@ -18,7 +18,6 @@ use crate::physics::{
 use anyhow::Result;
 use camera::{Camera, FlyController};
 use clap::Parser;
-use touch_controls::TouchControls;
 use entity_client::{ClientEntityStore, EntityPushConstants, EntityVertexGpu};
 use glam::{DVec3, Vec3};
 use hashbrown::{HashMap, HashSet};
@@ -54,8 +53,8 @@ use telos_sim::{
 use telos_ui::menu::{
     AdvancementsScreen, MainMenuAction, MainMenuScreen, ModalFormAction, ModalFormScreen,
     PauseMenuAction, PauseMenuScreen, SettingsScreen, SettingsTab, UiAdvancementCategory,
-    UiAdvancementFrame,
-    UiAdvancementNode, WorldCreateAction, WorldCreateWizard, WorldSelectAction, WorldSelectScreen,
+    UiAdvancementFrame, UiAdvancementNode, WorldCreateAction, WorldCreateWizard, WorldSelectAction,
+    WorldSelectScreen,
 };
 use telos_ui::settings::GameSettings;
 use telos_ui::{
@@ -69,6 +68,7 @@ use telos_ui::{
     render_inventory_screen_styled, snap_to_physical,
 };
 use telos_ui::{InputKey, KeyAction};
+use touch_controls::TouchControls;
 
 /// Top-level application screen state.
 #[derive(Debug, Clone, PartialEq)]
@@ -1635,7 +1635,8 @@ impl App {
                 Vec3::new(parts[0], parts[1], parts[2])
             } else {
                 let climate = telos_worldgen::ClimatePoint::sample(args.seed, 128.0, 160.0);
-                let h = telos_worldgen::density::base_terrain_height(args.seed, 128.0, 160.0, &climate);
+                let h =
+                    telos_worldgen::density::base_terrain_height(args.seed, 128.0, 160.0, &climate);
                 let y = (h.max(1.0).ceil() + 2.0).max(25.0);
                 Vec3::new(128.5, y, 160.5)
             }
@@ -1729,11 +1730,13 @@ impl App {
         let server_conn: Box<dyn Connection<S2cMessage, C2sMessage>> = Box::new(server_conn);
         let client_conn: Box<dyn Connection<C2sMessage, S2cMessage>> = Box::new(client_conn);
 
-        let custom_spawn = args.pos.as_ref().map(|_| [
-            f64::from(spawn_pos.x),
-            f64::from(spawn_pos.y),
-            f64::from(spawn_pos.z),
-        ]);
+        let custom_spawn = args.pos.as_ref().map(|_| {
+            [
+                f64::from(spawn_pos.x),
+                f64::from(spawn_pos.y),
+                f64::from(spawn_pos.z),
+            ]
+        });
         let server_handle = if is_direct_ingame {
             let s_registries = Arc::clone(&server_registries);
             let handle = std::thread::Builder::new()
@@ -2161,7 +2164,10 @@ impl App {
 
     fn save_server_list(&self) {
         if let Err(e) = self.server_list.save_to_file(&self.servers_path) {
-            tracing::warn!("Failed to save server list to {}: {e}", self.servers_path.display());
+            tracing::warn!(
+                "Failed to save server list to {}: {e}",
+                self.servers_path.display()
+            );
         }
     }
 
@@ -2614,13 +2620,9 @@ impl App {
             }
 
             let mut pitch = 0.92
-                + (hit.pos.x().abs() as f32 * 0.1
-                    + hit.pos.z().abs() as f32 * 0.2)
-                    .fract()
-                    * 0.16;
+                + (hit.pos.x().abs() as f32 * 0.1 + hit.pos.z().abs() as f32 * 0.2).fract() * 0.16;
             if let Some(hook) = &self.js_particle_hook {
-                let (_, mod_pitch) =
-                    hook.on_sound_play("block_break", 1.0, pitch);
+                let (_, mod_pitch) = hook.on_sound_play("block_break", 1.0, pitch);
                 pitch = mod_pitch;
             }
             self.audio.play_procedural_break(hit_pos_f, pitch);
@@ -2723,9 +2725,7 @@ impl App {
             let is_lever = self
                 .block_registry
                 .identifier(target_state)
-                .is_some_and(|id| {
-                    id.path() == "logic_lever" || id.path() == "logic_lever_on"
-                });
+                .is_some_and(|id| id.path() == "logic_lever" || id.path() == "logic_lever_on");
             if is_lever {
                 self.action_sequence += 1;
                 let msg = C2sMessage::BlockAction(C2sBlockAction {
@@ -2746,8 +2746,7 @@ impl App {
                 } else {
                     "logic_lever"
                 };
-                if let Ok(id) =
-                    telos_core::ident::Identifier::new("telos", toggled_name)
+                if let Ok(id) = telos_core::ident::Identifier::new("telos", toggled_name)
                     && let Some(b) = self.block_registry.get(&id)
                 {
                     self.apply_block_update(hit.pos, b.default_state());
@@ -2791,8 +2790,7 @@ impl App {
                 place_pos.y() as f32 + 0.5,
                 place_pos.z() as f32 + 0.5,
             );
-            let (layer, tint) =
-                block_state_to_particle_layer(self.selected_block_state);
+            let (layer, tint) = block_state_to_particle_layer(self.selected_block_state);
             if let Some(hook) = &self.js_particle_hook {
                 let p = hook.on_particle_spawn(
                     "block_place",
@@ -2810,21 +2808,14 @@ impl App {
                 self.particle_system
                     .spawn_block_place(mod_pos, layer, mod_tint, mod_count);
             } else {
-                self.particle_system.spawn_block_place(
-                    place_pos_f,
-                    layer,
-                    tint,
-                    12,
-                );
+                self.particle_system
+                    .spawn_block_place(place_pos_f, layer, tint, 12);
             }
             let mut pitch = 0.95
-                + (place_pos.x().abs() as f32 * 0.13
-                    + place_pos.z().abs() as f32 * 0.17)
-                    .fract()
+                + (place_pos.x().abs() as f32 * 0.13 + place_pos.z().abs() as f32 * 0.17).fract()
                     * 0.12;
             if let Some(hook) = &self.js_particle_hook {
-                let (_, mod_pitch) =
-                    hook.on_sound_play("block_place", 1.0, pitch);
+                let (_, mod_pitch) = hook.on_sound_play("block_place", 1.0, pitch);
                 pitch = mod_pitch;
             }
             self.audio.play_procedural_place(place_pos_f, pitch);
@@ -4961,7 +4952,8 @@ impl App {
                     self.physics.pos.x.floor() as i32,
                     self.physics.pos.y.floor() as i32,
                     self.physics.pos.z.floor() as i32,
-                ).chunk();
+                )
+                .chunk();
                 let is_chunk_loaded = self.chunks.contains_key(&player_chunk);
 
                 if !is_chunk_loaded {
@@ -6569,7 +6561,9 @@ impl App {
 
             if self.current_screen == AppScreen::InGame {
                 // Late Pass 5: Translucent (Water) - omitted when camera is underwater
-                if !self.is_underwater && let Some(trans_pipeline) = &self.translucent_pipeline {
+                if !self.is_underwater
+                    && let Some(trans_pipeline) = &self.translucent_pipeline
+                {
                     let trans_pc = TranslucentMdiPushConstants {
                         view_proj,
                         draw_info_buffer_address: mdi.translucent_draw_late.device_address(),
@@ -6622,7 +6616,9 @@ impl App {
                 }
 
                 // Late Pass 5b: Translucent T2 (Sloped fluids & waterlogging) - omitted when camera is underwater
-                if !self.is_underwater && let Some(t2_trans_pipeline) = &self.t2_translucent_pipeline {
+                if !self.is_underwater
+                    && let Some(t2_trans_pipeline) = &self.t2_translucent_pipeline
+                {
                     device.cmd_bind_pipeline(
                         cmd,
                         vk::PipelineBindPoint::GRAPHICS,
@@ -7661,7 +7657,8 @@ impl App {
                     if win_w > 0 && win_h > 0 {
                         self.pending_resize = Some((win_w, win_h));
                         self.last_resize_event_time = Instant::now();
-                        self.last_swapchain_recreate_time = Instant::now() - Duration::from_millis(500);
+                        self.last_swapchain_recreate_time =
+                            Instant::now() - Duration::from_millis(500);
                     }
                 }
                 _ => tracing::error!("end_frame failed: {err}"),
@@ -8158,13 +8155,8 @@ impl App {
                         && self.container_state.is_none()
                         && !self.advancements_open
                     {
-                        self.touch_controls.render(
-                            font,
-                            width,
-                            height,
-                            gui_scale,
-                            &mut ui_quads,
-                        );
+                        self.touch_controls
+                            .render(font, width, height, gui_scale, &mut ui_quads);
                     }
                 }
             }
@@ -8239,7 +8231,8 @@ impl App {
                 self.physics.pos.x.floor() as i32,
                 self.physics.pos.y.floor() as i32,
                 self.physics.pos.z.floor() as i32,
-            ).chunk();
+            )
+            .chunk();
             let is_chunk_loaded = chunks.contains_key(&player_chunk);
 
             if !is_chunk_loaded {
@@ -11676,9 +11669,10 @@ impl ApplicationHandler for App {
                     self.is_minimized = true;
                 } else {
                     self.is_minimized = false;
-                    let current = self.gpu_context.as_ref().map_or((0, 0), |c| {
-                        (c.extent().width, c.extent().height)
-                    });
+                    let current = self
+                        .gpu_context
+                        .as_ref()
+                        .map_or((0, 0), |c| (c.extent().width, c.extent().height));
                     if current.0 != physical_size.width || current.1 != physical_size.height {
                         self.pending_resize = Some((physical_size.width, physical_size.height));
                         self.last_resize_event_time = Instant::now();
@@ -11735,7 +11729,8 @@ impl ApplicationHandler for App {
                     && !self.advancements_open
                     && self.active_modal_form.is_none()
                 {
-                    self.touch_controls.handle_touch(&touch, win_w, win_h, gui_scale);
+                    self.touch_controls
+                        .handle_touch(&touch, win_w, win_h, gui_scale);
 
                     if self.touch_controls.pause_requested {
                         self.touch_controls.pause_requested = false;

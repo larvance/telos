@@ -157,7 +157,11 @@ impl MainMenuScreen {
     }
 
     /// Renders the title banner, animated splash, buttons, and version footer to `out`.
-    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::similar_names)]
+    #[allow(
+        clippy::cast_possible_wrap,
+        clippy::cast_possible_truncation,
+        clippy::similar_names
+    )]
     pub fn render_with_layers(
         &self,
         layers: &UiLayers,
@@ -236,7 +240,7 @@ impl MainMenuScreen {
             angle_rad,
             pulse,
             UiQuad::rgba(255, 255, 0, 255), // Pure bright yellow
-            true,                            // with drop shadow
+            true,                           // with drop shadow
             scale,
             out,
         );

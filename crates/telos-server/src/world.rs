@@ -901,10 +901,22 @@ impl ServerWorld {
         // Spiral offsets around target_x, target_z (center first, then expanding outward)
         let search_offsets: [(i32, i32); 17] = [
             (0, 0),
-            (0, 4), (4, 0), (0, -4), (-4, 0),
-            (4, 4), (-4, 4), (4, -4), (-4, -4),
-            (0, 8), (8, 0), (0, -8), (-8, 0),
-            (8, 8), (-8, 8), (8, -8), (-8, -8),
+            (0, 4),
+            (4, 0),
+            (0, -4),
+            (-4, 0),
+            (4, 4),
+            (-4, 4),
+            (4, -4),
+            (-4, -4),
+            (0, 8),
+            (8, 0),
+            (0, -8),
+            (-8, 0),
+            (8, 8),
+            (-8, 8),
+            (8, -8),
+            (-8, -8),
         ];
 
         for (dx, dz) in search_offsets {
@@ -951,10 +963,16 @@ impl ServerWorld {
 
                     let h1_passable = headroom_1.is_air()
                         || (!self.registry.is_fluid(headroom_1)
-                            && !self.registry.flags(headroom_1).contains(StateFlags::OPAQUE_FULL));
+                            && !self
+                                .registry
+                                .flags(headroom_1)
+                                .contains(StateFlags::OPAQUE_FULL));
                     let h2_passable = headroom_2.is_air()
                         || (!self.registry.is_fluid(headroom_2)
-                            && !self.registry.flags(headroom_2).contains(StateFlags::OPAQUE_FULL));
+                            && !self
+                                .registry
+                                .flags(headroom_2)
+                                .contains(StateFlags::OPAQUE_FULL));
 
                     if h1_passable && h2_passable {
                         let spawn_y = f64::from(wy) + 1.0;

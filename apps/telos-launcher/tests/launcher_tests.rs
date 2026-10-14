@@ -6,7 +6,10 @@ use tempfile::tempdir;
 #[test]
 fn test_resolve_repo_dir() {
     let repo = std::env::current_dir().unwrap();
-    assert!(repo.join("Cargo.toml").exists(), "Repo dir must contain Cargo.toml");
+    assert!(
+        repo.join("Cargo.toml").exists(),
+        "Repo dir must contain Cargo.toml"
+    );
 }
 
 #[test]
@@ -20,7 +23,10 @@ fn test_exclusive_lock_workflow() {
 
     // Attempt second non-blocking lock on same file descriptor
     let second = rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive);
-    assert!(second.is_ok(), "Same fd re-lock is valid in POSIX flock semantics");
+    assert!(
+        second.is_ok(),
+        "Same fd re-lock is valid in POSIX flock semantics"
+    );
 
     let unlocked = rustix::fs::flock(&file, rustix::fs::FlockOperation::Unlock);
     assert!(unlocked.is_ok(), "Unlock must succeed");
@@ -41,8 +47,13 @@ fn test_profile_serialization_roundtrip() {
         "game_dir": null
     });
 
-    std::fs::write(&profile_file, serde_json::to_string(&original_json).unwrap()).unwrap();
-    let read_back: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&profile_file).unwrap()).unwrap();
+    std::fs::write(
+        &profile_file,
+        serde_json::to_string(&original_json).unwrap(),
+    )
+    .unwrap();
+    let read_back: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&profile_file).unwrap()).unwrap();
 
     assert_eq!(read_back["username"], "TestPlayer");
     assert_eq!(read_back["logged_in"], true);

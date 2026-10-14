@@ -84,7 +84,9 @@ pub fn start_build_worker(
             {
                 Ok(f) => f,
                 Err(err) => {
-                    let _ = tx.send(BuildEvent::Failed(format!("Failed to open lockfile: {err}")));
+                    let _ = tx.send(BuildEvent::Failed(format!(
+                        "Failed to open lockfile: {err}"
+                    )));
                     return;
                 }
             };
@@ -96,7 +98,8 @@ pub fn start_build_worker(
             if !initial_lock {
                 waited_for_lock = true;
                 let _ = tx.send(BuildEvent::LockHeld {
-                    message: "Another Telos build is in progress. Auto-launching when finished.".into(),
+                    message: "Another Telos build is in progress. Auto-launching when finished."
+                        .into(),
                 });
 
                 // Wait for the active build to complete and release the lock
@@ -111,12 +114,16 @@ pub fn start_build_worker(
             // Lock is now held exclusively by this process!
             // 2. Multi-instance rule: If we waited for the lock, check if the other instance built it!
             if waited_for_lock {
-                let bin_is_fresh = target_bin.metadata().and_then(|m| m.modified()).map_or(
-                    false,
-                    |mtime| {
-                        mtime >= start_time.checked_sub(Duration::from_secs(5)).unwrap_or(start_time)
-                    },
-                );
+                let bin_is_fresh =
+                    target_bin
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .map_or(false, |mtime| {
+                            mtime
+                                >= start_time
+                                    .checked_sub(Duration::from_secs(5))
+                                    .unwrap_or(start_time)
+                        });
 
                 if bin_is_fresh && target_bin.exists() {
                     let _ = rustix::fs::flock(&lock_file, rustix::fs::FlockOperation::Unlock);

@@ -544,15 +544,9 @@ impl ServerListScreen {
                                     self.groups.push(ServerGroup::new(&group, false));
                                 }
 
-                                let new_server = ServerEntry::new(
-                                    name,
-                                    addr,
-                                    "Custom Server",
-                                    0,
-                                    0,
-                                    false,
-                                )
-                                .with_group(group);
+                                let new_server =
+                                    ServerEntry::new(name, addr, "Custom Server", 0, 0, false)
+                                        .with_group(group);
 
                                 self.servers.push(new_server);
                                 self.selected_index = Some(self.servers.len() - 1);
@@ -1002,7 +996,11 @@ pub fn render_server_list(
                         out,
                     );
 
-                    let toggle_hint = if collapsed { "Click to expand" } else { "Click to collapse" };
+                    let toggle_hint = if collapsed {
+                        "Click to expand"
+                    } else {
+                        "Click to collapse"
+                    };
                     let (th_w, _) = font.measure_text(toggle_hint);
                     font.layout_text(
                         toggle_hint,
@@ -1066,7 +1064,11 @@ pub fn render_server_list(
                         } else {
                             UiQuad::rgba(255, 255, 255, 255)
                         };
-                        out.push(UiQuad::solid([phys_x, phys_y], [phys_w, scale as u16], border_col));
+                        out.push(UiQuad::solid(
+                            [phys_x, phys_y],
+                            [phys_w, scale as u16],
+                            border_col,
+                        ));
                         out.push(UiQuad::solid(
                             [phys_x, phys_y + i32::from(phys_h) - scale.cast_signed()],
                             [phys_w, scale as u16],

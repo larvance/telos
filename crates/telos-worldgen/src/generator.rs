@@ -118,6 +118,19 @@ impl WorldGenerator {
                 crate::nether::generate_nether_chunk(self.seed, pos, &self.blocks)
             }
             GeneratorKind::Standard => {
+                let cy = pos.y();
+                // Bottom mantle bedrock fast-path: bedrock extends up to y <= -1020.
+                // Any chunk where pos.y() * 32 + 31 <= -1020 (i.e. cy <= -33) is 100% solid bedrock.
+                if cy <= -33 {
+                    return Chunk::new_uniform(pos, self.blocks.bedrock, true);
+                }
+
+                // Sky fast-path: procedural terrain and flora never exceed y = 290.
+                // Any chunk where pos.y() * 32 >= 320 (i.e. cy >= 10) is 100% air.
+                if cy >= 10 {
+                    return Chunk::new_uniform(pos, BlockStateId::AIR, false);
+                }
+
                 // 1. Evaluate 405 corner samples on 4x8x4 coarse grid
                 let grid = CoarseGrid::evaluate(self.seed, pos);
 

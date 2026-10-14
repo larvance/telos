@@ -133,6 +133,7 @@ impl LightPattern {
 pub struct LightPatternTable {
     patterns: Vec<LightPattern>,
     index_map: HashMap<LightPattern, u16>,
+    last_pattern: (LightPattern, u16),
 }
 
 impl Default for LightPatternTable {
@@ -146,19 +147,25 @@ impl LightPatternTable {
     /// Creates a new table pre-populated with pattern 0 as `LightPattern::full_sky()`.
     #[must_use]
     pub fn new() -> Self {
+        let default_pattern = LightPattern::full_sky();
         let mut this = Self {
             patterns: Vec::with_capacity(64),
             index_map: HashMap::with_capacity(64),
+            last_pattern: (default_pattern, 0),
         };
-        let default_pattern = LightPattern::full_sky();
         this.patterns.push(default_pattern);
         this.index_map.insert(default_pattern, 0);
         this
     }
 
     /// Inserts a pattern and returns its `u16` index (< 16384).
+    #[inline]
     pub fn insert(&mut self, pattern: LightPattern) -> u16 {
+        if pattern == self.last_pattern.0 {
+            return self.last_pattern.1;
+        }
         if let Some(&idx) = self.index_map.get(&pattern) {
+            self.last_pattern = (pattern, idx);
             return idx;
         }
         let idx = self.patterns.len() as u16;
@@ -168,6 +175,7 @@ impl LightPatternTable {
         );
         self.patterns.push(pattern);
         self.index_map.insert(pattern, idx);
+        self.last_pattern = (pattern, idx);
         idx
     }
 
@@ -247,6 +255,7 @@ pub fn compute_corner_ao_and_light<S: VoxelLightSampler>(
 }
 
 /// Computes the packed `LightPattern` for a 1x1 face at local `(x, y, z)` facing `dir`.
+#[inline]
 #[must_use]
 pub fn compute_face_pattern<S: VoxelLightSampler>(
     sampler: &S,
@@ -259,23 +268,19 @@ pub fn compute_face_pattern<S: VoxelLightSampler>(
     let p = IVec3::new(x as i32, y as i32, z as i32) + dir.normal();
     let (u_dir, v_dir) = dir.tangent_frame();
 
-    let mut sky = [0u8; 4];
-    let mut block = [0u8; 4];
-    let mut ao = [0u8; 4];
+    let neg_u = -u_dir;
+    let pos_u = u_dir;
+    let neg_v = -v_dir;
+    let pos_v = v_dir;
 
-    for c in 0..4 {
-        let sign_u = if c == 1 || c == 2 { 1 } else { -1 };
-        let sign_v = if c == 2 || c == 3 { 1 } else { -1 };
-        let s1_offset = u_dir * sign_u;
-        let s2_offset = v_dir * sign_v;
-        let corner_offset = s1_offset + s2_offset;
+    let c0 = compute_corner_ao_and_light(sampler, p, neg_u, neg_v, neg_u + neg_v);
+    let c1 = compute_corner_ao_and_light(sampler, p, pos_u, neg_v, pos_u + neg_v);
+    let c2 = compute_corner_ao_and_light(sampler, p, pos_u, pos_v, pos_u + pos_v);
+    let c3 = compute_corner_ao_and_light(sampler, p, neg_u, pos_v, neg_u + pos_v);
 
-        let (corner_ao, corner_sky, corner_block) =
-            compute_corner_ao_and_light(sampler, p, s1_offset, s2_offset, corner_offset);
-        ao[c] = corner_ao;
-        sky[c] = corner_sky;
-        block[c] = corner_block;
-    }
+    let sky = [c0.1, c1.1, c2.1, c3.1];
+    let block = [c0.2, c1.2, c2.2, c3.2];
+    let ao = [c0.0, c1.0, c2.0, c3.0];
 
     LightPattern::new(sky, block, ao)
 }
@@ -565,38 +570,45 @@ impl<'a> OccupancyLightSampler<'a> {
 }
 
 impl VoxelLightSampler for OccupancyLightSampler<'_> {
+    #[inline]
     #[allow(clippy::manual_range_contains)]
     fn is_opaque(&self, x: i32, y: i32, z: i32) -> bool {
-        if (0..32).contains(&x) && (0..32).contains(&y) && (0..32).contains(&z) {
-            return self.occ.is_solid(x as u32, y as u32, z as u32);
+        let ux = x as u32;
+        let uy = y as u32;
+        let uz = z as u32;
+
+        if ux < 32 && uy < 32 && uz < 32 {
+            return self.occ.is_solid(ux, uy, uz);
         }
 
-        if x < 0 && (0..32).contains(&y) && (0..32).contains(&z) {
-            return ((self.neighbors.neg_x[y as usize] >> (z as u32)) & 1) != 0;
+        if x < 0 && uy < 32 && uz < 32 {
+            return ((self.neighbors.neg_x[y as usize] >> uz) & 1) != 0;
         }
-        if x >= 32 && (0..32).contains(&y) && (0..32).contains(&z) {
-            return ((self.neighbors.pos_x[z as usize] >> (y as u32)) & 1) != 0;
+        if x >= 32 && uy < 32 && uz < 32 {
+            return ((self.neighbors.pos_x[z as usize] >> uy) & 1) != 0;
         }
-        if y < 0 && (0..32).contains(&x) && (0..32).contains(&z) {
-            return ((self.neighbors.neg_y[z as usize] >> (x as u32)) & 1) != 0;
+        if y < 0 && ux < 32 && uz < 32 {
+            return ((self.neighbors.neg_y[z as usize] >> ux) & 1) != 0;
         }
-        if y >= 32 && (0..32).contains(&x) && (0..32).contains(&z) {
-            return ((self.neighbors.pos_y[x as usize] >> (z as u32)) & 1) != 0;
+        if y >= 32 && ux < 32 && uz < 32 {
+            return ((self.neighbors.pos_y[x as usize] >> uz) & 1) != 0;
         }
-        if z < 0 && (0..32).contains(&x) && (0..32).contains(&y) {
-            return ((self.neighbors.neg_z[x as usize] >> (y as u32)) & 1) != 0;
+        if z < 0 && ux < 32 && uy < 32 {
+            return ((self.neighbors.neg_z[x as usize] >> uy) & 1) != 0;
         }
-        if z >= 32 && (0..32).contains(&x) && (0..32).contains(&y) {
-            return ((self.neighbors.pos_z[y as usize] >> (x as u32)) & 1) != 0;
+        if z >= 32 && ux < 32 && uy < 32 {
+            return ((self.neighbors.pos_z[y as usize] >> ux) & 1) != 0;
         }
 
         false
     }
 
+    #[inline]
     fn get_sky_light(&self, _x: i32, _y: i32, _z: i32) -> u8 {
         15
     }
 
+    #[inline]
     fn get_block_light(&self, _x: i32, _y: i32, _z: i32) -> u8 {
         0
     }

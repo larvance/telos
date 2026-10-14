@@ -619,6 +619,18 @@ fn test_settings_screen_footer_layout_no_reset_defaults() {
     assert!(screen.done_button.hovered);
 
     // Verify clicking Done or Back exits settings
-    assert!(screen.handle_mouse_click_i18n(screen.done_button.x + 2.0, screen.done_button.y + 2.0, 800.0, 600.0, &catalog));
-    assert!(screen.handle_mouse_click_i18n(screen.back_button.x + 2.0, screen.back_button.y + 2.0, 800.0, 600.0, &catalog));
+    assert!(screen.handle_mouse_click_i18n(
+        screen.done_button.x + 2.0,
+        screen.done_button.y + 2.0,
+        800.0,
+        600.0,
+        &catalog
+    ));
+    assert!(screen.handle_mouse_click_i18n(
+        screen.back_button.x + 2.0,
+        screen.back_button.y + 2.0,
+        800.0,
+        600.0,
+        &catalog
+    ));
 }

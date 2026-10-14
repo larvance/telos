@@ -1199,9 +1199,11 @@ impl SettingsScreen {
             let is_visible = btn.y + btn.height > content_top;
             btn.hovered = in_content_zone && is_visible && btn.contains(mouse_x, mouse_y);
         }
-        let reset_kb_vis = self.reset_keybinds_button.y + self.reset_keybinds_button.height > content_top;
-        self.reset_keybinds_button.hovered =
-            in_content_zone && reset_kb_vis && self.reset_keybinds_button.contains(mouse_x, mouse_y);
+        let reset_kb_vis =
+            self.reset_keybinds_button.y + self.reset_keybinds_button.height > content_top;
+        self.reset_keybinds_button.hovered = in_content_zone
+            && reset_kb_vis
+            && self.reset_keybinds_button.contains(mouse_x, mouse_y);
 
         self.back_button.hovered = self.back_button.contains(mouse_x, mouse_y);
         self.done_button.hovered = self.done_button.contains(mouse_x, mouse_y);
@@ -1276,7 +1278,8 @@ impl SettingsScreen {
             }
 
             // Reset keybinds button
-            let reset_kb_vis = self.reset_keybinds_button.y + self.reset_keybinds_button.height > content_top;
+            let reset_kb_vis =
+                self.reset_keybinds_button.y + self.reset_keybinds_button.height > content_top;
             if reset_kb_vis && self.reset_keybinds_button.contains(mouse_x, mouse_y) {
                 self.settings.controls.keybinds.reset_defaults();
                 self.listening_action = None;
@@ -1691,7 +1694,15 @@ impl SettingsScreen {
                         } else {
                             UiQuad::rgba(230, 237, 245, 255)
                         };
-                        font.layout_text(label, col_x + 12.0, row.y + 7.5, lbl_col, true, scale, out);
+                        font.layout_text(
+                            label,
+                            col_x + 12.0,
+                            row.y + 7.5,
+                            lbl_col,
+                            true,
+                            scale,
+                            out,
+                        );
 
                         // Right keybind pill
                         let px_bx = snap_to_physical(btn.x, scale);
@@ -1775,10 +1786,7 @@ impl SettingsScreen {
                                 UiQuad::rgba(26, 38, 58, 240),
                             )
                         } else {
-                            (
-                                UiQuad::rgba(32, 44, 64, 180),
-                                UiQuad::rgba(18, 24, 36, 210),
-                            )
+                            (UiQuad::rgba(32, 44, 64, 180), UiQuad::rgba(18, 24, 36, 210))
                         };
 
                         out.push(UiQuad::solid([px_rx, px_ry], [px_rw, px_rh], border_col));
@@ -1795,9 +1803,21 @@ impl SettingsScreen {
                         } else {
                             UiQuad::rgba(226, 232, 240, 255)
                         };
-                        font.layout_text(display, col_x + 14.0, row.y + 7.5, text_col, true, scale, out);
+                        font.layout_text(
+                            display,
+                            col_x + 14.0,
+                            row.y + 7.5,
+                            text_col,
+                            true,
+                            scale,
+                            out,
+                        );
 
-                        let badge_str = if *is_active { "[ ACTIVE ]" } else { "[ Select ]" };
+                        let badge_str = if *is_active {
+                            "[ ACTIVE ]"
+                        } else {
+                            "[ Select ]"
+                        };
                         let badge_col = if *is_active {
                             UiQuad::rgba(255, 209, 84, 255)
                         } else {
@@ -1829,10 +1849,7 @@ impl SettingsScreen {
                             UiQuad::rgba(38, 54, 82, 255),
                         )
                     } else {
-                        (
-                            UiQuad::rgba(44, 60, 88, 200),
-                            UiQuad::rgba(24, 34, 50, 220),
-                        )
+                        (UiQuad::rgba(44, 60, 88, 200), UiQuad::rgba(24, 34, 50, 220))
                     };
 
                     out.push(UiQuad::solid([px_bx, px_by], [px_bw, px_bh], border_col));
@@ -2021,9 +2038,25 @@ impl SettingsScreen {
                 [px_kw, px_kh],
                 UiQuad::rgba(45, 60, 85, 255),
             ));
-            font.layout_text("ESC", kbox_x + 4.0, kbox_y + 3.0, UiQuad::rgba(220, 230, 245, 255), false, scale, out);
+            font.layout_text(
+                "ESC",
+                kbox_x + 4.0,
+                kbox_y + 3.0,
+                UiQuad::rgba(220, 230, 245, 255),
+                false,
+                scale,
+                out,
+            );
 
-            font.layout_text("Back", btn.x + 34.0, btn.y + 5.5, UiQuad::rgba(180, 196, 215, 255), true, scale, out);
+            font.layout_text(
+                "Back",
+                btn.x + 34.0,
+                btn.y + 5.5,
+                UiQuad::rgba(180, 196, 215, 255),
+                true,
+                scale,
+                out,
+            );
         }
 
         // Vibrant illuminated blue Done button
@@ -2165,11 +2198,7 @@ fn render_diamond_thumb(
     for dy in -inner_r..=inner_r {
         let span = inner_r - dy.abs();
         let w = (span * 2 + 1) as u16;
-        out.push(UiQuad::solid(
-            [px_cx - span, px_cy + dy],
-            [w, 1],
-            core_col,
-        ));
+        out.push(UiQuad::solid([px_cx - span, px_cy + dy], [w, 1], core_col));
     }
 }
 

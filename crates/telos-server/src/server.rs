@@ -2634,7 +2634,8 @@ impl Server {
         let entity_id = self.next_entity_id;
         self.next_entity_id += 1;
 
-        let spawn_pos = if let Some(sp) = custom_spawn.or_else(|| self.config.default_spawn_dvec3()) {
+        let spawn_pos = if let Some(sp) = custom_spawn.or_else(|| self.config.default_spawn_dvec3())
+        {
             sp
         } else {
             self.worlds.default_world_mut().find_safe_spawn(128, 160)

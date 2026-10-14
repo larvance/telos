@@ -4,10 +4,10 @@
 //! Queries latest releases/commits, shows real-time download and verification progress,
 //! and launches or updates the launcher executable.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use eframe::egui;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 /// Internal state of the updater.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -100,149 +100,163 @@ impl eframe::App for TelosUpdaterApp {
         // Background panel frame matching Ubuntu/GTK dark dialog styling
         let panel_frame = egui::Frame::new()
             .fill(egui::Color32::from_rgb(38, 38, 38))
-            .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(58, 58, 58)))
+            .stroke(egui::Stroke::new(
+                1.0_f32,
+                egui::Color32::from_rgb(58, 58, 58),
+            ))
             .corner_radius(8.0)
             .inner_margin(egui::Margin::same(0));
 
-        egui::CentralPanel::default().frame(panel_frame).show(ctx, |ui| {
-            // --- Titlebar (Ubuntu style) ---
-            let titlebar_rect = ui.allocate_space(egui::vec2(ui.available_width(), 32.0)).1;
-            ui.painter().rect_filled(
-                titlebar_rect,
-                egui::CornerRadius { nw: 8, ne: 8, sw: 0, se: 0 },
-                egui::Color32::from_rgb(45, 45, 45),
-            );
+        egui::CentralPanel::default()
+            .frame(panel_frame)
+            .show(ctx, |ui| {
+                // --- Titlebar (Ubuntu style) ---
+                let titlebar_rect = ui.allocate_space(egui::vec2(ui.available_width(), 32.0)).1;
+                ui.painter().rect_filled(
+                    titlebar_rect,
+                    egui::CornerRadius {
+                        nw: 8,
+                        ne: 8,
+                        sw: 0,
+                        se: 0,
+                    },
+                    egui::Color32::from_rgb(45, 45, 45),
+                );
 
-            ui.allocate_new_ui(egui::UiBuilder::new().max_rect(titlebar_rect), |ui| {
-                ui.horizontal_centered(|ui| {
-                    ui.add_space(14.0);
-                    // Centered window title
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(
-                            egui::RichText::new("telos-updater")
-                                .size(13.0)
-                                .color(egui::Color32::from_rgb(220, 220, 220)),
-                        );
-                    });
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(titlebar_rect), |ui| {
+                    ui.horizontal_centered(|ui| {
+                        ui.add_space(14.0);
+                        // Centered window title
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new("telos-updater")
+                                    .size(13.0)
+                                    .color(egui::Color32::from_rgb(220, 220, 220)),
+                            );
+                        });
 
-                    // Window controls on right (—, □, ✕)
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.add_space(8.0);
-                        let close_btn = ui.add(
-                            egui::Button::new(
-                                egui::RichText::new("✕")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(180, 180, 180)),
-                            )
-                            .frame(false),
-                        );
-                        if close_btn.clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
+                        // Window controls on right (—, □, ✕)
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add_space(8.0);
+                            let close_btn = ui.add(
+                                egui::Button::new(
+                                    egui::RichText::new("✕")
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(180, 180, 180)),
+                                )
+                                .frame(false),
+                            );
+                            if close_btn.clicked() {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
 
-                        let max_btn = ui.add(
-                            egui::Button::new(
-                                egui::RichText::new("□")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(180, 180, 180)),
-                            )
-                            .frame(false),
-                        );
-                        let _ = max_btn;
+                            let max_btn = ui.add(
+                                egui::Button::new(
+                                    egui::RichText::new("□")
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(180, 180, 180)),
+                                )
+                                .frame(false),
+                            );
+                            let _ = max_btn;
 
-                        let min_btn = ui.add(
-                            egui::Button::new(
-                                egui::RichText::new("—")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(180, 180, 180)),
-                            )
-                            .frame(false),
-                        );
-                        let _ = min_btn;
+                            let min_btn = ui.add(
+                                egui::Button::new(
+                                    egui::RichText::new("—")
+                                        .size(11.0)
+                                        .color(egui::Color32::from_rgb(180, 180, 180)),
+                                )
+                                .frame(false),
+                            );
+                            let _ = min_btn;
+                        });
                     });
                 });
-            });
 
-            // --- Body Content ---
-            ui.add_space(14.0);
-            ui.horizontal(|ui| {
-                ui.add_space(20.0);
-                ui.vertical(|ui| {
-                    // Status Header
-                    ui.label(
-                        egui::RichText::new(&self.status_text)
-                            .size(13.0)
-                            .color(egui::Color32::from_rgb(160, 160, 160)),
-                    );
-
-                    ui.add_space(10.0);
-
-                    // Thin Horizontal Progress Bar (Image 1: dark rail with red/orange Ubuntu accent)
-                    let bar_w = 420.0;
-                    let bar_h = 3.5;
-                    let bar_rect = ui.allocate_space(egui::vec2(bar_w, bar_h)).1;
-                    let painter = ui.painter();
-
-                    // Rail
-                    painter.rect_filled(bar_rect, 1.5, egui::Color32::from_rgb(60, 60, 60));
-
-                    // Fill line (Ubuntu accent: #e95420 orange/red)
-                    let fill_w = bar_rect.width() * self.progress.clamp(0.0, 1.0);
-                    let fill_rect = egui::Rect::from_min_max(
-                        bar_rect.min,
-                        egui::pos2(bar_rect.min.x + fill_w, bar_rect.max.y),
-                    );
-                    let bar_color = if self.state == UpdateState::UpToDate {
-                        egui::Color32::from_rgb(16, 185, 129) // Emerald when done
-                    } else {
-                        egui::Color32::from_rgb(233, 84, 32) // Ubuntu orange/accent
-                    };
-                    painter.rect_filled(fill_rect, 1.5, bar_color);
-
-                    ui.add_space(10.0);
-
-                    // Detail text with spinner
-                    ui.horizontal(|ui| {
+                // --- Body Content ---
+                ui.add_space(14.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(20.0);
+                    ui.vertical(|ui| {
+                        // Status Header
                         ui.label(
-                            egui::RichText::new(&self.detail_text)
+                            egui::RichText::new(&self.status_text)
                                 .size(13.0)
-                                .color(if self.state == UpdateState::UpToDate {
+                                .color(egui::Color32::from_rgb(160, 160, 160)),
+                        );
+
+                        ui.add_space(10.0);
+
+                        // Thin Horizontal Progress Bar (Image 1: dark rail with red/orange Ubuntu accent)
+                        let bar_w = 420.0;
+                        let bar_h = 3.5;
+                        let bar_rect = ui.allocate_space(egui::vec2(bar_w, bar_h)).1;
+                        let painter = ui.painter();
+
+                        // Rail
+                        painter.rect_filled(bar_rect, 1.5, egui::Color32::from_rgb(60, 60, 60));
+
+                        // Fill line (Ubuntu accent: #e95420 orange/red)
+                        let fill_w = bar_rect.width() * self.progress.clamp(0.0, 1.0);
+                        let fill_rect = egui::Rect::from_min_max(
+                            bar_rect.min,
+                            egui::pos2(bar_rect.min.x + fill_w, bar_rect.max.y),
+                        );
+                        let bar_color = if self.state == UpdateState::UpToDate {
+                            egui::Color32::from_rgb(16, 185, 129) // Emerald when done
+                        } else {
+                            egui::Color32::from_rgb(233, 84, 32) // Ubuntu orange/accent
+                        };
+                        painter.rect_filled(fill_rect, 1.5, bar_color);
+
+                        ui.add_space(10.0);
+
+                        // Detail text with spinner
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(&self.detail_text).size(13.0).color(
+                                if self.state == UpdateState::UpToDate {
                                     egui::Color32::from_rgb(16, 185, 129)
                                 } else {
                                     egui::Color32::from_rgb(100, 180, 246)
-                                }),
-                        );
+                                },
+                            ));
 
-                        // Cancel / Launch Button on bottom right
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.add_space(20.0);
-                            let btn_label = if self.state == UpdateState::UpToDate {
-                                "Launch"
-                            } else {
-                                "Cancel"
-                            };
+                            // Cancel / Launch Button on bottom right
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.add_space(20.0);
+                                    let btn_label = if self.state == UpdateState::UpToDate {
+                                        "Launch"
+                                    } else {
+                                        "Cancel"
+                                    };
 
-                            let btn = egui::Button::new(
-                                egui::RichText::new(btn_label)
-                                    .size(12.5)
-                                    .color(egui::Color32::from_rgb(230, 230, 230)),
-                            )
-                            .fill(egui::Color32::from_rgb(52, 52, 52))
-                            .stroke(egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(70, 70, 70)))
-                            .corner_radius(5.0)
-                            .min_size(egui::vec2(76.0, 26.0));
+                                    let btn = egui::Button::new(
+                                        egui::RichText::new(btn_label)
+                                            .size(12.5)
+                                            .color(egui::Color32::from_rgb(230, 230, 230)),
+                                    )
+                                    .fill(egui::Color32::from_rgb(52, 52, 52))
+                                    .stroke(egui::Stroke::new(
+                                        1.0_f32,
+                                        egui::Color32::from_rgb(70, 70, 70),
+                                    ))
+                                    .corner_radius(5.0)
+                                    .min_size(egui::vec2(76.0, 26.0));
 
-                            if ui.add(btn).clicked() {
-                                if self.state == UpdateState::UpToDate {
-                                    self.should_launch_main.store(true, Ordering::SeqCst);
-                                }
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                            }
+                                    if ui.add(btn).clicked() {
+                                        if self.state == UpdateState::UpToDate {
+                                            self.should_launch_main.store(true, Ordering::SeqCst);
+                                        }
+                                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                    }
+                                },
+                            );
                         });
                     });
                 });
             });
-        });
     }
 }
 

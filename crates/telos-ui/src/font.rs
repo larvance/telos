@@ -282,7 +282,11 @@ impl BitmapFont {
     /// rotated by `angle_rad` around the pivot point `[pivot_x, pivot_y]` in GUI units,
     /// with an optional scale multiplier `scale_mult`.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::similar_names, clippy::cast_lossless, clippy::cast_possible_truncation)]
+    #[allow(
+        clippy::similar_names,
+        clippy::cast_lossless,
+        clippy::cast_possible_truncation
+    )]
     pub fn layout_text_rotated(
         &self,
         text: &str,

@@ -16,6 +16,11 @@ pub trait LodVoxelSource: Send + Sync {
 
     /// Retrieves the `BlockStateId` at local coordinate `(x, y, z)`.
     fn get_state(&self, x: u32, y: u32, z: u32) -> BlockStateId;
+
+    /// Returns `true` if the entire 32³ volume is known to be empty air.
+    fn is_empty(&self) -> bool {
+        false
+    }
 }
 
 impl LodVoxelSource for ChunkSnapshot {
@@ -27,6 +32,11 @@ impl LodVoxelSource for ChunkSnapshot {
     #[inline]
     fn get_state(&self, x: u32, y: u32, z: u32) -> BlockStateId {
         self.blocks().get(LocalIdx::from_coords_unchecked(x, y, z))
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.occupancy().is_empty()
     }
 }
 
@@ -96,6 +106,11 @@ impl LodVoxelSource for LodNode {
         let idx = Self::local_index(x, y, z);
         self.states[idx]
     }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.occupancy.is_empty()
+    }
 }
 
 impl<T: LodVoxelSource> LodVoxelSource for Arc<T> {
@@ -107,5 +122,10 @@ impl<T: LodVoxelSource> LodVoxelSource for Arc<T> {
     #[inline]
     fn get_state(&self, x: u32, y: u32, z: u32) -> BlockStateId {
         (**self).get_state(x, y, z)
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        (**self).is_empty()
     }
 }

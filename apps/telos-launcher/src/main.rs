@@ -26,12 +26,11 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State, Window};
 
-use build_coordinator::{resolve_repo_dir, start_build_worker, BuildEvent};
-use profile::{load_profile, save_profile as persist_profile, LauncherProfile};
+use build_coordinator::{BuildEvent, resolve_repo_dir, start_build_worker};
+use profile::{LauncherProfile, load_profile, save_profile as persist_profile};
 use version_manager::{
-    ensure_version_cached, fetch_remote_versions, get_telos_base_dir,
-    load_or_init_installations, persist_installations, ChannelKind, Installation,
-    RemoteVersionInfo,
+    ChannelKind, Installation, RemoteVersionInfo, ensure_version_cached, fetch_remote_versions,
+    get_telos_base_dir, load_or_init_installations, persist_installations,
 };
 
 /// Path to the single-instance UNIX domain socket.
@@ -378,7 +377,9 @@ fn spawn_and_supervise(
         let stderr_output = err_handle.join().unwrap_or_default();
         let stdout_output = out_handle.join().unwrap_or_default();
 
-        let remaining = running_instances.fetch_sub(1, Ordering::SeqCst).saturating_sub(1);
+        let remaining = running_instances
+            .fetch_sub(1, Ordering::SeqCst)
+            .saturating_sub(1);
 
         match status {
             Ok(exit_status) if exit_status.success() => {
@@ -391,11 +392,14 @@ fn spawn_and_supervise(
                 }
 
                 // If user reopened launcher or other instances are still running:
-                let _ = app_handle.emit("game_exited", serde_json::json!({
-                    "success": true,
-                    "installation": inst_name,
-                    "exit_code": 0,
-                }));
+                let _ = app_handle.emit(
+                    "game_exited",
+                    serde_json::json!({
+                        "success": true,
+                        "installation": inst_name,
+                        "exit_code": 0,
+                    }),
+                );
             }
             Ok(exit_status) => {
                 // Game crashed: show launcher back so user can inspect crash details
@@ -421,19 +425,23 @@ fn spawn_and_supervise(
                     combined.push_str(stdout_output.trim());
                 }
                 if combined.is_empty() {
-                    combined = format!("Game process terminated unexpectedly with exit code {code}.");
+                    combined =
+                        format!("Game process terminated unexpectedly with exit code {code}.");
                 }
 
                 let sanitized_log = strip_ansi_escapes(&combined);
                 let crash_summary = determine_crash_summary(code, &sanitized_log);
 
-                let _ = app_handle.emit("game_crash", serde_json::json!({
-                    "success": false,
-                    "installation": inst_name,
-                    "exit_code": code,
-                    "crash_reason": crash_summary,
-                    "error_log": sanitized_log,
-                }));
+                let _ = app_handle.emit(
+                    "game_crash",
+                    serde_json::json!({
+                        "success": false,
+                        "installation": inst_name,
+                        "exit_code": code,
+                        "crash_reason": crash_summary,
+                        "error_log": sanitized_log,
+                    }),
+                );
             }
             Err(e) => {
                 is_window_open.store(true, Ordering::SeqCst);
@@ -444,13 +452,16 @@ fn spawn_and_supervise(
                 }
 
                 let error_msg = format!("Process supervision failed: {e}");
-                let _ = app_handle.emit("game_crash", serde_json::json!({
-                    "success": false,
-                    "installation": inst_name,
-                    "exit_code": -1,
-                    "crash_reason": error_msg.clone(),
-                    "error_log": error_msg,
-                }));
+                let _ = app_handle.emit(
+                    "game_crash",
+                    serde_json::json!({
+                        "success": false,
+                        "installation": inst_name,
+                        "exit_code": -1,
+                        "crash_reason": error_msg.clone(),
+                        "error_log": error_msg,
+                    }),
+                );
             }
         }
     });
@@ -496,7 +507,9 @@ pub fn determine_crash_summary(exit_code: i32, log: &str) -> String {
         let panic_str = &log[panic_idx..];
         if let Some(first_line) = panic_str.lines().next() {
             let trimmed = first_line.trim();
-            return format!("The game crashed with a fatal Rust panic: {trimmed}. Check the debug log for full backtrace.");
+            return format!(
+                "The game crashed with a fatal Rust panic: {trimmed}. Check the debug log for full backtrace."
+            );
         }
     }
 
@@ -513,8 +526,10 @@ pub fn determine_crash_summary(exit_code: i32, log: &str) -> String {
     if log.contains("Swapchain resize failed") {
         return "A Vulkan swapchain failure occurred while resizing the game window. Check the debug log for graphics driver details.".to_string();
     }
-    if log.contains("VK_ERROR_OUT_OF_DEVICE_MEMORY") || log.contains("VK_ERROR_OUT_OF_HOST_MEMORY") {
-        return "The graphics driver ran out of VRAM/memory during graphics resource allocation.".to_string();
+    if log.contains("VK_ERROR_OUT_OF_DEVICE_MEMORY") || log.contains("VK_ERROR_OUT_OF_HOST_MEMORY")
+    {
+        return "The graphics driver ran out of VRAM/memory during graphics resource allocation."
+            .to_string();
     }
 
     // 4. POSIX signals
@@ -662,7 +677,9 @@ fn trigger_launch(
                 if rel.exists() {
                     Ok(rel)
                 } else {
-                    Err(format!("Binary for version '{version_tag}' not found in cache."))
+                    Err(format!(
+                        "Binary for version '{version_tag}' not found in cache."
+                    ))
                 }
             })
             .map_err(|e| e.to_string())?;
@@ -685,7 +702,12 @@ fn trigger_launch(
             .map_or("Installation", |i| i.name.as_str())
             .to_string();
 
-        spawn_and_supervise(cmd, app.clone(), inst_name.clone(), profile.auto_close_on_play)?;
+        spawn_and_supervise(
+            cmd,
+            app.clone(),
+            inst_name.clone(),
+            profile.auto_close_on_play,
+        )?;
 
         Ok(LaunchResult {
             success: true,
@@ -762,7 +784,9 @@ fn get_cli_args() -> Result<Vec<String>, String> {
 ///   which immediately opens the local game binary.
 /// - If dev is not set up, ensures "Telos Dev" is not present in the app list.
 fn sync_desktop_integration(repo_dir: &std::path::Path) {
-    let Some(data_dir) = dirs::data_dir() else { return; };
+    let Some(data_dir) = dirs::data_dir() else {
+        return;
+    };
     let apps_dir = data_dir.join("applications");
     if !apps_dir.exists() {
         let _ = fs::create_dir_all(&apps_dir);
@@ -811,7 +835,11 @@ fn sync_desktop_integration(repo_dir: &std::path::Path) {
     // Configure Telos Launcher desktop entry (points to dev auto-building wrapper if in dev repo)
     let launcher_exec = if is_dev_setup {
         dirs::home_dir()
-            .map(|h| h.join(".local/bin/telos-launcher").to_string_lossy().to_string())
+            .map(|h| {
+                h.join(".local/bin/telos-launcher")
+                    .to_string_lossy()
+                    .to_string()
+            })
             .unwrap_or_else(|| "telos-launcher".into())
     } else {
         "telos-launcher".to_string()
@@ -843,7 +871,11 @@ fn sync_desktop_integration(repo_dir: &std::path::Path) {
             .unwrap_or_else(|| "telos-dev".into());
 
         let icon_path = dirs::data_dir()
-            .map(|d| d.join("icons/hicolor/256x256/apps/telos.png").to_string_lossy().to_string())
+            .map(|d| {
+                d.join("icons/hicolor/256x256/apps/telos.png")
+                    .to_string_lossy()
+                    .to_string()
+            })
             .unwrap_or_else(|| "telos".into());
 
         let dev_desktop_content = format!(
@@ -870,7 +902,9 @@ fn sync_desktop_integration(repo_dir: &std::path::Path) {
     }
 
     // Update system desktop database if tool is installed
-    let _ = Command::new("update-desktop-database").arg(&apps_dir).status();
+    let _ = Command::new("update-desktop-database")
+        .arg(&apps_dir)
+        .status();
 }
 
 fn main() {
@@ -998,7 +1032,10 @@ mod tests {
     fn test_strip_ansi_escapes() {
         let raw = "\x1B[2m2026-10-14T15:01:58.958Z\x1B[0m \x1B[32m INFO\x1B[0m main \x1B[2mtelos_core\x1B[0m: Ready";
         let clean = strip_ansi_escapes(raw);
-        assert_eq!(clean, "2026-10-14T15:01:58.958Z  INFO main telos_core: Ready");
+        assert_eq!(
+            clean,
+            "2026-10-14T15:01:58.958Z  INFO main telos_core: Ready"
+        );
     }
 
     #[test]
@@ -1081,7 +1118,9 @@ mod tests {
         is_window_open.store(false, Ordering::SeqCst);
 
         // 4. Game exits cleanly: remaining instances drops to 0
-        let remaining = running_instances.fetch_sub(1, Ordering::SeqCst).saturating_sub(1);
+        let remaining = running_instances
+            .fetch_sub(1, Ordering::SeqCst)
+            .saturating_sub(1);
         assert_eq!(remaining, 0);
 
         // Check condition: remaining == 0 && !is_window_open -> should terminate launcher completely

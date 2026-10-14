@@ -1662,10 +1662,8 @@ fn test_decoupled_simulation_distance_and_mob_freezing() {
     let mut server = Server::new(7777, config);
 
     let (server_conn, client_conn) = MemoryConnection::pair_default();
-    let _session_id = server.add_connection_with_spawn(
-        Box::new(server_conn),
-        Some(DVec3::new(128.0, 45.0, 160.0)),
-    );
+    let _session_id = server
+        .add_connection_with_spawn(Box::new(server_conn), Some(DVec3::new(128.0, 45.0, 160.0)));
 
     // Fast-forward handshake: Hello -> LoginStart -> KnownRegistries -> ClientSettings -> ConfigAck
     client_conn
@@ -2159,7 +2157,10 @@ fn test_server_safe_spawn_ground_search_and_unloaded_chunk_pregeneration() {
         ground_y,
         spawn_pos.z.floor() as i32,
     ));
-    assert!(!ground_block.is_air(), "Ground block below player feet must not be air");
+    assert!(
+        !ground_block.is_air(),
+        "Ground block below player feet must not be air"
+    );
     assert!(
         !server.world().registry().is_fluid(ground_block),
         "Ground block must not be fluid"

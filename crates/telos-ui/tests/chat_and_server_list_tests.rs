@@ -249,7 +249,10 @@ fn test_server_groups_collapsible() {
         .iter()
         .filter(|it| matches!(it, ServerListItem::ServerCard { .. }))
         .count();
-    assert_eq!(card_count, 3, "All 3 servers should be visible when expanded");
+    assert_eq!(
+        card_count, 3,
+        "All 3 servers should be visible when expanded"
+    );
 
     // Collapse 'Favorites' group (group 0)
     screen.groups[0].collapsed = true;
@@ -270,7 +273,10 @@ fn test_server_groups_collapsible() {
         ServerListItem::ServerCard { .. } => panic!("Expected first item to be GroupHeader"),
     };
     let toggle_action = screen.handle_mouse_click(400.0, header_y, 800.0, 600.0);
-    assert_eq!(toggle_action, Some(telos_ui::ServerListAction::ServersModified));
+    assert_eq!(
+        toggle_action,
+        Some(telos_ui::ServerListAction::ServersModified)
+    );
     assert!(
         !screen.groups[0].collapsed,
         "Clicking group header should expand it"
@@ -326,9 +332,15 @@ fn test_server_drag_and_drop_reorder() {
     use telos_ui::ServerListAction;
 
     let mut screen = ServerListScreen::new();
-    screen.servers.push(ServerEntry::new("Alpha", "alpha.io", "A", 1, 10, false));
-    screen.servers.push(ServerEntry::new("Beta", "beta.io", "B", 2, 10, false));
-    screen.servers.push(ServerEntry::new("Gamma", "gamma.io", "C", 3, 10, false));
+    screen
+        .servers
+        .push(ServerEntry::new("Alpha", "alpha.io", "A", 1, 10, false));
+    screen
+        .servers
+        .push(ServerEntry::new("Beta", "beta.io", "B", 2, 10, false));
+    screen
+        .servers
+        .push(ServerEntry::new("Gamma", "gamma.io", "C", 3, 10, false));
 
     // Start drag on Alpha (index 0)
     screen.dragging_index = Some(0);
@@ -366,7 +378,9 @@ fn test_server_list_persistence_roundtrip() {
     let tmp_path = tmp.path();
 
     // Save to disk (only non-LAN servers should be saved)
-    screen.save_to_file(tmp_path).expect("Failed to save servers");
+    screen
+        .save_to_file(tmp_path)
+        .expect("Failed to save servers");
 
     // Load into fresh screen
     let mut fresh_screen = ServerListScreen::new();

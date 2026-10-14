@@ -85,10 +85,18 @@ pub struct ChunkAquiferCache {
     dim_x: usize,
     dim_y: usize,
     dim_z: usize,
+    max_fluid_level: i32,
     cells: [AquiferCell; MAX_CACHE_CELLS],
 }
 
 impl ChunkAquiferCache {
+    /// Maximum possible fluid surface level across all influencing cells.
+    #[inline]
+    #[must_use]
+    pub const fn max_fluid_level(&self) -> i32 {
+        self.max_fluid_level
+    }
+
     /// Looks up the precomputed cell at grid index `(cx, cy, cz)`.
     #[inline]
     #[must_use]
@@ -254,6 +262,7 @@ impl AquiferSampler {
         let dim_y = (max_cy - min_cy + 1) as usize;
         let dim_z = (max_cz - min_cz + 1) as usize;
 
+        let mut max_fluid_level = i32::MIN;
         let mut cells = [AquiferCell::default(); MAX_CACHE_CELLS];
 
         for cz in min_cz..=max_cz {
@@ -264,7 +273,11 @@ impl AquiferSampler {
                     let ux = (cx - min_cx) as usize;
                     let idx = uz * (dim_y * dim_x) + uy * dim_x + ux;
                     if idx < MAX_CACHE_CELLS {
-                        cells[idx] = self.evaluate_cell(cx, cy, cz);
+                        let cell = self.evaluate_cell(cx, cy, cz);
+                        if cell.kind != FluidKind::None && cell.level > max_fluid_level {
+                            max_fluid_level = cell.level;
+                        }
+                        cells[idx] = cell;
                     }
                 }
             }
@@ -277,6 +290,7 @@ impl AquiferSampler {
             dim_x,
             dim_y,
             dim_z,
+            max_fluid_level,
             cells,
         }
     }
@@ -293,6 +307,12 @@ impl AquiferSampler {
         clippy::cast_sign_loss
     )]
     pub fn sample(&self, cache: &ChunkAquiferCache, wx: i32, wy: i32, wz: i32) -> AquiferSample {
+        // Fast path: if voxel height is at or above the maximum possible fluid level in this cache,
+        // no fluid or retaining barrier can exist.
+        if wy >= cache.max_fluid_level {
+            return AquiferSample::Air;
+        }
+
         let center_cx = wx.div_euclid(CELL_SIZE_X);
         let center_cy = wy.div_euclid(CELL_SIZE_Y);
         let center_cz = wz.div_euclid(CELL_SIZE_Z);
