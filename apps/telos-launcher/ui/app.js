@@ -1970,6 +1970,9 @@
         }
         elSettingKeepOpen.checked = !(appProfile.auto_close_on_play ?? appProfile.auto_close_on_launch ?? false);
         if (appProfile.news_url) {
+          if (appProfile.news_url === RAW_NEWS_URL) {
+            appProfile.news_url = DEFAULT_NEWS_URL;
+          }
           newsEndpoint = appProfile.news_url;
           elSettingNewsUrl.value = newsEndpoint;
         }

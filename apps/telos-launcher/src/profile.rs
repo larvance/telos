@@ -64,7 +64,20 @@ pub fn get_profile_path() -> PathBuf {
 pub fn load_profile() -> LauncherProfile {
     let path = get_profile_path();
     if let Ok(data) = fs::read_to_string(&path) {
-        if let Ok(profile) = serde_json::from_str::<LauncherProfile>(&data) {
+        if let Ok(mut profile) = serde_json::from_str::<LauncherProfile>(&data) {
+            let old_default = "https://raw.githubusercontent.com/larvance/telos/main/apps/telos-launcher/ui/assets/news/news.json";
+            let new_default = "https://news.telos.larvance.com/news.json";
+            if profile.news_url.as_deref() == Some(old_default) {
+                profile.news_url = Some(new_default.to_string());
+            }
+            if profile.successful_news_urls.is_empty() {
+                profile.successful_news_urls = vec![
+                    new_default.to_string(),
+                    old_default.to_string(),
+                ];
+            } else if !profile.successful_news_urls.contains(&new_default.to_string()) {
+                profile.successful_news_urls.insert(0, new_default.to_string());
+            }
             return profile;
         }
     }
