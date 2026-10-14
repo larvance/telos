@@ -1602,6 +1602,12 @@ struct App {
     // Cryptographic player profile & credentials (Phase 71)
     credentials: PlayerCredentials,
     player_uuid: [u8; 16],
+
+    // Window resize debouncing and minimization state
+    pending_resize: Option<(u32, u32)>,
+    last_resize_event_time: Instant,
+    last_swapchain_recreate_time: Instant,
+    is_minimized: bool,
 }
 
 impl App {
@@ -2116,6 +2122,11 @@ impl App {
             gl_renderer: None,
             credentials,
             player_uuid,
+
+            pending_resize: None,
+            last_resize_event_time: Instant::now(),
+            last_swapchain_recreate_time: Instant::now(),
+            is_minimized: false,
         }
     }
 
@@ -4791,8 +4802,85 @@ impl App {
         Ok(())
     }
 
+    fn apply_resize(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+
+        if let Some(gpu_context) = &mut self.gpu_context {
+            let cur = gpu_context.extent();
+            if cur.width == width && cur.height == height {
+                return;
+            }
+
+            if let Err(err) = gpu_context.resize(width, height) {
+                tracing::error!("Swapchain resize failed: {err}");
+                return;
+            }
+
+            if let Some(mut old_depth) = self.depth_buffer.take() {
+                old_depth.destroy(gpu_context.device().raw(), gpu_context.allocator());
+            }
+            match gpu_context.create_depth_buffer() {
+                Ok(d) => self.depth_buffer = Some(d),
+                Err(err) => tracing::error!("Failed to recreate depth buffer: {err}"),
+            }
+
+            let extent = gpu_context.extent();
+            if let (Some(pp), Some(depth), Some(csm)) =
+                (&mut self.postprocess, &self.depth_buffer, &self.csm)
+            {
+                if let Err(err) = pp.resize(
+                    gpu_context.device().raw(),
+                    gpu_context.allocator(),
+                    extent,
+                    depth.view(),
+                    csm.array_view(),
+                    csm.sampler(),
+                ) {
+                    tracing::error!("Failed to resize post-process frame graph: {err}");
+                }
+            }
+
+            if let Err(err) = self.recreate_hiz_resources(extent) {
+                tracing::error!("Failed to recreate Hi-Z resources on resize: {err}");
+            }
+        } else if let Some(gl_context) = &mut self.gl_context {
+            gl_context.resize(width, height);
+        }
+
+        let gui_scale = compute_gui_scale(width, height);
+        let width_gui = width as f32 / gui_scale as f32;
+        let height_gui = height as f32 / gui_scale as f32;
+        if matches!(self.current_screen, AppScreen::Settings { .. }) {
+            self.settings_screen
+                .update_layout_i18n(width_gui, height_gui, &self.catalog);
+        }
+        if let Some(form) = &mut self.active_modal_form {
+            form.update_layout(width_gui, height_gui);
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
     fn render(&mut self) -> bool {
+        if self.is_minimized {
+            std::thread::sleep(Duration::from_millis(16));
+            return false;
+        }
+
+        // Apply debounced / throttled resize
+        if let Some((w, h)) = self.pending_resize {
+            let settled = self.last_resize_event_time.elapsed() >= Duration::from_millis(60);
+            let interval_passed =
+                self.last_swapchain_recreate_time.elapsed() >= Duration::from_millis(150);
+
+            if settled || interval_passed {
+                self.pending_resize = None;
+                self.apply_resize(w, h);
+                self.last_swapchain_recreate_time = Instant::now();
+            }
+        }
+
         if self.active_backend == telos_gpu::rhi::RenderBackendType::OpenGl {
             return self.render_opengl();
         }
@@ -5343,6 +5431,18 @@ impl App {
         let frame_data = match gpu_context.begin_frame() {
             Ok(Some(data)) => data,
             Ok(None) => return false,
+            Err(telos_gpu::GpuError::Vk(ash::vk::Result::ERROR_OUT_OF_DATE_KHR)) => {
+                let (win_w, win_h) = self.window.as_ref().map_or((1280, 720), |w| {
+                    let s = w.inner_size();
+                    (s.width, s.height)
+                });
+                if win_w > 0 && win_h > 0 {
+                    self.pending_resize = Some((win_w, win_h));
+                    self.last_resize_event_time = Instant::now();
+                    self.last_swapchain_recreate_time = Instant::now() - Duration::from_millis(500);
+                }
+                return false;
+            }
             Err(err) => {
                 tracing::error!("begin_frame failed: {err}");
                 return false;
@@ -7523,7 +7623,20 @@ impl App {
         }
 
         if let Err(err) = gpu_context.end_frame(image_index) {
-            tracing::error!("end_frame failed: {err}");
+            match err {
+                telos_gpu::GpuError::Vk(ash::vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                    let (win_w, win_h) = self.window.as_ref().map_or((1280, 720), |w| {
+                        let s = w.inner_size();
+                        (s.width, s.height)
+                    });
+                    if win_w > 0 && win_h > 0 {
+                        self.pending_resize = Some((win_w, win_h));
+                        self.last_resize_event_time = Instant::now();
+                        self.last_swapchain_recreate_time = Instant::now() - Duration::from_millis(500);
+                    }
+                }
+                _ => tracing::error!("end_frame failed: {err}"),
+            }
         }
 
         let mut should_exit = false;
@@ -11530,42 +11643,18 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Resized(physical_size) => {
-                if physical_size.width > 0 && physical_size.height > 0 {
-                    if let Some(gpu_context) = &mut self.gpu_context {
-                        if let Err(err) =
-                            gpu_context.resize(physical_size.width, physical_size.height)
-                        {
-                            tracing::error!("Swapchain resize failed: {err}");
-                        }
-                        if let Some(mut old_depth) = self.depth_buffer.take() {
-                            old_depth.destroy(gpu_context.device().raw(), gpu_context.allocator());
-                        }
-                        match gpu_context.create_depth_buffer() {
-                            Ok(d) => self.depth_buffer = Some(d),
-                            Err(err) => tracing::error!("Failed to recreate depth buffer: {err}"),
-                        }
-                        let extent = vk::Extent2D {
-                            width: physical_size.width,
-                            height: physical_size.height,
-                        };
-                        if let (Some(pp), Some(depth), Some(csm)) =
-                            (&mut self.postprocess, &self.depth_buffer, &self.csm)
-                            && let Err(err) = pp.resize(
-                                gpu_context.device().raw(),
-                                gpu_context.allocator(),
-                                extent,
-                                depth.view(),
-                                csm.array_view(),
-                                csm.sampler(),
-                            )
-                        {
-                            tracing::error!("Failed to resize post-process frame graph: {err}");
-                        }
-                        if let Err(err) = self.recreate_hiz_resources(extent) {
-                            tracing::error!("Failed to recreate Hi-Z resources on resize: {err}");
-                        }
-                    } else if let Some(gl_context) = &mut self.gl_context {
-                        gl_context.resize(physical_size.width, physical_size.height);
+                if physical_size.width == 0 || physical_size.height == 0 {
+                    self.is_minimized = true;
+                } else {
+                    self.is_minimized = false;
+                    let current = self.gpu_context.as_ref().map_or((0, 0), |c| {
+                        (c.extent().width, c.extent().height)
+                    });
+                    if current.0 != physical_size.width || current.1 != physical_size.height {
+                        self.pending_resize = Some((physical_size.width, physical_size.height));
+                        self.last_resize_event_time = Instant::now();
+                    } else {
+                        self.pending_resize = None;
                     }
                 }
             }

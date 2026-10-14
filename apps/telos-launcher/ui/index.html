@@ -727,16 +727,29 @@
           </button>
         </div>
         <div class="ubuntu-dialog-body p-5 flex flex-col gap-3">
-          <p class="text-xs text-[#e0a8a8]">
-            The game client process crashed or terminated unexpectedly (<span id="crash-exit-code" class="font-mono text-white font-bold">Exit Code: 101</span>).
-          </p>
-          <div class="crash-log-container bg-[#151212] border border-[#4d1f1f] rounded p-3 overflow-y-auto max-h-[280px]">
+          <!-- Crash Reason Summary Card -->
+          <div class="bg-[#301616] border border-[#6b2525] rounded-md p-3.5 flex flex-col gap-1.5 shadow-inner">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-[#ff9999]">Crash Reason</span>
+              <span id="crash-exit-code" class="font-mono text-[11px] text-[#ff8080] bg-[#421b1b] border border-[#6b2525] px-2 py-0.5 rounded font-bold">Exit Code: 101</span>
+            </div>
+            <p id="crash-reason-summary" class="text-xs text-[#fce8e8] leading-relaxed">
+              The game client process crashed or terminated unexpectedly.
+            </p>
+          </div>
+
+          <!-- Debug Log Header & Container -->
+          <div class="flex items-center justify-between mt-1 px-0.5">
+            <span class="text-[11px] text-[#b38888] font-medium uppercase tracking-wider">Debug Log Preview</span>
+            <span id="crash-log-lines" class="text-[11px] text-[#a36868] font-mono">0 lines</span>
+          </div>
+          <div class="crash-log-container bg-[#141010] border border-[#4d1f1f] rounded p-3 overflow-y-auto max-h-[220px]">
             <pre id="crash-log-text" class="text-[11px] font-mono text-[#ffb3b3] whitespace-pre-wrap select-text leading-relaxed">Checking crash dump...</pre>
           </div>
         </div>
         <div class="ubuntu-dialog-footer px-5 py-3.5 bg-[#1f1919] border-t border-[#4d1f1f] flex justify-between gap-2.5">
           <button class="ubuntu-btn" id="btn-copy-crash-log">
-            <svg class="icon icon-sm inline mr-1"><use href="#icon-copy"></use></svg> Copy Log
+            <svg class="icon icon-sm inline mr-1.5"><use href="#icon-copy"></use></svg> Copy Debug Log
           </button>
           <button class="ubuntu-btn primary !bg-red-700 hover:!bg-red-600" id="btn-dismiss-crash">Dismiss</button>
         </div>

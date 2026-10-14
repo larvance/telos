@@ -157,7 +157,7 @@ impl MainMenuScreen {
     }
 
     /// Renders the title banner, animated splash, buttons, and version footer to `out`.
-    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::similar_names)]
     pub fn render_with_layers(
         &self,
         layers: &UiLayers,

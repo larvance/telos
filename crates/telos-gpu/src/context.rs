@@ -111,23 +111,16 @@ impl GpuContext {
     pub fn begin_frame(&mut self) -> Result<Option<(vk::CommandBuffer, u32)>, GpuError> {
         let frame = self.frame_manager.current_frame();
 
-        let (image_index, is_suboptimal) = match self
+        let (image_index, _is_suboptimal) = match self
             .swapchain
             .acquire_next_image(frame.image_available_semaphore(), u64::MAX)
         {
             Ok(res) => res,
             Err(GpuError::Vk(vk::Result::ERROR_OUT_OF_DATE_KHR)) => {
-                let extent = self.current_extent;
-                self.resize(extent.width, extent.height)?;
-                return Ok(None);
+                return Err(GpuError::Vk(vk::Result::ERROR_OUT_OF_DATE_KHR));
             }
             Err(e) => return Err(e),
         };
-
-        if is_suboptimal {
-            let extent = self.current_extent;
-            self.resize(extent.width, extent.height)?;
-        }
 
         let frame_res = self.frame_manager.begin_frame(self.device.raw())?;
         let cmd = frame_res.command_buffer();

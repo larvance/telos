@@ -92,7 +92,7 @@ impl MenuButton {
     }
 
     /// Renders the button with dynamic hover animations (visual elevation, sheen sweep, pulsing glow).
-    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation, clippy::too_many_lines)]
     pub fn render_animated(
         &self,
         layers: &UiLayers,

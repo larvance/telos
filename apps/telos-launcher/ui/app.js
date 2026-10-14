@@ -1902,6 +1902,26 @@
   const elBtnCopyCrash = document.getElementById('btn-copy-crash-log');
   const elCrashModal = document.getElementById('crash-modal');
 
+  const stripAnsiCodes = (str) => {
+    if (!str) return '';
+    return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '');
+  };
+
+  const getFallbackCrashReason = (code, cleanLog) => {
+    if (cleanLog.includes('panicked at')) {
+      const match = cleanLog.match(/panicked at [^\n]+/);
+      if (match) {
+        return `The game crashed with a fatal Rust panic: ${match[0]}. Check the debug log for details.`;
+      }
+    }
+    if (code === 139) return 'The game crashed due to a segmentation fault (SIGSEGV) in native graphics code or GPU driver.';
+    if (code === 137) return 'The game was terminated by the operating system (SIGKILL), likely due to high memory usage.';
+    if (code === 134) return 'The game process aborted unexpectedly (SIGABRT).';
+    if (code === 101) return 'The application encountered an unhandled Rust runtime error. See the debug log below for details.';
+    if (code === -1) return 'The game process terminated unexpectedly or was cancelled.';
+    return `The game client exited unexpectedly with exit code ${code}. Check the debug log for details.`;
+  };
+
   const closeCrashModal = () => {
     if (elCrashModal) elCrashModal.classList.remove('active');
   };
@@ -1910,10 +1930,11 @@
   if (elBtnCopyCrash) {
     elBtnCopyCrash.addEventListener('click', async () => {
       const text = document.getElementById('crash-log-text')?.textContent || '';
+      const clean = stripAnsiCodes(text).trim();
       try {
-        await navigator.clipboard.writeText(text);
+        await navigator.clipboard.writeText(clean);
         const originalHtml = elBtnCopyCrash.innerHTML;
-        elBtnCopyCrash.textContent = 'Copied!';
+        elBtnCopyCrash.innerHTML = `<svg class="icon icon-sm inline mr-1.5"><use href="#icon-check"></use></svg> Copied Debug Log!`;
         setTimeout(() => {
           elBtnCopyCrash.innerHTML = originalHtml;
         }, 2000);
@@ -1928,12 +1949,22 @@
       await window.__TAURI__.event.listen('game_crash', (event) => {
         const payload = event.payload || {};
         const code = payload.exit_code !== undefined ? payload.exit_code : -1;
-        const log = payload.error_log || 'Game process crashed unexpectedly.';
+        const rawLog = payload.error_log || 'Game process crashed unexpectedly.';
+        const cleanLog = stripAnsiCodes(rawLog).trim();
+        const reason = payload.crash_reason || getFallbackCrashReason(code, cleanLog);
 
         const elCrashCode = document.getElementById('crash-exit-code');
+        const elCrashReason = document.getElementById('crash-reason-summary');
         const elCrashLog = document.getElementById('crash-log-text');
+        const elCrashLines = document.getElementById('crash-log-lines');
+
         if (elCrashCode) elCrashCode.textContent = `Exit Code: ${code}`;
-        if (elCrashLog) elCrashLog.textContent = log;
+        if (elCrashReason) elCrashReason.textContent = reason;
+        if (elCrashLog) elCrashLog.textContent = cleanLog;
+        if (elCrashLines) {
+          const lines = cleanLog ? cleanLog.split('\n').length : 0;
+          elCrashLines.textContent = `${lines} line${lines === 1 ? '' : 's'}`;
+        }
         if (elCrashModal) elCrashModal.classList.add('active');
 
         if (elPlayBtn) {

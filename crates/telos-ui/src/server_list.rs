@@ -485,7 +485,7 @@ impl ServerListScreen {
     }
 
     /// Handles mouse clicks in GUI pixels, returning an action if triggered.
-    #[allow(clippy::similar_names)]
+    #[allow(clippy::similar_names, clippy::too_many_lines)]
     pub fn handle_mouse_click(
         &mut self,
         mouse_x: f32,

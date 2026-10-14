@@ -117,7 +117,9 @@ impl Swapchain {
 
         match result {
             Ok((index, is_suboptimal)) => Ok((index, is_suboptimal)),
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Ok((0, true)),
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                Err(GpuError::Vk(vk::Result::ERROR_OUT_OF_DATE_KHR))
+            }
             Err(e) => Err(GpuError::Vk(e)),
         }
     }

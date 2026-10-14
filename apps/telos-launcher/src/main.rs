@@ -355,25 +355,102 @@ fn spawn_and_supervise(
                     combined = format!("Game process terminated unexpectedly with exit code {code}.");
                 }
 
+                let sanitized_log = strip_ansi_escapes(&combined);
+                let crash_summary = determine_crash_summary(code, &sanitized_log);
+
                 let _ = app_handle.emit("game_crash", serde_json::json!({
                     "success": false,
                     "installation": inst_name,
                     "exit_code": code,
-                    "error_log": combined,
+                    "crash_reason": crash_summary,
+                    "error_log": sanitized_log,
                 }));
             }
             Err(e) => {
+                let error_msg = format!("Process supervision failed: {e}");
                 let _ = app_handle.emit("game_crash", serde_json::json!({
                     "success": false,
                     "installation": inst_name,
                     "exit_code": -1,
-                    "error_log": format!("Process supervision failed: {e}"),
+                    "crash_reason": error_msg.clone(),
+                    "error_log": error_msg,
                 }));
             }
         }
     });
 
     Ok(())
+}
+
+/// Strips ANSI escape sequences (CSI, SGR color codes, OSC codes) from raw terminal strings.
+pub fn strip_ansi_escapes(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1B' {
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                // CSI sequence: consume parameters until terminating character in 0x40..=0x7E
+                for term in chars.by_ref() {
+                    if ('@'..='~').contains(&term) {
+                        break;
+                    }
+                }
+            } else if chars.peek() == Some(&']') {
+                chars.next(); // OSC sequence
+                for osc_ch in chars.by_ref() {
+                    if osc_ch == '\x07' || osc_ch == '\x1B' {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
+/// Generates a simple, concise 1-2 sentence human-readable crash summary based on exit code and log analysis.
+pub fn determine_crash_summary(exit_code: i32, log: &str) -> String {
+    // 1. Check for Rust panic message
+    if let Some(panic_idx) = log.find("panicked at") {
+        let panic_str = &log[panic_idx..];
+        if let Some(first_line) = panic_str.lines().next() {
+            let trimmed = first_line.trim();
+            return format!("The game crashed with a fatal Rust panic: {trimmed}. Check the debug log for full backtrace.");
+        }
+    }
+
+    // 2. Check for out of memory
+    let lower = log.to_ascii_lowercase();
+    if lower.contains("out of memory") || lower.contains("memory allocation of") {
+        return "The game ran out of memory and was terminated by the allocator. Try closing background applications or reducing view distance.".to_string();
+    }
+
+    // 3. Check for GPU / Vulkan errors
+    if log.contains("VK_ERROR_DEVICE_LOST") || log.contains("DeviceLost") {
+        return "The graphics device was lost or the GPU driver timed out during execution. The GPU driver may have crashed or reset.".to_string();
+    }
+    if log.contains("Swapchain resize failed") {
+        return "A Vulkan swapchain failure occurred while resizing the game window. Check the debug log for graphics driver details.".to_string();
+    }
+    if log.contains("VK_ERROR_OUT_OF_DEVICE_MEMORY") || log.contains("VK_ERROR_OUT_OF_HOST_MEMORY") {
+        return "The graphics driver ran out of VRAM/memory during graphics resource allocation.".to_string();
+    }
+
+    // 4. POSIX signals
+    match exit_code {
+        101 => "The application encountered an unhandled Rust runtime panic. See the debug log below for details.".to_string(),
+        139 => "The game crashed due to a segmentation fault (SIGSEGV), indicating invalid memory access in native code or the GPU driver.".to_string(),
+        137 => "The game was terminated by the operating system (SIGKILL), typically triggered by an out-of-memory (OOM) killer.".to_string(),
+        134 => "The game process aborted unexpectedly (SIGABRT), likely due to an unhandled internal assertion.".to_string(),
+        143 => "The game process was terminated by an external SIGTERM signal.".to_string(),
+        -1 => "The game process was terminated unexpectedly.".to_string(),
+        code => format!("The game process exited unexpectedly with exit code {code}."),
+    }
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -757,4 +834,45 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Telos Launcher");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_ansi_escapes() {
+        let raw = "\x1B[2m2026-10-14T15:01:58.958Z\x1B[0m \x1B[32m INFO\x1B[0m main \x1B[2mtelos_core\x1B[0m: Ready";
+        let clean = strip_ansi_escapes(raw);
+        assert_eq!(clean, "2026-10-14T15:01:58.958Z  INFO main telos_core: Ready");
+    }
+
+    #[test]
+    fn test_determine_crash_summary_panic() {
+        let log = "thread 'main' panicked at apps/telos/src/main.rs:123:45: Swapchain resize failed: ERROR_OUT_OF_DATE_KHR\nstack backtrace:";
+        let summary = determine_crash_summary(101, log);
+        assert!(summary.contains("fatal Rust panic"));
+        assert!(summary.contains("Swapchain resize failed"));
+    }
+
+    #[test]
+    fn test_determine_crash_summary_signals() {
+        let segv = determine_crash_summary(139, "terminated");
+        assert!(segv.contains("segmentation fault"));
+
+        let oom = determine_crash_summary(137, "killed");
+        assert!(oom.contains("SIGKILL"));
+
+        let abort = determine_crash_summary(134, "aborted");
+        assert!(abort.contains("SIGABRT"));
+    }
+
+    #[test]
+    fn test_determine_crash_summary_gpu_errors() {
+        let dev_lost = determine_crash_summary(1, "ERROR: VK_ERROR_DEVICE_LOST occurred");
+        assert!(dev_lost.contains("graphics device was lost"));
+
+        let swapchain_fail = determine_crash_summary(1, "Swapchain resize failed: timeout");
+        assert!(swapchain_fail.contains("swapchain failure"));
+    }
 }
