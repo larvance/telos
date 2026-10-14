@@ -34,7 +34,8 @@
     profile: {
       username: 'Larvance',
       account_type: 'Telos Account',
-      logged_in: false,
+      logged_in: true,
+      auth_token: 'mock-session-token',
       selected_installation_id: 'local-dev',
       auto_close_on_play: false,
       language: 'English (US)',
@@ -353,6 +354,401 @@
   });
   updateMaximizeState();
   updateLaunchBarLayout();
+
+  // =========================================================================
+  // Reusable Custom Dropdown Component
+  // Matches the news autocomplete dropdown design system
+  // =========================================================================
+  class CustomDropdown {
+    static instances = new Set();
+
+    static closeAll() {
+      for (const inst of CustomDropdown.instances) {
+        inst.close();
+      }
+    }
+
+    static initAll(root = document) {
+      const selects = root.querySelectorAll('select.select-input');
+      selects.forEach((select) => {
+        if (!select._customDropdown) {
+          new CustomDropdown(select);
+        }
+      });
+    }
+
+    constructor(selectEl) {
+      if (!selectEl) return;
+      if (selectEl._customDropdown) return selectEl._customDropdown;
+      this.selectEl = selectEl;
+      this.selectEl._customDropdown = this;
+      CustomDropdown.instances.add(this);
+
+      this.isOpen = false;
+      this.focusedIndex = -1;
+      this.items = [];
+
+      this.buildUI();
+      this.bindEvents();
+      this.hookSelectProperty();
+      this.observeMutations();
+    }
+
+    buildUI() {
+      this.selectEl.classList.add('has-custom-dropdown');
+      this.selectEl.style.display = 'none';
+      this.selectEl.setAttribute('aria-hidden', 'true');
+      this.selectEl.setAttribute('tabindex', '-1');
+
+      this.container = document.createElement('div');
+      this.container.className = 'custom-dropdown-container';
+
+      this.selectEl.parentNode.insertBefore(this.container, this.selectEl.nextSibling);
+
+      this.btn = document.createElement('button');
+      this.btn.type = 'button';
+      this.btn.className = 'custom-dropdown-btn';
+      this.btn.setAttribute('aria-haspopup', 'listbox');
+      this.btn.setAttribute('aria-expanded', 'false');
+
+      this.btnContent = document.createElement('div');
+      this.btnContent.className = 'custom-dropdown-btn-content';
+
+      const chevronSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      chevronSvg.setAttribute('class', 'icon icon-sm custom-dropdown-chevron');
+      chevronSvg.innerHTML = '<use href="#icon-chevron-down"></use>';
+
+      this.btn.appendChild(this.btnContent);
+      this.btn.appendChild(chevronSvg);
+      this.container.appendChild(this.btn);
+
+      this.menu = document.createElement('div');
+      this.menu.className = 'custom-dropdown-menu hidden';
+      this.menu.setAttribute('role', 'listbox');
+      this.container.appendChild(this.menu);
+
+      this.rebuildItems();
+    }
+
+    parseOption(option) {
+      const rawText = (option.textContent || '').trim();
+      let label = rawText;
+      let badge = option.getAttribute('data-badge') || null;
+      let badgeType = option.getAttribute('data-badge-type') || null;
+      let icon = option.getAttribute('data-icon') || null;
+      let iconClass = option.getAttribute('data-icon-class') || '';
+
+      if (!badge) {
+        const match = rawText.match(/^(.*?)\s*\((.*?)\)$/);
+        if (match) {
+          label = match[1].trim();
+          badge = match[2].trim();
+        }
+      }
+
+      if (badge && !badgeType) {
+        const lower = badge.toLowerCase();
+        if (lower.includes('recommended') || lower.includes('latest') || lower.includes('4k')) {
+          badgeType = 'badge-gold';
+        } else if (lower.includes('snapshot') || lower.includes('continuous') || lower.includes('group') || lower.includes('dev')) {
+          badgeType = 'badge-blue';
+        } else if (lower.includes('release') || lower.includes('green')) {
+          badgeType = 'badge-green';
+        } else {
+          badgeType = 'badge-neutral';
+        }
+      }
+
+      if (!icon) {
+        const val = option.value;
+        if (val === 'voxel') {
+          icon = 'icon-voxel';
+          iconClass = 'text-emerald-400';
+        } else if (val === 'package') {
+          icon = 'icon-package';
+          iconClass = 'text-amber-400';
+        } else if (val === 'wrench') {
+          icon = 'icon-wrench';
+          iconClass = 'text-blue-400';
+        } else if (val === 'swords') {
+          icon = 'icon-swords';
+          iconClass = 'text-red-400';
+        } else if (val === 'shield') {
+          icon = 'icon-shield';
+          iconClass = 'text-cyan-400';
+        } else if (val === 'globe') {
+          icon = 'icon-globe';
+          iconClass = 'text-teal-400';
+        } else if (rawText.startsWith('Group:')) {
+          icon = 'icon-folder';
+          iconClass = 'text-blue-400';
+        }
+      }
+
+      return {
+        value: option.value,
+        label,
+        badge,
+        badgeType,
+        icon,
+        iconClass,
+        selected: option.selected,
+        disabled: option.disabled,
+      };
+    }
+
+    rebuildItems() {
+      this.menu.innerHTML = '';
+      const options = Array.from(this.selectEl.options);
+      this.items = [];
+
+      options.forEach((opt, idx) => {
+        const parsed = this.parseOption(opt);
+        const itemEl = document.createElement('div');
+        itemEl.className = 'custom-dropdown-item' + (parsed.selected ? ' selected' : '');
+        itemEl.setAttribute('role', 'option');
+        itemEl.setAttribute('data-value', parsed.value);
+        itemEl.setAttribute('data-index', idx);
+        if (parsed.disabled) itemEl.classList.add('disabled');
+
+        let iconHtml = '';
+        if (parsed.icon) {
+          iconHtml = `<svg class="icon icon-sm custom-dropdown-icon ${parsed.iconClass} shrink-0"><use href="#${parsed.icon}"></use></svg>`;
+        }
+
+        let badgeHtml = '';
+        if (parsed.badge) {
+          badgeHtml = `<span class="badge ${parsed.badgeType || 'badge-neutral'}">${parsed.badge}</span>`;
+        }
+
+        const checkHtml = parsed.selected
+          ? `<svg class="icon icon-sm custom-dropdown-check text-telos-gold shrink-0"><use href="#icon-check"></use></svg>`
+          : '';
+
+        itemEl.innerHTML = `
+          <div class="custom-dropdown-item-left">
+            ${iconHtml}
+            <span class="custom-dropdown-item-text truncate" title="${parsed.label}">${parsed.label}</span>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            ${badgeHtml}
+            ${checkHtml}
+          </div>
+        `;
+
+        itemEl.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+        });
+
+        itemEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.selectValue(parsed.value);
+        });
+
+        this.menu.appendChild(itemEl);
+        this.items.push({ el: itemEl, parsed });
+      });
+
+      this.syncDisplay();
+    }
+
+    syncDisplay() {
+      const selectedOpt = this.selectEl.options[this.selectEl.selectedIndex] || this.selectEl.options[0];
+      if (!selectedOpt) {
+        this.btnContent.innerHTML = '<span class="custom-dropdown-label text-neutral-400">Select...</span>';
+        return;
+      }
+
+      const parsed = this.parseOption(selectedOpt);
+
+      let iconHtml = '';
+      if (parsed.icon) {
+        iconHtml = `<svg class="icon icon-sm custom-dropdown-icon ${parsed.iconClass} shrink-0"><use href="#${parsed.icon}"></use></svg>`;
+      }
+
+      let badgeHtml = '';
+      if (parsed.badge) {
+        badgeHtml = `<span class="badge ${parsed.badgeType || 'badge-neutral'}">${parsed.badge}</span>`;
+      }
+
+      this.btnContent.innerHTML = `
+        ${iconHtml}
+        <span class="custom-dropdown-label truncate" title="${parsed.label}">${parsed.label}</span>
+        ${badgeHtml}
+      `;
+
+      if (this.items) {
+        this.items.forEach(({ el, parsed: p }) => {
+          const isSel = p.value === selectedOpt.value;
+          el.classList.toggle('selected', isSel);
+          const rightContainer = el.querySelector('.flex');
+          const checkEl = el.querySelector('.custom-dropdown-check');
+          if (isSel && !checkEl && rightContainer) {
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'icon icon-sm custom-dropdown-check text-telos-gold shrink-0');
+            svg.innerHTML = '<use href="#icon-check"></use>';
+            rightContainer.appendChild(svg);
+          } else if (!isSel && checkEl) {
+            checkEl.remove();
+          }
+        });
+      }
+    }
+
+    selectValue(val) {
+      const changed = this.selectEl.value !== val;
+      this.selectEl.value = val;
+      this.syncDisplay();
+      this.close();
+      this.btn.focus();
+      if (changed) {
+        this.selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+
+    syncFromSelect() {
+      this.syncDisplay();
+    }
+
+    open() {
+      CustomDropdown.closeAll();
+      this.isOpen = true;
+      this.container.classList.add('open');
+      this.btn.setAttribute('aria-expanded', 'true');
+      this.menu.classList.remove('hidden');
+
+      const rect = this.container.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 220 && rect.top > spaceBelow) {
+        this.container.classList.add('open-upward');
+      } else {
+        this.container.classList.remove('open-upward');
+      }
+
+      const selectedItem = this.menu.querySelector('.custom-dropdown-item.selected');
+      if (selectedItem) {
+        selectedItem.scrollIntoView({ block: 'nearest' });
+      }
+      this.focusedIndex = -1;
+    }
+
+    close() {
+      if (!this.isOpen) return;
+      this.isOpen = false;
+      this.container.classList.remove('open');
+      this.container.classList.remove('open-upward');
+      this.btn.setAttribute('aria-expanded', 'false');
+      this.menu.classList.add('hidden');
+      this.clearFocused();
+    }
+
+    toggle() {
+      if (this.isOpen) {
+        this.close();
+      } else {
+        this.open();
+      }
+    }
+
+    clearFocused() {
+      if (this.items) {
+        this.items.forEach(({ el }) => el.classList.remove('focused'));
+      }
+      this.focusedIndex = -1;
+    }
+
+    setFocused(idx) {
+      if (!this.items || this.items.length === 0) return;
+      this.clearFocused();
+      this.focusedIndex = (idx + this.items.length) % this.items.length;
+      const target = this.items[this.focusedIndex]?.el;
+      if (target) {
+        target.classList.add('focused');
+        target.scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    bindEvents() {
+      this.btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggle();
+      });
+
+      this.btn.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          if (!this.isOpen) this.open();
+          this.setFocused(this.focusedIndex + 1);
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          if (!this.isOpen) this.open();
+          this.setFocused(this.focusedIndex <= 0 ? this.items.length - 1 : this.focusedIndex - 1);
+        } else if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (this.isOpen) {
+            if (this.focusedIndex >= 0 && this.items[this.focusedIndex]) {
+              this.selectValue(this.items[this.focusedIndex].parsed.value);
+            } else {
+              this.close();
+            }
+          } else {
+            this.open();
+          }
+        } else if (e.key === 'Escape') {
+          if (this.isOpen) {
+            e.preventDefault();
+            this.close();
+          }
+        } else if (e.key === 'Tab') {
+          this.close();
+        }
+      });
+    }
+
+    hookSelectProperty() {
+      const protoDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+      if (!protoDesc) return;
+      const self = this;
+      try {
+        Object.defineProperty(this.selectEl, 'value', {
+          get() {
+            return protoDesc.get.call(this);
+          },
+          set(val) {
+            protoDesc.set.call(this, val);
+            self.syncDisplay();
+          },
+          configurable: true,
+        });
+      } catch (err) {
+        console.debug('Could not define property on select element:', err);
+      }
+    }
+
+    observeMutations() {
+      this.observer = new MutationObserver(() => {
+        this.rebuildItems();
+      });
+      this.observer.observe(this.selectEl, { childList: true, subtree: true, attributes: true });
+    }
+
+    destroy() {
+      CustomDropdown.instances.delete(this);
+      if (this.observer) this.observer.disconnect();
+      if (this.container && this.container.parentNode) {
+        this.container.parentNode.removeChild(this.container);
+      }
+      this.selectEl.style.display = '';
+      this.selectEl.classList.remove('has-custom-dropdown');
+      delete this.selectEl._customDropdown;
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.custom-dropdown-container')) {
+      CustomDropdown.closeAll();
+    }
+  });
 
   // Navigation tabs
   const navTabs = document.querySelectorAll('.nav-tab');
@@ -793,6 +1189,7 @@
       }
       elInpInstallVersion.appendChild(opt);
     });
+    elInpInstallVersion._customDropdown?.rebuildItems();
   }
 
   if (elInpInstallRam && elInpInstallRamVal) {
@@ -1261,6 +1658,7 @@
       }
       elServerGroupInput.appendChild(opt);
     });
+    elServerGroupInput._customDropdown?.rebuildItems();
   }
 
   if (elBtnAddServer) {
@@ -1742,11 +2140,33 @@
     elSettingNewsDropdown.classList.remove('hidden');
   }
 
+  const elNewsSyncError = document.getElementById('news-sync-error');
+  const elNewsSyncErrorMsg = document.getElementById('news-sync-error-msg');
+  const elBtnDismissNewsError = document.getElementById('btn-dismiss-news-error');
+
+  function clearNewsSyncError() {
+    if (elNewsSyncError) {
+      elNewsSyncError.classList.add('hidden');
+    }
+  }
+
+  function showNewsSyncError(msg) {
+    if (elNewsSyncError && elNewsSyncErrorMsg) {
+      elNewsSyncErrorMsg.textContent = msg;
+      elNewsSyncError.classList.remove('hidden');
+    }
+  }
+
+  if (elBtnDismissNewsError) {
+    elBtnDismissNewsError.addEventListener('click', clearNewsSyncError);
+  }
+
   function resetSyncButton() {
     if (elBtnSyncNews) {
       elBtnSyncNews.textContent = 'Sync Feed';
       elBtnSyncNews.disabled = false;
     }
+    clearNewsSyncError();
   }
 
   function updateActiveDropdownItem(items) {
@@ -1819,37 +2239,53 @@
   async function syncAndValidateEndpoint(url) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
-      const res = await fetch(url, {
-        signal: controller.signal,
-        cache: 'no-cache',
-      });
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      let res;
+      try {
+        res = await fetch(url, {
+          signal: controller.signal,
+          cache: 'no-cache',
+        });
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
+        if (fetchErr.name === 'AbortError') {
+          return { ok: false, message: 'Request timed out after 4 seconds.' };
+        }
+        return { ok: false, message: 'Network connection failed or CORS request blocked.' };
+      }
       clearTimeout(timeoutId);
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        return { ok: false, message: `Server returned HTTP ${res.status}: ${res.statusText || 'Error'}.` };
       }
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (_) {
+        return { ok: false, message: 'Response payload is not valid JSON.' };
+      }
       const articles = parseAndValidateNewsJson(data);
       if (Array.isArray(articles) && articles.length > 0) {
         appNews = articles;
         renderNewsGrid(appNews);
-        return true;
+        return { ok: true, count: articles.length };
       }
-      return false;
+      return { ok: false, message: 'JSON does not contain articles conforming to the Telos news schema.' };
     } catch (err) {
       console.error('Validation error for news endpoint:', err);
-      return false;
+      return { ok: false, message: err?.message || 'Unknown network or parsing error.' };
     }
   }
 
   if (elBtnSyncNews) {
     elBtnSyncNews.addEventListener('click', async () => {
       const targetUrl = elSettingNewsUrl.value.trim() || DEFAULT_NEWS_URL;
+      clearNewsSyncError();
       elBtnSyncNews.disabled = true;
       elBtnSyncNews.textContent = 'Syncing...';
 
-      const success = await syncAndValidateEndpoint(targetUrl);
-      if (success) {
+      const validation = await syncAndValidateEndpoint(targetUrl);
+      if (validation.ok) {
+        clearNewsSyncError();
         newsEndpoint = targetUrl;
         if (appProfile) {
           appProfile.news_url = targetUrl;
@@ -1872,7 +2308,7 @@
           elBtnSyncNews.textContent = 'Sync Feed';
           elBtnSyncNews.disabled = false;
         }, 2500);
-        alert(`Failed to sync from:\n${targetUrl}\n\nMake sure the endpoint is accessible, CORS-enabled, and returns valid JSON conforming to the "telos-news-feed" schema.`);
+        showNewsSyncError(`Failed to sync from "${targetUrl}": ${validation.message}`);
       }
     });
   }
@@ -1967,6 +2403,7 @@
   async function init() {
     try {
       listenGameLifecycleEvents();
+      CustomDropdown.initAll();
       appProfile = await invoke('get_profile');
       appInstallations = await invoke('get_installations');
       appServers = await invoke('get_servers');
@@ -2035,6 +2472,43 @@
               if (badge) badge.click();
             }
           }
+        }
+      } catch (_) {}
+
+      // URL parameter overrides for previews & testing (?tab=<tab>&modal=<modal>&open-dropdown=true&test-error=true)
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlTab = urlParams.get('tab');
+        if (urlTab) {
+          const tabBtn = document.querySelector(`.nav-tab[data-tab="${urlTab}"]`);
+          if (tabBtn) tabBtn.click();
+        }
+        const urlModal = urlParams.get('modal');
+        if (urlModal === 'new-installation' || urlModal === 'install') {
+          const btn = document.getElementById('btn-new-installation');
+          if (btn) btn.click();
+        } else if (urlModal === 'server') {
+          const btn = document.getElementById('btn-add-server');
+          if (btn) btn.click();
+        }
+        if (urlParams.get('open-dropdown') === 'true') {
+          setTimeout(() => {
+            const dropdownBtn = document.querySelector('.custom-dropdown-btn');
+            if (dropdownBtn) dropdownBtn.click();
+          }, 150);
+        }
+        if (urlParams.get('open-modal-dropdown')) {
+          setTimeout(() => {
+            const rawVal = urlParams.get('open-modal-dropdown');
+            const targetIdx = rawVal === 'icon' ? 1 : rawVal === 'res' ? 2 : parseInt(rawVal, 10) || 1;
+            const dropdownBtns = document.querySelectorAll('#new-install-modal .custom-dropdown-btn');
+            if (dropdownBtns && dropdownBtns[targetIdx]) dropdownBtns[targetIdx].click();
+          }, 250);
+        }
+        if (urlParams.get('test-error') === 'true') {
+          setTimeout(() => {
+            showNewsSyncError('Failed to sync from "https://invalid.news.telos.local/news.json": Network connection failed or CORS request blocked.');
+          }, 150);
         }
       } catch (_) {}
     } catch (err) {
