@@ -335,8 +335,22 @@
     setupDraggableFrame(elNavbar);
   }
 
-  window.addEventListener('resize', updateMaximizeState);
+  const elLaunchBar = document.getElementById('launch-bar');
+  function updateLaunchBarLayout() {
+    if (!elLaunchBar) return;
+    if (window.innerWidth >= 1150) {
+      elLaunchBar.classList.add('is-wide');
+    } else {
+      elLaunchBar.classList.remove('is-wide');
+    }
+  }
+
+  window.addEventListener('resize', () => {
+    updateMaximizeState();
+    updateLaunchBarLayout();
+  });
   updateMaximizeState();
+  updateLaunchBarLayout();
 
   // Navigation tabs
   const navTabs = document.querySelectorAll('.nav-tab');
