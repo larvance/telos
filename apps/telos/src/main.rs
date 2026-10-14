@@ -53,7 +53,8 @@ use telos_sim::{
 };
 use telos_ui::menu::{
     AdvancementsScreen, MainMenuAction, MainMenuScreen, ModalFormAction, ModalFormScreen,
-    PauseMenuAction, PauseMenuScreen, SettingsScreen, UiAdvancementCategory, UiAdvancementFrame,
+    PauseMenuAction, PauseMenuScreen, SettingsScreen, SettingsTab, UiAdvancementCategory,
+    UiAdvancementFrame,
     UiAdvancementNode, WorldCreateAction, WorldCreateWizard, WorldSelectAction, WorldSelectScreen,
 };
 use telos_ui::settings::GameSettings;
@@ -199,6 +200,18 @@ struct Args {
     /// Force main menu screen on startup (useful for menu testing and screenshots).
     #[arg(long, default_value_t = false)]
     menu: bool,
+
+    /// Force settings screen on startup (useful for menu testing and screenshots).
+    #[arg(long, default_value_t = false)]
+    settings: bool,
+
+    /// Initial active settings tab ('video', 'audio', 'controls', 'language').
+    #[arg(long)]
+    tab: Option<String>,
+
+    /// Initial settings scroll offset in GUI pixels.
+    #[arg(long, default_value_t = 0.0)]
+    scroll: f32,
 
     /// Rendering backend selection ('vulkan', 'opengl', or 'auto').
     #[arg(long, default_value = "auto")]
@@ -1669,8 +1682,13 @@ impl App {
 
         let _ = app_dirs.ensure_dirs_exist();
 
-        let is_direct_ingame = (args.screenshot.is_some() || args.pos.is_some()) && !args.menu;
-        let current_screen = if is_direct_ingame {
+        let is_direct_ingame =
+            (args.screenshot.is_some() || args.pos.is_some()) && !args.menu && !args.settings;
+        let current_screen = if args.settings {
+            AppScreen::Settings {
+                return_to_pause: false,
+            }
+        } else if is_direct_ingame {
             AppScreen::InGame
         } else {
             AppScreen::MainMenu
@@ -1840,7 +1858,18 @@ impl App {
         let mut world_select = WorldSelectScreen::new();
         world_select.scan_worlds(&worlds_dir);
         let world_create = WorldCreateWizard::new();
-        let settings_screen = SettingsScreen::new(game_settings.clone());
+        let mut settings_screen = SettingsScreen::new(game_settings.clone());
+        if let Some(ref t) = args.tab {
+            match t.to_lowercase().as_str() {
+                "audio" => settings_screen.active_tab = SettingsTab::Audio,
+                "controls" => settings_screen.active_tab = SettingsTab::Controls,
+                "language" => settings_screen.active_tab = SettingsTab::Language,
+                _ => settings_screen.active_tab = SettingsTab::Video,
+            }
+        }
+        if args.scroll > 0.0 {
+            settings_screen.scroll_y = args.scroll;
+        }
         let pause_menu = PauseMenuScreen::new();
         let mut server_list = ServerListScreen::new();
         let _ = server_list.load_from_file(&servers_path);
