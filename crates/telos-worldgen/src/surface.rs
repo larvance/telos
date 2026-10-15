@@ -8,7 +8,7 @@ use telos_voxel::state::BlockStateId;
 /// Resolved block state IDs needed by surface rules and ore generation.
 #[derive(Debug, Clone)]
 pub struct ResolvedBlocks {
-    /// Precomputed table mapping BlockStateId numeric values to OPAQUE_FULL flag.
+    /// Precomputed table mapping `BlockStateId` numeric values to `OPAQUE_FULL` flag.
     pub opaque_states: std::sync::Arc<[bool]>,
     /// Air block state ID.
     pub air: BlockStateId,

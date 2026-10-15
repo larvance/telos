@@ -210,7 +210,7 @@ fn test_pause_menu_i18n_translation() {
     assert_eq!(pause.buttons[0].label, "Oyuna Dön");
     assert_eq!(pause.buttons[1].label, "Gelişmeler");
     assert_eq!(pause.buttons[2].label, "Ayarlar...");
-    assert_eq!(pause.buttons[3].label, "Yerel Ağda Paylaş / Davet Et");
+    assert_eq!(pause.buttons[3].label, "Arkadaşları Davet Et");
     assert_eq!(pause.buttons[4].label, "Kaydet ve Başlığa Dön");
 
     catalog.set_active_locale("de_de");
@@ -220,7 +220,7 @@ fn test_pause_menu_i18n_translation() {
     assert_eq!(pause.buttons[0].label, "Zurück zum Spiel");
     assert_eq!(pause.buttons[1].label, "Fortschritte");
     assert_eq!(pause.buttons[2].label, "Optionen...");
-    assert_eq!(pause.buttons[3].label, "Im LAN öffnen / Einladen");
+    assert_eq!(pause.buttons[3].label, "Freunde einladen");
     assert_eq!(pause.buttons[4].label, "Speichern und zum Hauptmenü");
 }
 

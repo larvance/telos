@@ -3584,6 +3584,11 @@ impl Server {
                                 pos.pitch,
                                 pos.on_ground,
                             );
+                            if let Some(entity) = session.ecs_entity
+                                && let Some(mut p) = self.ecs_world.get_mut::<Position>(entity)
+                            {
+                                p.0 = session.position;
+                            }
                             if session.capabilities.invincible
                                 || session.move_mode == MoveMode::NoClipFly
                                 || session.move_state.flying
@@ -6048,6 +6053,83 @@ impl Server {
                         0.05,
                         speed_factor,
                     );
+
+                    if session.move_mode == MoveMode::Walk && !session.move_state.flying {
+                        let world = self.worlds.get_or_default_mut(&session.world_name);
+                        let reg = world.registry();
+                        let half_x = 0.3;
+                        let half_z = 0.3;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let min_x = (session.move_state.pos.x - half_x + 0.05).floor() as i32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let max_x = (session.move_state.pos.x + half_x - 0.05).floor() as i32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let min_z = (session.move_state.pos.z - half_z + 0.05).floor() as i32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let max_z = (session.move_state.pos.z + half_z - 0.05).floor() as i32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let check_y_min = (session.move_state.pos.y - 0.6).floor() as i32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let check_y_max = (session.move_state.pos.y + 0.1).floor() as i32;
+
+                        let mut landed_surface = None;
+                        for by in (check_y_min..=check_y_max).rev() {
+                            let mut solid = false;
+                            for bx in min_x..=max_x {
+                                for bz in min_z..=max_z {
+                                    let state = world.get_loaded_block(BlockPos::new(bx, by, bz));
+                                    if telos_sim::is_solid_ground(state, reg) {
+                                        solid = true;
+                                        break;
+                                    }
+                                }
+                                if solid {
+                                    break;
+                                }
+                            }
+                            if solid {
+                                landed_surface = Some(f64::from(by + 1));
+                                break;
+                            }
+                        }
+
+                        if let Some(surf_y) = landed_surface {
+                            if session.move_state.pos.y <= surf_y + 0.25 && session.move_state.vel.y <= 0.0 {
+                                session.move_state.pos.y = surf_y;
+                                session.move_state.vel.y = 0.0;
+                                session.move_state.on_ground = true;
+                            }
+                        } else {
+                            // Check step-up: if moving horizontally into a 1-block incline
+                            #[allow(clippy::cast_possible_truncation)]
+                            let foot_by = session.move_state.pos.y.floor() as i32;
+                            let mut step_surface = None;
+                            for bx in min_x..=max_x {
+                                for bz in min_z..=max_z {
+                                    let foot_state = world.get_loaded_block(BlockPos::new(bx, foot_by, bz));
+                                    if telos_sim::is_solid_ground(foot_state, reg) {
+                                        let head1 = world.get_loaded_block(BlockPos::new(bx, foot_by + 1, bz));
+                                        let head2 = world.get_loaded_block(BlockPos::new(bx, foot_by + 2, bz));
+                                        if !telos_sim::is_solid_ground(head1, reg) && !telos_sim::is_solid_ground(head2, reg) {
+                                            step_surface = Some(f64::from(foot_by + 1));
+                                            break;
+                                        }
+                                    }
+                                }
+                                if step_surface.is_some() {
+                                    break;
+                                }
+                            }
+                            if let Some(surf_y) = step_surface
+                                && surf_y - session.move_state.pos.y <= 1.05
+                            {
+                                session.move_state.pos.y = surf_y;
+                                session.move_state.vel.y = 0.0;
+                                session.move_state.on_ground = true;
+                            }
+                        }
+                    }
+
                     session.last_input_buttons = frame.buttons;
                     session.last_processed_client_tick = frame.tick;
                     processed_any = true;
@@ -6064,6 +6146,12 @@ impl Server {
                 session.yaw = session.move_state.yaw;
                 session.pitch = session.move_state.pitch;
                 session.on_ground = session.move_state.on_ground;
+
+                if let Some(entity) = session.ecs_entity
+                    && let Some(mut p) = self.ecs_world.get_mut::<Position>(entity)
+                {
+                    p.0 = session.position;
+                }
 
                 if session.capabilities.invincible
                     || session.move_mode == MoveMode::NoClipFly

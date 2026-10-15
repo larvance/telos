@@ -324,7 +324,7 @@ impl ServerListScreen {
 
         if !lan_servers.is_empty() {
             let lan_group_idx = self.groups.iter().position(|g| g.name == "LAN Servers");
-            let collapsed = lan_group_idx.map_or(false, |idx| self.groups[idx].collapsed);
+            let collapsed = lan_group_idx.is_some_and(|idx| self.groups[idx].collapsed);
             let g_idx = lan_group_idx.unwrap_or(usize::MAX);
 
             items.push(ServerListItem::GroupHeader {

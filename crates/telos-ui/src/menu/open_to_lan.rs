@@ -62,7 +62,7 @@ impl OpenToLanScreen {
             password_input,
             auto_open: initial_auto_open,
             buttons: Vec::new(),
-            title: "Open to LAN / Invite Friends".to_string(),
+            title: "Invite Friends".to_string(),
             status_message: None,
         }
     }
@@ -79,7 +79,9 @@ impl OpenToLanScreen {
         let card_w = 340.0f32.min(width_gui - 32.0);
         let card_x = center_x - card_w * 0.5;
 
-        let start_y = (height_gui * 0.24).max(30.0);
+        let card_h = 240.0;
+        let card_y = ((height_gui - card_h) * 0.5).max(10.0);
+        let start_y = card_y;
 
         // Port input
         self.port_input.x = card_x + 16.0;
@@ -127,7 +129,7 @@ impl OpenToLanScreen {
             start_y + 196.0,
             action_btn_w,
             btn_h,
-            "Open to LAN",
+            "Invite Friends",
         )
         .with_style(ButtonStyle::Primary);
 
@@ -250,8 +252,8 @@ impl OpenToLanScreen {
         let center_x = width_gui * 0.5;
         let card_w = 340.0f32.min(width_gui - 32.0);
         let card_x = center_x - card_w * 0.5;
-        let card_y = (height_gui * 0.24).max(30.0);
         let card_h = 240.0;
+        let card_y = ((height_gui - card_h) * 0.5).max(10.0);
 
         let px = snap_to_physical(card_x, scale);
         let py = snap_to_physical(card_y, scale);
@@ -273,7 +275,7 @@ impl OpenToLanScreen {
             UiQuad::rgba(80, 84, 96, 255),
         ));
         out.push(UiQuad::solid(
-            [px, py + ph as i32 - border_th as i32],
+            [px, py + i32::from(ph) - i32::from(border_th)],
             [pw, border_th],
             UiQuad::rgba(80, 84, 96, 255),
         ));
@@ -283,7 +285,7 @@ impl OpenToLanScreen {
             UiQuad::rgba(80, 84, 96, 255),
         ));
         out.push(UiQuad::solid(
-            [px + pw as i32 - border_th as i32, py],
+            [px + i32::from(pw) - i32::from(border_th), py],
             [border_th, ph],
             UiQuad::rgba(80, 84, 96, 255),
         ));

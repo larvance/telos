@@ -433,6 +433,7 @@ impl MovementStates {
     }
 
     /// Evaluates locomotion states based on current kinematic values and inputs.
+    #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     pub fn update(
         &mut self,
         velocity: DVec3,

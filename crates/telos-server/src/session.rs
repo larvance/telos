@@ -272,6 +272,9 @@ impl PlayerSession {
         self.move_state.yaw = yaw;
         self.move_state.pitch = pitch;
         self.move_state.on_ground = on_ground;
+        if on_ground && self.move_state.vel.y < 0.0 {
+            self.move_state.vel.y = 0.0;
+        }
     }
 
     /// Enqueues a client input frame, enforcing tick freshness and rejecting packets sent too far ahead.

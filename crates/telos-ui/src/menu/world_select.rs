@@ -57,8 +57,7 @@ pub fn record_world_opened(world_dir: &Path) {
     #[allow(clippy::cast_possible_truncation)]
     let now_ms = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_millis() as u64);
 
     let content = if meta_file.exists() {
         fs::read_to_string(&meta_file).unwrap_or_default()

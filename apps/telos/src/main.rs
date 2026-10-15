@@ -45,7 +45,7 @@ use telos_protocol::messages::{
     AuthMode, BlockActionKind, C2sBlockAction, C2sChatMessage, C2sClientSettings,
     C2sCloseContainer, C2sCommandSuggest, C2sConfigAck, C2sHello, C2sInteractEntity,
     C2sInventoryClick, C2sLoginProof, C2sLoginStart, C2sMessage, C2sModalFormResponse,
-    C2sPlayerCommand, C2sPlayerInput, C2sTeleportAck, C2sVoiceData, ChunkPayload, ConnectionPhase,
+    C2sPlayerCommand, C2sPlayerInput, C2sPlayerPosition, C2sTeleportAck, C2sVoiceData, ChunkPayload, ConnectionPhase,
     InputFrame, NetworkEffect, ParticleEffectKind, PlayerCommandKind, S2cMessage, S2cParticleEvent,
     S2cPlayerMovementAck, input_buttons,
 };
@@ -3658,6 +3658,19 @@ impl App {
                     }
                     S2cMessage::ChunkUnload(unload) => {
                         let pos = ChunkPos::new(unload.chunk_x, unload.chunk_y, unload.chunk_z);
+                        let player_chunk = telos_core::coords::BlockPos::new(
+                            self.physics.pos.x.floor() as i32,
+                            self.physics.pos.y.floor() as i32,
+                            self.physics.pos.z.floor() as i32,
+                        )
+                        .chunk();
+                        // Guard: never unload the player's immediate chunk or its direct neighbors
+                        if (pos.x() - player_chunk.x()).abs() <= 1
+                            && (pos.y() - player_chunk.y()).abs() <= 1
+                            && (pos.z() - player_chunk.z()).abs() <= 1
+                        {
+                            continue;
+                        }
                         self.chunks.remove(&pos);
                         self.chunk_slots.release(&pos);
                         if let (Some(mesh), Some(ctx)) =
@@ -4516,6 +4529,18 @@ impl App {
                 .client_conn
                 .send(Lane::Control, Payload::Msg(input_msg));
         }
+
+        let pos_msg = C2sMessage::PlayerPosition(C2sPlayerPosition {
+            x: self.physics.pos.x,
+            y: self.physics.pos.y,
+            z: self.physics.pos.z,
+            yaw: self.camera.yaw.to_degrees(),
+            pitch: self.camera.pitch.to_degrees(),
+            on_ground: self.physics.on_ground,
+        });
+        let _ = self
+            .client_conn
+            .send(Lane::Control, Payload::Msg(pos_msg));
 
         if let Some(vehicle_id) = self.riding_vehicle_id {
             if let Some(boat_ent) = self.entity_store.get(vehicle_id) {
@@ -11471,16 +11496,14 @@ impl ApplicationHandler for App {
                                     self.open_to_lan_screen = None;
                                 }
                                 KeyCode::Enter => {
-                                    if let Some(action) = lan_screen.handle_enter() {
-                                        if let OpenToLanAction::StartLan {
-                                            port,
-                                            password,
-                                            auto_open,
-                                        } = action
-                                        {
-                                            self.open_singleplayer_to_lan(port, password, auto_open);
-                                            self.open_to_lan_screen = None;
-                                        }
+                                    if let Some(OpenToLanAction::StartLan {
+                                        port,
+                                        password,
+                                        auto_open,
+                                    }) = lan_screen.handle_enter()
+                                    {
+                                        self.open_singleplayer_to_lan(port, password, auto_open);
+                                        self.open_to_lan_screen = None;
                                     }
                                 }
                                 KeyCode::Backspace => {

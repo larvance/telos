@@ -2434,3 +2434,112 @@ fn test_server_mob_physics_end_to_end_with_player() {
         vel.y
     );
 }
+
+#[test]
+fn test_player_movement_on_mountain_does_not_evict_surface_chunks() {
+    let config = ServerConfig {
+        tps: 20,
+        view_distance: 4,
+        vertical_view_distance: 4,
+        default_spawn: Some([128.0, 45.0, 160.0]),
+        ..Default::default()
+    };
+    let mut server = Server::new(12345, config);
+    let (server_conn, client_conn) = MemoryConnection::pair_default();
+    server.add_connection(Box::new(server_conn));
+
+    // Connect and transition to Play phase
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::Hello(C2sHello {
+                protocol: 1,
+                build: BoundedString::new("0.1.0").unwrap(),
+                features: 0,
+            })),
+        )
+        .unwrap();
+    server.tick();
+    let _ = client_conn.try_recv();
+
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::LoginStart(C2sLoginStart {
+                username: BoundedString::new("MountainClimber").unwrap(),
+                mode: AuthMode::Offline,
+            })),
+        )
+        .unwrap();
+    server.tick();
+    let _ = client_conn.try_recv();
+
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::ConfigAck(C2sConfigAck)),
+        )
+        .unwrap();
+    server.tick();
+    let _ = client_conn.try_recv();
+
+    // Deliver initial chunks around spawn
+    for _ in 0..10 {
+        server.tick();
+    }
+    // Drain delivered chunks
+    while let Ok(Some(_)) = client_conn.try_recv() {}
+
+    // Player moves to mountain coordinate (128.357, 23.362, 154.545)
+    for tick in 1..=20 {
+        client_conn
+            .send(
+                Lane::Control,
+                Payload::Msg(C2sMessage::PlayerPosition(C2sPlayerPosition {
+                    x: 128.357,
+                    y: 23.362,
+                    z: 154.545,
+                    yaw: -90.0,
+                    pitch: 0.0,
+                    on_ground: true,
+                })),
+            )
+            .unwrap();
+
+        let frame = InputFrame {
+            tick,
+            buttons: 0,
+            yaw: 0,
+            pitch: 0,
+            hotbar: 0,
+        };
+        client_conn
+            .send(
+                Lane::Control,
+                Payload::Msg(C2sMessage::PlayerInput(C2sPlayerInput {
+                    last_server_tick_ack: 0,
+                    frames: BoundedVec::new(vec![frame]).unwrap(),
+                })),
+            )
+            .unwrap();
+
+        server.tick();
+    }
+
+    // Verify no unloads were triggered for chunk (4, 0, 4)
+    let mut unloads = Vec::new();
+    while let Ok(Some(incoming)) = client_conn.try_recv() {
+        if let Some(S2cMessage::ChunkUnload(unload)) = incoming.into_msg() {
+            unloads.push(ChunkPos::new(
+                unload.chunk_x,
+                unload.chunk_y,
+                unload.chunk_z,
+            ));
+        }
+    }
+
+    assert!(
+        !unloads.contains(&ChunkPos::new(4, 0, 4)),
+        "Chunk (4, 0, 4) where player is standing was erroneously unloaded!"
+    );
+}
