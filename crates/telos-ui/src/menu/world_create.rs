@@ -206,10 +206,14 @@ impl WorldCreateWizard {
 
                         let generator = Self::GENERATORS[self.generator_index].to_string();
 
-                        // Write metadata world.toml
+                        // Write metadata world.toml with creation/open timestamp
                         let _ = fs::create_dir_all(&path);
+                        let now_secs = std::time::SystemTime::now()
+                            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
                         let meta = format!(
-                            "name = \"{name}\"\nseed = {seed}\ngenerator = \"{generator}\"\n"
+                            "name = \"{name}\"\nseed = {seed}\ngenerator = \"{generator}\"\nlast_opened = {now_secs}\n"
                         );
                         let _ = fs::write(path.join("world.toml"), meta);
 

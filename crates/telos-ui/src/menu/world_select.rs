@@ -50,6 +50,44 @@ fn calculate_dir_size(path: &Path) -> u64 {
     total
 }
 
+/// Records that a world was opened by updating or appending the `last_opened` timestamp
+/// in `world.toml` within the given world directory.
+pub fn record_world_opened(world_dir: &Path) {
+    let meta_file = world_dir.join("world.toml");
+    #[allow(clippy::cast_possible_truncation)]
+    let now_ms = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let content = if meta_file.exists() {
+        fs::read_to_string(&meta_file).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let mut found = false;
+    let mut updated_lines = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("last_opened") || trimmed.starts_with("last_played") {
+            updated_lines.push(format!("last_opened = {now_ms}"));
+            found = true;
+        } else {
+            updated_lines.push(line.to_string());
+        }
+    }
+    if !found {
+        updated_lines.push(format!("last_opened = {now_ms}"));
+    }
+
+    let mut result = updated_lines.join("\n");
+    result.push('\n');
+
+    let _ = fs::create_dir_all(world_dir);
+    let _ = fs::write(&meta_file, result);
+}
+
 /// Information for a single discovered world save directory.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorldEntry {
@@ -484,6 +522,7 @@ impl WorldSelectScreen {
                     let mut seed = 1337u64;
                     let mut generator = "Standard".to_string();
 
+                    let mut last_opened_from_toml: Option<SystemTime> = None;
                     let meta_file = path.join("world.toml");
                     if meta_file.exists()
                         && let Ok(content) = fs::read_to_string(&meta_file)
@@ -498,21 +537,56 @@ impl WorldSelectScreen {
                                 }
                             } else if let Some(val) = line.strip_prefix("generator = ") {
                                 generator = val.trim_matches('"').to_string();
+                            } else if let Some(val) = line
+                                .strip_prefix("last_opened = ")
+                                .or_else(|| line.strip_prefix("last_played = "))
+                            {
+                                let val_clean = val.trim().trim_matches('"');
+                                if let Ok(secs) = val_clean.parse::<u64>() {
+                                    let duration = if secs > 2_000_000_000 {
+                                        std::time::Duration::from_millis(secs)
+                                    } else {
+                                        std::time::Duration::from_secs(secs)
+                                    };
+                                    last_opened_from_toml = Some(SystemTime::UNIX_EPOCH + duration);
+                                }
                             }
                         }
                     }
 
-                    let last_modified = path
-                        .metadata()
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .or_else(|| {
-                            if meta_file.exists() {
-                                meta_file.metadata().ok().and_then(|m| m.modified().ok())
-                            } else {
-                                None
+                    // Authoritative last_opened timestamp from world.toml, falling back to
+                    // latest filesystem modification time for legacy worlds without last_opened
+                    let latest_time = if let Some(opened) = last_opened_from_toml {
+                        Some(opened)
+                    } else {
+                        let mut latest = None;
+                        if let Ok(m) = meta_file.metadata()
+                            && let Ok(t) = m.modified()
+                        {
+                            latest = Some(t);
+                        }
+                        if let Ok(sub_entries) = fs::read_dir(&path) {
+                            for sub_entry in sub_entries.flatten() {
+                                if let Ok(m) = sub_entry.metadata()
+                                    && let Ok(t) = m.modified()
+                                {
+                                    latest = match latest {
+                                        Some(cur) => Some(cur.max(t)),
+                                        None => Some(t),
+                                    };
+                                }
                             }
-                        });
+                        }
+                        if let Ok(m) = path.metadata()
+                            && let Ok(t) = m.modified()
+                        {
+                            latest = match latest {
+                                Some(cur) => Some(cur.max(t)),
+                                None => Some(t),
+                            };
+                        }
+                        latest
+                    };
 
                     let size_bytes = calculate_dir_size(&path);
 
@@ -522,14 +596,14 @@ impl WorldSelectScreen {
                         path,
                         seed,
                         generator,
-                        last_modified,
+                        latest_time,
                         size_bytes,
                     ));
                 }
             }
         }
 
-        // Sort worlds by most recently modified first
+        // Sort worlds so that the last opened worlds go up (highest timestamp at index 0)
         self.worlds.sort_by(|a, b| {
             b.last_modified
                 .cmp(&a.last_modified)
@@ -538,13 +612,10 @@ impl WorldSelectScreen {
 
         if self.worlds.is_empty() {
             self.selected_index = None;
-        } else if let Some(sel) = self.selected_index {
-            if sel >= self.worlds.len() {
-                self.selected_index = Some(0);
-            }
         } else {
             self.selected_index = Some(0);
         }
+        self.scroll_offset = 0.0;
     }
 
     /// Updates widget layout and localized text for the given GUI dimensions and catalog.
@@ -729,10 +800,16 @@ impl WorldSelectScreen {
         for btn in &self.buttons {
             if btn.enabled && btn.contains(mouse_x, mouse_y) {
                 return match btn.id {
-                    1 => self
-                        .selected_index
-                        .and_then(|idx| self.worlds.get(idx).cloned())
-                        .map(WorldSelectAction::PlayWorld),
+                    1 => {
+                        if let Some(world) = self
+                            .selected_index
+                            .and_then(|idx| self.worlds.get(idx).cloned())
+                        {
+                            record_world_opened(&world.path);
+                            return Some(WorldSelectAction::PlayWorld(world));
+                        }
+                        None
+                    }
                     2 => Some(WorldSelectAction::CreateNewWorld),
                     3 => {
                         // Open confirmation prompt instead of immediately deleting
@@ -778,6 +855,7 @@ impl WorldSelectScreen {
                 {
                     self.selected_index = Some(i);
                     self.last_card_click = None;
+                    record_world_opened(&world.path);
                     return Some(WorldSelectAction::PlayWorld(world.clone()));
                 }
                 self.selected_index = Some(i);
@@ -1416,5 +1494,70 @@ mod tests {
 
         screen.handle_mouse_wheel(-10.0); // clamps at max_scroll
         assert_eq!(screen.scroll_offset, 100.0);
+    }
+
+    #[test]
+    fn test_last_opened_worlds_go_up() {
+        let temp = tempfile::tempdir().unwrap();
+        let worlds_dir = temp.path().join("worlds");
+        fs::create_dir_all(&worlds_dir).unwrap();
+
+        let w_alpha = worlds_dir.join("w_alpha");
+        let w_beta = worlds_dir.join("w_beta");
+        let w_gamma = worlds_dir.join("w_gamma");
+
+        fs::create_dir_all(&w_alpha).unwrap();
+        fs::create_dir_all(&w_beta).unwrap();
+        fs::create_dir_all(&w_gamma).unwrap();
+
+        fs::write(
+            w_alpha.join("world.toml"),
+            "name = \"Alpha\"\nseed = 100\ngenerator = \"Standard\"\nlast_opened = 1000\n",
+        )
+        .unwrap();
+
+        fs::write(
+            w_beta.join("world.toml"),
+            "name = \"Beta\"\nseed = 200\ngenerator = \"Flat\"\nlast_opened = 2000\n",
+        )
+        .unwrap();
+
+        fs::write(
+            w_gamma.join("world.toml"),
+            "name = \"Gamma\"\nseed = 300\ngenerator = \"Standard\"\nlast_opened = 3000\n",
+        )
+        .unwrap();
+
+        let mut screen = WorldSelectScreen::new();
+        screen.scan_worlds(&worlds_dir);
+
+        assert_eq!(screen.worlds.len(), 3);
+        // Gamma (3000) should be at top, then Beta (2000), then Alpha (1000)
+        assert_eq!(screen.worlds[0].name, "Gamma");
+        assert_eq!(screen.worlds[1].name, "Beta");
+        assert_eq!(screen.worlds[2].name, "Alpha");
+        assert_eq!(screen.selected_index, Some(0));
+
+        // Now player opens world Alpha!
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        record_world_opened(&w_alpha);
+
+        // Rescan worlds: Alpha should have gone up to the very top (index 0)!
+        screen.scan_worlds(&worlds_dir);
+        assert_eq!(screen.worlds[0].name, "Alpha");
+        assert_eq!(screen.worlds[1].name, "Gamma");
+        assert_eq!(screen.worlds[2].name, "Beta");
+        assert_eq!(screen.selected_index, Some(0));
+
+        // Now player opens world Beta!
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        record_world_opened(&w_beta);
+
+        // Rescan worlds: Beta should have gone up to the very top (index 0)!
+        screen.scan_worlds(&worlds_dir);
+        assert_eq!(screen.worlds[0].name, "Beta");
+        assert_eq!(screen.worlds[1].name, "Alpha");
+        assert_eq!(screen.worlds[2].name, "Gamma");
+        assert_eq!(screen.selected_index, Some(0));
     }
 }

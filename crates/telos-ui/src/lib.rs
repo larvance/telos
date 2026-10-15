@@ -46,7 +46,7 @@ pub use menu::{
     MenuSlider, MenuTextInput, ModalFormAction, ModalFormScreen, PauseMenuAction, PauseMenuScreen,
     SettingsScreen, SettingsTab, UiAdvancementCategory, UiAdvancementFrame, UiAdvancementNode,
     WorldCreateAction, WorldCreateWizard, WorldDeletePrompt, WorldEntry, WorldSelectAction,
-    WorldSelectScreen,
+    WorldSelectScreen, record_world_opened,
 };
 
 pub use quad::{QuadKind, UiQuad};

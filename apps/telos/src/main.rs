@@ -57,7 +57,7 @@ use telos_ui::menu::{
     AdvancementsScreen, MainMenuAction, MainMenuScreen, ModalFormAction, ModalFormScreen,
     PauseMenuAction, PauseMenuScreen, SettingsScreen, SettingsTab, UiAdvancementCategory,
     UiAdvancementFrame, UiAdvancementNode, WorldCreateAction, WorldCreateWizard, WorldSelectAction,
-    WorldSelectScreen,
+    WorldSelectScreen, record_world_opened,
 };
 use telos_ui::settings::GameSettings;
 use telos_ui::{
@@ -1598,6 +1598,7 @@ struct App {
     settings_path: PathBuf,
     servers_path: PathBuf,
     worlds_dir: PathBuf,
+    current_world_dir: Option<PathBuf>,
     physics: PlayerPhysicsController,
     last_frame_start: Instant,
 
@@ -2170,6 +2171,7 @@ impl App {
             settings_path,
             servers_path,
             worlds_dir,
+            current_world_dir: None,
             physics,
             last_frame_start: Instant::now(),
             catalog,
@@ -2204,6 +2206,8 @@ impl App {
 
     fn start_singleplayer_server(&mut self, world_dir: PathBuf, seed: u64, generator: &str) {
         self.stop_singleplayer_server();
+        record_world_opened(&world_dir);
+        self.current_world_dir = Some(world_dir.clone());
 
         self.chunks.clear();
         self.chunk_meshes.clear();
@@ -2338,6 +2342,9 @@ impl App {
     }
 
     fn stop_singleplayer_server(&mut self) {
+        if let Some(world_dir) = self.current_world_dir.take() {
+            record_world_opened(&world_dir);
+        }
         if let Ok(message) = BoundedString::new("Quit to title") {
             let _ = self.client_conn.send(
                 Lane::Control,
@@ -10324,6 +10331,7 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => {
                 info!("Close requested, exiting application");
+                self.stop_singleplayer_server();
                 self.save_server_list();
                 event_loop.exit();
             }

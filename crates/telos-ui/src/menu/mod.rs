@@ -18,4 +18,6 @@ pub use pause_menu::{PauseMenuAction, PauseMenuScreen};
 pub use settings_screen::{SettingsScreen, SettingsTab};
 pub use widgets::{ButtonStyle, MenuButton, MenuSlider, MenuTextInput};
 pub use world_create::{WorldCreateAction, WorldCreateWizard};
-pub use world_select::{WorldDeletePrompt, WorldEntry, WorldSelectAction, WorldSelectScreen};
+pub use world_select::{
+    WorldDeletePrompt, WorldEntry, WorldSelectAction, WorldSelectScreen, record_world_opened,
+};
