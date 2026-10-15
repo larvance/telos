@@ -6,6 +6,7 @@ use crate::font::BitmapFont;
 use crate::menu::widgets::{ButtonStyle, MenuButton, MenuTextInput};
 use crate::quad::UiQuad;
 use crate::scale::snap_to_physical;
+use crate::text_input::{TextInputAction, TextInputResult};
 
 fn default_group_name() -> String {
     String::new()
@@ -707,6 +708,31 @@ impl ServerListScreen {
             } else if self.add_group_input.focused {
                 self.add_group_input.backspace();
             }
+        }
+    }
+
+    /// Handles a unified text editing action against whichever server list text input is focused.
+    pub fn handle_text_action(
+        &mut self,
+        action: TextInputAction,
+        clipboard_text: Option<&str>,
+    ) -> TextInputResult {
+        if self.direct_connect_mode && self.direct_input.focused {
+            let res = self.direct_input.handle_action(action, clipboard_text);
+            self.direct_connect_address = self.direct_input.text.clone();
+            res
+        } else if self.add_server_mode {
+            if self.add_name_input.focused {
+                self.add_name_input.handle_action(action, clipboard_text)
+            } else if self.add_address_input.focused {
+                self.add_address_input.handle_action(action, clipboard_text)
+            } else if self.add_group_input.focused {
+                self.add_group_input.handle_action(action, clipboard_text)
+            } else {
+                TextInputResult::None
+            }
+        } else {
+            TextInputResult::None
         }
     }
 

@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::font::BitmapFont;
 use crate::menu::widgets::{MenuButton, MenuTextInput};
 use crate::quad::UiQuad;
+use crate::text_input::{TextInputAction, TextInputResult};
 use telos_core::i18n::{LanguageCatalog, TextArg};
 
 /// Action triggered by interaction in the world creator wizard.
@@ -247,6 +248,34 @@ impl WorldCreateWizard {
             self.name_input.backspace();
         } else if self.seed_input.focused {
             self.seed_input.backspace();
+        }
+    }
+
+    /// Handles a unified text editing action against whichever field is focused.
+    pub fn handle_text_action(
+        &mut self,
+        action: TextInputAction,
+        clipboard_text: Option<&str>,
+    ) -> TextInputResult {
+        if self.name_input.focused {
+            self.name_input.handle_action(action, clipboard_text)
+        } else if self.seed_input.focused {
+            self.seed_input.handle_action(action, clipboard_text)
+        } else {
+            TextInputResult::None
+        }
+    }
+
+    /// Handles Tab key to toggle focus between name and seed fields.
+    pub fn handle_tab(&mut self) {
+        if self.name_input.focused {
+            self.name_input.focused = false;
+            self.name_input.clear_selection();
+            self.seed_input.focused = true;
+        } else {
+            self.seed_input.focused = false;
+            self.seed_input.clear_selection();
+            self.name_input.focused = true;
         }
     }
 

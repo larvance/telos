@@ -68,7 +68,7 @@ use telos_ui::{
     crafting_table_slot_at_pos_styled, furnace_slot_at_pos_styled, inventory_slot_at_pos_styled,
     render_anvil_container_styled, render_chat_hud, render_chest_container_styled,
     render_crafting_table_container_styled, render_furnace_container_styled, render_hud_styled,
-    render_inventory_screen_styled, snap_to_physical,
+    render_inventory_screen_styled, snap_to_physical, TextInputAction, TextInputResult,
 };
 use telos_ui::{InputKey, KeyAction};
 use touch_controls::TouchControls;
@@ -152,8 +152,13 @@ pub fn generate_random_lan_password() -> String {
     }
 }
 
-/// Copies text to system clipboard via standard desktop utilities (Wayland/X11).
+static SYSTEM_CLIPBOARD: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// Copies text to system clipboard via standard desktop utilities (Wayland/X11) and in-process fallback.
 pub fn copy_to_system_clipboard(text: &str) {
+    if let Ok(mut lock) = SYSTEM_CLIPBOARD.lock() {
+        *lock = text.to_string();
+    }
     let tools = [
         ("wl-copy", &[][..]),
         ("xclip", &["-selection", "clipboard"][..]),
@@ -175,6 +180,39 @@ pub fn copy_to_system_clipboard(text: &str) {
             return;
         }
     }
+}
+
+/// Reads text from system clipboard via standard desktop utilities (Wayland/X11) or in-process buffer.
+#[must_use]
+pub fn read_from_system_clipboard() -> Option<String> {
+    let tools = [
+        ("wl-paste", &["--no-newline"][..]),
+        ("xclip", &["-selection", "clipboard", "-o"][..]),
+        ("xsel", &["--clipboard", "--output"][..]),
+    ];
+    for (cmd, args) in tools {
+        if let Ok(output) = std::process::Command::new(cmd)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(s) = String::from_utf8(output.stdout) {
+                    if !s.is_empty() {
+                        return Some(s);
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(lock) = SYSTEM_CLIPBOARD.lock() {
+        if !lock.is_empty() {
+            return Some(lock.clone());
+        }
+    }
+    None
 }
 
 use telos_core::ident::Identifier;
@@ -1555,6 +1593,7 @@ struct App {
     mouse_cursor_pos: [f32; 2],
     inventory_hovered_slot: Option<usize>,
     shift_held: bool,
+    ctrl_held: bool,
     player_hurt_timer: f32,
     bow_charging: bool,
     bow_charge_ticks: u16,
@@ -1701,7 +1740,34 @@ struct App {
     is_minimized: bool,
 }
 
+/// Translates key code and modifier states into a unified `TextInputAction` if applicable.
+fn key_to_text_input_action(
+    code: KeyCode,
+    ctrl_held: bool,
+    shift_held: bool,
+) -> Option<TextInputAction> {
+    match code {
+        KeyCode::ArrowLeft => Some(TextInputAction::MoveLeft {
+            word: ctrl_held,
+            extend: shift_held,
+        }),
+        KeyCode::ArrowRight => Some(TextInputAction::MoveRight {
+            word: ctrl_held,
+            extend: shift_held,
+        }),
+        KeyCode::Home => Some(TextInputAction::MoveStart { extend: shift_held }),
+        KeyCode::End => Some(TextInputAction::MoveEnd { extend: shift_held }),
+        KeyCode::Backspace => Some(TextInputAction::Backspace { word: ctrl_held }),
+        KeyCode::Delete => Some(TextInputAction::Delete { word: ctrl_held }),
+        KeyCode::KeyA if ctrl_held => Some(TextInputAction::SelectAll),
+        KeyCode::KeyC if ctrl_held => Some(TextInputAction::Copy),
+        KeyCode::KeyV if ctrl_held => Some(TextInputAction::Paste),
+        _ => None,
+    }
+}
+
 impl App {
+
     #[allow(clippy::too_many_lines)]
     fn new(args: Args) -> Self {
         let spawn_pos = if let Some(ref pos_str) = args.pos {
@@ -2136,6 +2202,7 @@ impl App {
             mouse_cursor_pos: [0.0, 0.0],
             inventory_hovered_slot: None,
             shift_held: false,
+            ctrl_held: false,
             player_hurt_timer: 0.0,
             bow_charging: false,
             bow_charge_ticks: 0,
@@ -10503,6 +10570,11 @@ impl ApplicationHandler for App {
                 self.save_server_list();
                 event_loop.exit();
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                let state = modifiers.state();
+                self.shift_held = state.shift_key();
+                self.ctrl_held = state.control_key();
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 self.mouse_cursor_pos = [position.x as f32, position.y as f32];
                 let win_size = self.window_size();
@@ -11256,38 +11328,57 @@ impl ApplicationHandler for App {
             } => {
                 let pressed = state.is_pressed();
 
+                if code == KeyCode::ShiftLeft || code == KeyCode::ShiftRight {
+                    self.shift_held = pressed;
+                }
+                if code == KeyCode::ControlLeft || code == KeyCode::ControlRight {
+                    self.ctrl_held = pressed;
+                }
+
+                let text_action = key_to_text_input_action(code, self.ctrl_held, self.shift_held);
+
                 if let Some(form) = &mut self.active_modal_form {
                     if pressed {
-                        match code {
-                            KeyCode::Escape => {
-                                let cancel_msg =
-                                    C2sMessage::ModalFormResponse(C2sModalFormResponse::cancelled(
-                                        form.form_id,
-                                        telos_core::form::FormCancelReason::UserClosed,
-                                    ));
-                                let _ = self
-                                    .client_conn
-                                    .send(Lane::Control, Payload::Msg(cancel_msg));
-                                self.active_modal_form = None;
-                                if self.current_screen == AppScreen::InGame
-                                    && !self.is_paused
-                                    && !self.advancements_open
-                                    && !self.chat_state.is_open
-                                    && self.container_state.is_none()
-                                    && !self.inventory_open
-                                {
-                                    self.controller.mouse_captured = true;
-                                    self.set_cursor_captured(true);
+                        if let Some(action) = text_action {
+                            let clip = if matches!(action, TextInputAction::Paste) {
+                                read_from_system_clipboard()
+                            } else {
+                                None
+                            };
+                            if let TextInputResult::Copied(copied) =
+                                form.handle_text_action(action, clip.as_deref())
+                            {
+                                copy_to_system_clipboard(&copied);
+                            }
+                        } else {
+                            match code {
+                                KeyCode::Escape => {
+                                    let cancel_msg =
+                                        C2sMessage::ModalFormResponse(C2sModalFormResponse::cancelled(
+                                            form.form_id,
+                                            telos_core::form::FormCancelReason::UserClosed,
+                                        ));
+                                    let _ = self
+                                        .client_conn
+                                        .send(Lane::Control, Payload::Msg(cancel_msg));
+                                    self.active_modal_form = None;
+                                    if self.current_screen == AppScreen::InGame
+                                        && !self.is_paused
+                                        && !self.advancements_open
+                                        && !self.chat_state.is_open
+                                        && self.container_state.is_none()
+                                        && !self.inventory_open
+                                    {
+                                        self.controller.mouse_captured = true;
+                                        self.set_cursor_captured(true);
+                                    }
                                 }
-                            }
-                            KeyCode::Backspace => {
-                                form.handle_backspace();
-                            }
-                            _ => {
-                                if let Some(txt) = text {
-                                    for ch in txt.chars() {
-                                        if !ch.is_control() {
-                                            form.handle_char(ch);
+                                _ => {
+                                    if !self.ctrl_held && let Some(txt) = text {
+                                        for ch in txt.chars() {
+                                            if !ch.is_control() {
+                                                form.handle_char(ch);
+                                            }
                                         }
                                     }
                                 }
@@ -11300,52 +11391,65 @@ impl ApplicationHandler for App {
                 match &mut self.current_screen {
                     AppScreen::Multiplayer => {
                         if pressed {
-                            match code {
-                                KeyCode::Escape => {
-                                    if self.server_list.direct_connect_mode {
-                                        self.server_list.direct_connect_mode = false;
-                                        self.server_list.direct_connect_focused = false;
-                                    } else if self.server_list.add_server_mode {
-                                        self.server_list.add_server_mode = false;
-                                    } else {
-                                        self.current_screen = AppScreen::MainMenu;
-                                    }
+                            if let Some(action) = text_action {
+                                let clip = if matches!(action, TextInputAction::Paste) {
+                                    read_from_system_clipboard()
+                                } else {
+                                    None
+                                };
+                                if let TextInputResult::Copied(copied) =
+                                    self.server_list.handle_text_action(action, clip.as_deref())
+                                {
+                                    copy_to_system_clipboard(&copied);
                                 }
-                                KeyCode::Tab if self.server_list.add_server_mode => {
-                                    if self.server_list.add_name_input.focused {
-                                        self.server_list.add_name_input.focused = false;
-                                        self.server_list.add_address_input.focused = true;
-                                    } else if self.server_list.add_address_input.focused {
-                                        self.server_list.add_address_input.focused = false;
-                                        self.server_list.add_group_input.focused = true;
-                                    } else {
-                                        self.server_list.add_group_input.focused = false;
-                                        self.server_list.add_name_input.focused = true;
+                            } else {
+                                match code {
+                                    KeyCode::Escape => {
+                                        if self.server_list.direct_connect_mode {
+                                            self.server_list.direct_connect_mode = false;
+                                            self.server_list.direct_connect_focused = false;
+                                        } else if self.server_list.add_server_mode {
+                                            self.server_list.add_server_mode = false;
+                                        } else {
+                                            self.current_screen = AppScreen::MainMenu;
+                                        }
                                     }
-                                }
-                                KeyCode::Enter => {
-                                    if let Some(action) = self.server_list.handle_enter() {
-                                        match action {
-                                            ServerListAction::Connect(target) => {
-                                                self.connect_to_remote_server(&target);
-                                            }
-                                            ServerListAction::Cancel => {
-                                                self.current_screen = AppScreen::MainMenu;
-                                            }
-                                            ServerListAction::ServersModified => {
-                                                self.save_server_list();
+                                    KeyCode::Tab if self.server_list.add_server_mode => {
+                                        if self.server_list.add_name_input.focused {
+                                            self.server_list.add_name_input.focused = false;
+                                            self.server_list.add_name_input.clear_selection();
+                                            self.server_list.add_address_input.focused = true;
+                                        } else if self.server_list.add_address_input.focused {
+                                            self.server_list.add_address_input.focused = false;
+                                            self.server_list.add_address_input.clear_selection();
+                                            self.server_list.add_group_input.focused = true;
+                                        } else {
+                                            self.server_list.add_group_input.focused = false;
+                                            self.server_list.add_group_input.clear_selection();
+                                            self.server_list.add_name_input.focused = true;
+                                        }
+                                    }
+                                    KeyCode::Enter => {
+                                        if let Some(action) = self.server_list.handle_enter() {
+                                            match action {
+                                                ServerListAction::Connect(target) => {
+                                                    self.connect_to_remote_server(&target);
+                                                }
+                                                ServerListAction::Cancel => {
+                                                    self.current_screen = AppScreen::MainMenu;
+                                                }
+                                                ServerListAction::ServersModified => {
+                                                    self.save_server_list();
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                KeyCode::Backspace => {
-                                    self.server_list.handle_backspace();
-                                }
-                                _ => {
-                                    if let Some(txt) = text {
-                                        for ch in txt.chars() {
-                                            if !ch.is_control() {
-                                                self.server_list.handle_char(ch);
+                                    _ => {
+                                        if !self.ctrl_held && let Some(txt) = text {
+                                            for ch in txt.chars() {
+                                                if !ch.is_control() {
+                                                    self.server_list.handle_char(ch);
+                                                }
                                             }
                                         }
                                     }
@@ -11356,19 +11460,32 @@ impl ApplicationHandler for App {
                     }
                     AppScreen::WorldCreate => {
                         if pressed {
-                            match code {
-                                KeyCode::Escape => {
-                                    self.world_select.scan_worlds(&self.worlds_dir);
-                                    self.current_screen = AppScreen::WorldSelect;
+                            if let Some(action) = text_action {
+                                let clip = if matches!(action, TextInputAction::Paste) {
+                                    read_from_system_clipboard()
+                                } else {
+                                    None
+                                };
+                                if let TextInputResult::Copied(copied) =
+                                    self.world_create.handle_text_action(action, clip.as_deref())
+                                {
+                                    copy_to_system_clipboard(&copied);
                                 }
-                                KeyCode::Backspace => {
-                                    self.world_create.handle_backspace();
-                                }
-                                _ => {
-                                    if let Some(txt) = text {
-                                        for ch in txt.chars() {
-                                            if !ch.is_control() {
-                                                self.world_create.handle_char(ch);
+                            } else {
+                                match code {
+                                    KeyCode::Escape => {
+                                        self.world_select.scan_worlds(&self.worlds_dir);
+                                        self.current_screen = AppScreen::WorldSelect;
+                                    }
+                                    KeyCode::Tab => {
+                                        self.world_create.handle_tab();
+                                    }
+                                    _ => {
+                                        if !self.ctrl_held && let Some(txt) = text {
+                                            for ch in txt.chars() {
+                                                if !ch.is_control() {
+                                                    self.world_create.handle_char(ch);
+                                                }
                                             }
                                         }
                                     }
@@ -11491,29 +11608,42 @@ impl ApplicationHandler for App {
                 if self.is_paused {
                     if let Some(ref mut lan_screen) = self.open_to_lan_screen {
                         if pressed {
-                            match code {
-                                KeyCode::Escape => {
-                                    self.open_to_lan_screen = None;
+                            if let Some(action) = text_action {
+                                let clip = if matches!(action, TextInputAction::Paste) {
+                                    read_from_system_clipboard()
+                                } else {
+                                    None
+                                };
+                                if let TextInputResult::Copied(copied) =
+                                    lan_screen.handle_text_action(action, clip.as_deref())
+                                {
+                                    copy_to_system_clipboard(&copied);
                                 }
-                                KeyCode::Enter => {
-                                    if let Some(OpenToLanAction::StartLan {
-                                        port,
-                                        password,
-                                        auto_open,
-                                    }) = lan_screen.handle_enter()
-                                    {
-                                        self.open_singleplayer_to_lan(port, password, auto_open);
+                            } else {
+                                match code {
+                                    KeyCode::Escape => {
                                         self.open_to_lan_screen = None;
                                     }
-                                }
-                                KeyCode::Backspace => {
-                                    lan_screen.handle_backspace();
-                                }
-                                _ => {
-                                    if let Some(txt) = text {
-                                        for ch in txt.chars() {
-                                            if !ch.is_control() {
-                                                lan_screen.handle_char(ch);
+                                    KeyCode::Tab => {
+                                        lan_screen.handle_tab();
+                                    }
+                                    KeyCode::Enter => {
+                                        if let Some(OpenToLanAction::StartLan {
+                                            port,
+                                            password,
+                                            auto_open,
+                                        }) = lan_screen.handle_enter()
+                                        {
+                                            self.open_singleplayer_to_lan(port, password, auto_open);
+                                            self.open_to_lan_screen = None;
+                                        }
+                                    }
+                                    _ => {
+                                        if !self.ctrl_held && let Some(txt) = text {
+                                            for ch in txt.chars() {
+                                                if !ch.is_control() {
+                                                    lan_screen.handle_char(ch);
+                                                }
                                             }
                                         }
                                     }
@@ -11531,81 +11661,71 @@ impl ApplicationHandler for App {
                     return;
                 }
 
-                if code == KeyCode::ShiftLeft || code == KeyCode::ShiftRight {
-                    self.shift_held = pressed;
-                }
-
                 if self.chat_state.is_open {
                     if pressed {
-                        match code {
-                            KeyCode::Escape => {
-                                self.chat_state.close();
-                                self.controller.mouse_captured = true;
-                                self.set_cursor_captured(true);
+                        if let Some(action) = text_action {
+                            let clip = if matches!(action, TextInputAction::Paste) {
+                                read_from_system_clipboard()
+                            } else {
+                                None
+                            };
+                            if let TextInputResult::Copied(copied) =
+                                self.chat_state.handle_action(action, clip.as_deref())
+                            {
+                                copy_to_system_clipboard(&copied);
                             }
-                            KeyCode::Enter => {
-                                if let Some(msg) = self.chat_state.take_submitted_message()
-                                    && let Ok(bounded) = BoundedString::new(msg)
-                                {
-                                    let _ = self.client_conn.send(
-                                        Lane::Control,
-                                        Payload::Msg(C2sMessage::ChatMessage(C2sChatMessage {
-                                            message: bounded,
-                                        })),
-                                    );
+                            self.request_command_suggestions();
+                        } else {
+                            match code {
+                                KeyCode::Escape => {
+                                    self.chat_state.close();
+                                    self.controller.mouse_captured = true;
+                                    self.set_cursor_captured(true);
                                 }
-                                self.controller.mouse_captured = true;
-                                self.set_cursor_captured(true);
-                            }
-                            KeyCode::Backspace => {
-                                self.chat_state.handle_backspace();
-                                self.request_command_suggestions();
-                            }
-                            KeyCode::Delete => {
-                                self.chat_state.handle_delete();
-                                self.request_command_suggestions();
-                            }
-                            KeyCode::ArrowLeft => {
-                                self.chat_state.move_cursor_left();
-                            }
-                            KeyCode::ArrowRight => {
-                                self.chat_state.move_cursor_right();
-                            }
-                            KeyCode::Home => {
-                                self.chat_state.move_cursor_start();
-                            }
-                            KeyCode::End => {
-                                self.chat_state.move_cursor_end();
-                            }
-                            KeyCode::ArrowUp => {
-                                if self.chat_state.suggestions.is_empty() {
-                                    self.chat_state.history_up();
-                                } else {
-                                    self.chat_state.select_prev_suggestion();
-                                }
-                            }
-                            KeyCode::ArrowDown => {
-                                if self.chat_state.suggestions.is_empty() {
-                                    self.chat_state.history_down();
-                                } else {
-                                    self.chat_state.select_next_suggestion();
-                                }
-                            }
-                            KeyCode::Tab => {
-                                if self.chat_state.suggestions.is_empty() {
-                                    self.request_command_suggestions();
-                                } else {
-                                    self.chat_state.apply_selected_suggestion();
-                                }
-                            }
-                            _ => {
-                                if let Some(txt) = text {
-                                    for c in txt.chars() {
-                                        if !c.is_control() {
-                                            self.chat_state.handle_char(c);
-                                        }
+                                KeyCode::Enter => {
+                                    if let Some(msg) = self.chat_state.take_submitted_message()
+                                        && let Ok(bounded) = BoundedString::new(msg)
+                                    {
+                                        let _ = self.client_conn.send(
+                                            Lane::Control,
+                                            Payload::Msg(C2sMessage::ChatMessage(C2sChatMessage {
+                                                message: bounded,
+                                            })),
+                                        );
                                     }
-                                    self.request_command_suggestions();
+                                    self.controller.mouse_captured = true;
+                                    self.set_cursor_captured(true);
+                                }
+                                KeyCode::ArrowUp => {
+                                    if self.chat_state.suggestions.is_empty() {
+                                        self.chat_state.history_up();
+                                    } else {
+                                        self.chat_state.select_prev_suggestion();
+                                    }
+                                }
+                                KeyCode::ArrowDown => {
+                                    if self.chat_state.suggestions.is_empty() {
+                                        self.chat_state.history_down();
+                                    } else {
+                                        self.chat_state.select_next_suggestion();
+                                    }
+                                }
+                                KeyCode::Tab => {
+                                    if self.chat_state.suggestions.is_empty() {
+                                        self.request_command_suggestions();
+                                    } else {
+                                        self.chat_state.apply_selected_suggestion();
+                                    }
+                                }
+                                _ => {
+                                    if !self.ctrl_held && let Some(txt) = text {
+                                        for c in txt.chars() {
+                                            if !c.is_control() {
+                                                self.chat_state.handle_char(c);
+                                            }
+                                        }
+                                        self.request_command_suggestions();
+                                    }
                                 }
                             }
                         }

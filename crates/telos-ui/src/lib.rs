@@ -17,6 +17,7 @@ pub mod scale;
 pub mod server_list;
 pub mod settings;
 pub mod style;
+pub mod text_input;
 pub mod tree;
 
 pub use chat::{ChatEntry, ChatHudState, render_chat_hud};
@@ -60,4 +61,5 @@ pub use style::{
     ContainerLayoutDef, GuiStyleSheet, HudThemeDef, NineSliceBorderDef, SlotLayoutDef,
     container_bounds, slot_at_pos_styled,
 };
+pub use text_input::{TextInputAction, TextInputBuffer, TextInputResult};
 pub use tree::{DirtyFlags, NodeId, UiTree, WidgetKind, WidgetNode};

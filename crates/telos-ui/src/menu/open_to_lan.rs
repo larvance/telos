@@ -4,6 +4,7 @@ use crate::font::BitmapFont;
 use crate::menu::widgets::{ButtonStyle, MenuButton, MenuTextInput};
 use crate::quad::UiQuad;
 use crate::scale::snap_to_physical;
+use crate::text_input::{TextInputAction, TextInputResult};
 
 /// Action triggered by interaction in the Open to LAN dialog.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -207,6 +208,34 @@ impl OpenToLanScreen {
             self.port_input.backspace();
         } else if self.password_input.focused {
             self.password_input.backspace();
+        }
+    }
+
+    /// Handles a unified text editing action against whichever field is focused.
+    pub fn handle_text_action(
+        &mut self,
+        action: TextInputAction,
+        clipboard_text: Option<&str>,
+    ) -> TextInputResult {
+        if self.port_input.focused {
+            self.port_input.handle_action(action, clipboard_text)
+        } else if self.password_input.focused {
+            self.password_input.handle_action(action, clipboard_text)
+        } else {
+            TextInputResult::None
+        }
+    }
+
+    /// Handles Tab key to toggle focus between port and password fields.
+    pub fn handle_tab(&mut self) {
+        if self.port_input.focused {
+            self.port_input.focused = false;
+            self.port_input.clear_selection();
+            self.password_input.focused = true;
+        } else {
+            self.password_input.focused = false;
+            self.password_input.clear_selection();
+            self.port_input.focused = true;
         }
     }
 

@@ -10,6 +10,7 @@ use crate::font::BitmapFont;
 use crate::menu::widgets::{MenuButton, MenuSlider, MenuTextInput};
 use crate::quad::UiQuad;
 use crate::scale::snap_to_physical;
+use crate::text_input::{TextInputAction, TextInputResult};
 
 /// Action emitted by user interaction with a modal form.
 #[derive(Debug, Clone, PartialEq)]
@@ -755,6 +756,22 @@ impl ModalFormScreen {
                 input.backspace();
             }
         }
+    }
+
+    /// Handles unified text editing actions for focused text input fields in `CustomForm`.
+    pub fn handle_text_action(
+        &mut self,
+        action: TextInputAction,
+        clipboard_text: Option<&str>,
+    ) -> TextInputResult {
+        for elem in &mut self.custom_elements {
+            if let CustomWidgetState::Input { input, .. } = elem
+                && input.focused
+            {
+                return input.handle_action(action, clipboard_text);
+            }
+        }
+        TextInputResult::None
     }
 
     /// Checks if mouse cursor is currently hovering over any interactive child widget.

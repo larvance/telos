@@ -4,6 +4,7 @@ use crate::font::BitmapFont;
 use crate::hud::UiLayers;
 use crate::quad::UiQuad;
 use crate::scale::snap_to_physical;
+use crate::text_input::{self, TextInputAction, TextInputResult};
 
 /// Visual theme style for a menu button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -444,7 +445,7 @@ impl MenuSlider {
     }
 }
 
-/// Interactive single-line text input widget with cursor and backspace support.
+/// Interactive single-line text input widget with cursor, word navigation, selection, and clipboard support.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MenuTextInput {
     /// Unique identifier.
@@ -463,6 +464,8 @@ pub struct MenuTextInput {
     pub placeholder: String,
     /// Cursor character index.
     pub cursor_pos: usize,
+    /// Selection anchor index where selection started when holding Shift.
+    pub selection_anchor: Option<usize>,
     /// Whether currently focused and receiving keystrokes.
     pub focused: bool,
     /// Whether hovered.
@@ -489,6 +492,7 @@ impl MenuTextInput {
             text: String::new(),
             placeholder: placeholder.into(),
             cursor_pos: 0,
+            selection_anchor: None,
             focused: false,
             hovered: false,
         }
@@ -503,23 +507,152 @@ impl MenuTextInput {
             && mouse_y <= self.y + self.height
     }
 
-    /// Inserts a typed character at the active cursor position.
+    /// Returns the active selection range in byte indices if anchor is present and non-empty.
+    #[must_use]
+    pub fn selection_range(&self) -> Option<std::ops::Range<usize>> {
+        text_input::selection_range(&self.text, self.cursor_pos, self.selection_anchor)
+    }
+
+    /// Returns the currently selected slice of text, if any.
+    #[must_use]
+    pub fn selected_text(&self) -> Option<&str> {
+        self.selection_range().map(|r| &self.text[r])
+    }
+
+    /// Inserts a typed character at the active cursor position, replacing any selection.
     pub fn insert_char(&mut self, ch: char) {
-        if !ch.is_control() {
-            self.text.insert(self.cursor_pos, ch);
-            self.cursor_pos += 1;
-        }
+        text_input::insert_char(
+            &mut self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            ch,
+        );
     }
 
-    /// Deletes the character before the active cursor.
+    /// Inserts a string at the active cursor position, replacing any selection.
+    pub fn insert_str(&mut self, s: &str) {
+        text_input::insert_str(
+            &mut self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            s,
+        );
+    }
+
+    /// Deletes the character before the active cursor or the active selection.
     pub fn backspace(&mut self) {
-        if self.cursor_pos > 0 && !self.text.is_empty() {
-            self.cursor_pos -= 1;
-            self.text.remove(self.cursor_pos);
-        }
+        text_input::backspace(
+            &mut self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            false,
+        );
     }
 
-    /// Renders the text box, text, and active cursor.
+    /// Deletes the character after the active cursor or the active selection.
+    pub fn delete(&mut self) {
+        text_input::delete(
+            &mut self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            false,
+        );
+    }
+
+    /// Moves cursor left by single character.
+    pub fn move_cursor_left(&mut self, extend_selection: bool) {
+        text_input::move_left(
+            &self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            false,
+            extend_selection,
+        );
+    }
+
+    /// Moves cursor right by single character.
+    pub fn move_cursor_right(&mut self, extend_selection: bool) {
+        text_input::move_right(
+            &self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            false,
+            extend_selection,
+        );
+    }
+
+    /// Moves cursor left by word.
+    pub fn move_word_left(&mut self, extend_selection: bool) {
+        text_input::move_left(
+            &self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            true,
+            extend_selection,
+        );
+    }
+
+    /// Moves cursor right by word.
+    pub fn move_word_right(&mut self, extend_selection: bool) {
+        text_input::move_right(
+            &self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            true,
+            extend_selection,
+        );
+    }
+
+    /// Moves cursor to beginning of input.
+    pub fn move_cursor_start(&mut self, extend_selection: bool) {
+        text_input::move_start(
+            &self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            extend_selection,
+        );
+    }
+
+    /// Moves cursor to end of input.
+    pub fn move_cursor_end(&mut self, extend_selection: bool) {
+        text_input::move_end(
+            &self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            extend_selection,
+        );
+    }
+
+    /// Selects all text in the input box.
+    pub fn select_all(&mut self) {
+        text_input::select_all(
+            &self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+        );
+    }
+
+    /// Clears any active selection without moving the cursor.
+    pub fn clear_selection(&mut self) {
+        self.selection_anchor = None;
+    }
+
+    /// Handles a unified `TextInputAction` event.
+    pub fn handle_action(
+        &mut self,
+        action: TextInputAction,
+        clipboard_text: Option<&str>,
+    ) -> TextInputResult {
+        text_input::handle_action(
+            &mut self.text,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            action,
+            clipboard_text,
+        )
+    }
+
+    /// Renders the text box, text, selection highlight, and active cursor.
     #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
     pub fn render(&self, font: &BitmapFont, scale: u32, tick: u64, out: &mut Vec<UiQuad>) {
         let px_x = snap_to_physical(self.x, scale);
@@ -571,6 +704,23 @@ impl MenuTextInput {
                 out,
             );
         } else {
+            // Render selection highlight box behind text if active
+            if self.focused && let Some(range) = self.selection_range() {
+                let (prefix_w, _) = font.measure_text(&self.text[..range.start]);
+                let (sel_w, _) = font.measure_text(&self.text[range.start..range.end]);
+                let sel_x = text_x + prefix_w;
+                let px_sel_x = snap_to_physical(sel_x, scale);
+                let px_sel_y = snap_to_physical(text_y - 1.0, scale);
+                let px_sel_w = snap_to_physical(sel_w, scale) as u16;
+                let px_sel_h = snap_to_physical(10.0, scale) as u16;
+
+                out.push(UiQuad::solid(
+                    [px_sel_x, px_sel_y],
+                    [px_sel_w, px_sel_h],
+                    UiQuad::rgba(40, 110, 200, 180),
+                ));
+            }
+
             font.layout_text(
                 &self.text,
                 text_x,

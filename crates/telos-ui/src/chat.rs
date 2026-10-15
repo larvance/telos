@@ -3,6 +3,7 @@
 use crate::font::BitmapFont;
 use crate::quad::UiQuad;
 use crate::scale::snap_to_physical;
+use crate::text_input::{self, TextInputAction, TextInputResult};
 
 /// Maximum number of messages preserved in the chat log.
 pub const MAX_CHAT_HISTORY: usize = 100;
@@ -65,6 +66,8 @@ pub struct ChatHudState {
     pub input_buffer: String,
     /// Cursor position as a UTF-8 byte offset in `input_buffer`.
     pub cursor_pos: usize,
+    /// Selection anchor index where selection started when holding Shift.
+    pub selection_anchor: Option<usize>,
     /// Received chat message history (oldest first, newest at the end).
     pub history: Vec<ChatEntry>,
     /// Previously sent commands and messages for Up/Down arrow recall.
@@ -95,6 +98,7 @@ impl ChatHudState {
             is_open: false,
             input_buffer: String::new(),
             cursor_pos: 0,
+            selection_anchor: None,
             history: Vec::new(),
             sent_history: Vec::new(),
             sent_history_index: None,
@@ -113,6 +117,7 @@ impl ChatHudState {
             self.input_buffer.push_str(p);
         }
         self.cursor_pos = self.input_buffer.len();
+        self.selection_anchor = None;
         self.sent_history_index = None;
         self.clear_suggestions();
     }
@@ -122,6 +127,7 @@ impl ChatHudState {
         self.is_open = false;
         self.input_buffer.clear();
         self.cursor_pos = 0;
+        self.selection_anchor = None;
         self.sent_history_index = None;
         self.clear_suggestions();
     }
@@ -149,67 +155,169 @@ impl ChatHudState {
         }
     }
 
-    /// Inserts a typed character at the current cursor position.
+    /// Returns the active selection range in byte indices if anchor is present and non-empty.
+    #[must_use]
+    pub fn selection_range(&self) -> Option<std::ops::Range<usize>> {
+        text_input::selection_range(&self.input_buffer, self.cursor_pos, self.selection_anchor)
+    }
+
+    /// Returns the currently selected slice of text, if any.
+    #[must_use]
+    pub fn selected_text(&self) -> Option<&str> {
+        self.selection_range().map(|r| &self.input_buffer[r])
+    }
+
+    /// Inserts a typed character at the current cursor position, replacing any selection.
     pub fn handle_char(&mut self, c: char) {
         if !c.is_control() {
-            self.input_buffer.insert(self.cursor_pos, c);
-            self.cursor_pos += c.len_utf8();
+            text_input::insert_char(
+                &mut self.input_buffer,
+                &mut self.cursor_pos,
+                &mut self.selection_anchor,
+                c,
+            );
             self.clear_suggestions();
         }
     }
 
-    /// Handles the Backspace key by deleting the character before the cursor.
+    /// Inserts a string at the current cursor position, replacing any selection.
+    pub fn handle_str(&mut self, s: &str) {
+        text_input::insert_str(
+            &mut self.input_buffer,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            s,
+        );
+        self.clear_suggestions();
+    }
+
+    /// Handles the Backspace key by deleting preceding character/word or active selection.
     pub fn handle_backspace(&mut self) {
-        if self.cursor_pos > 0 {
-            // Find preceding character boundary
-            let mut prev_pos = self.cursor_pos - 1;
-            while !self.input_buffer.is_char_boundary(prev_pos) && prev_pos > 0 {
-                prev_pos -= 1;
-            }
-            self.input_buffer.remove(prev_pos);
-            self.cursor_pos = prev_pos;
+        self.handle_backspace_mode(false);
+    }
+
+    /// Handles Backspace with optional word deletion (Ctrl+Backspace).
+    pub fn handle_backspace_mode(&mut self, word: bool) {
+        if text_input::backspace(
+            &mut self.input_buffer,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            word,
+        ) {
             self.clear_suggestions();
         }
     }
 
-    /// Handles the Delete key by removing the character at the cursor.
+    /// Handles the Delete key by removing following character/word or active selection.
     pub fn handle_delete(&mut self) {
-        if self.cursor_pos < self.input_buffer.len() {
-            self.input_buffer.remove(self.cursor_pos);
+        self.handle_delete_mode(false);
+    }
+
+    /// Handles Delete with optional word deletion (Ctrl+Delete).
+    pub fn handle_delete_mode(&mut self, word: bool) {
+        if text_input::delete(
+            &mut self.input_buffer,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            word,
+        ) {
             self.clear_suggestions();
         }
     }
 
     /// Moves the cursor one character to the left.
     pub fn move_cursor_left(&mut self) {
-        if self.cursor_pos > 0 {
-            let mut prev = self.cursor_pos - 1;
-            while !self.input_buffer.is_char_boundary(prev) && prev > 0 {
-                prev -= 1;
-            }
-            self.cursor_pos = prev;
-        }
+        self.move_left(false, false);
     }
 
     /// Moves the cursor one character to the right.
     pub fn move_cursor_right(&mut self) {
-        if self.cursor_pos < self.input_buffer.len() {
-            let mut next = self.cursor_pos + 1;
-            while !self.input_buffer.is_char_boundary(next) && next < self.input_buffer.len() {
-                next += 1;
-            }
-            self.cursor_pos = next;
-        }
+        self.move_right(false, false);
+    }
+
+    /// Moves cursor left with optional word jump and selection extension.
+    pub fn move_left(&mut self, word: bool, extend: bool) {
+        text_input::move_left(
+            &self.input_buffer,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            word,
+            extend,
+        );
+    }
+
+    /// Moves cursor right with optional word jump and selection extension.
+    pub fn move_right(&mut self, word: bool, extend: bool) {
+        text_input::move_right(
+            &self.input_buffer,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            word,
+            extend,
+        );
     }
 
     /// Moves the cursor to the beginning of the input string.
     pub fn move_cursor_start(&mut self) {
-        self.cursor_pos = 0;
+        self.move_start(false);
+    }
+
+    /// Moves cursor to beginning of input with optional selection extension.
+    pub fn move_start(&mut self, extend: bool) {
+        text_input::move_start(
+            &self.input_buffer,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            extend,
+        );
     }
 
     /// Moves the cursor to the end of the input string.
     pub fn move_cursor_end(&mut self) {
-        self.cursor_pos = self.input_buffer.len();
+        self.move_end(false);
+    }
+
+    /// Moves cursor to end of input with optional selection extension.
+    pub fn move_end(&mut self, extend: bool) {
+        text_input::move_end(
+            &self.input_buffer,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            extend,
+        );
+    }
+
+    /// Selects all text in the chat input buffer.
+    pub fn select_all(&mut self) {
+        text_input::select_all(
+            &self.input_buffer,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+        );
+    }
+
+    /// Clears any active selection without moving the cursor.
+    pub fn clear_selection(&mut self) {
+        self.selection_anchor = None;
+    }
+
+    /// Handles a unified `TextInputAction` event against the chat buffer.
+    pub fn handle_action(
+        &mut self,
+        action: TextInputAction,
+        clipboard_text: Option<&str>,
+    ) -> TextInputResult {
+        let res = text_input::handle_action(
+            &mut self.input_buffer,
+            &mut self.cursor_pos,
+            &mut self.selection_anchor,
+            action,
+            clipboard_text,
+        );
+        if res == TextInputResult::Changed {
+            self.clear_suggestions();
+        }
+        res
     }
 
     /// Navigates older in sent command history.
@@ -453,6 +561,24 @@ pub fn render_chat_hud(
 
         // Input text
         let text_offset_x = chat_x_gui + 10.0;
+
+        // Render selection highlight box behind text if active
+        if let Some(range) = state.selection_range() {
+            let (prefix_w, _) = font.measure_text(&state.input_buffer[..range.start]);
+            let (sel_w, _) = font.measure_text(&state.input_buffer[range.start..range.end]);
+            let sel_x = text_offset_x + prefix_w;
+            let px_sel_x = snap_to_physical(sel_x, scale);
+            let px_sel_y = snap_to_physical(input_y_gui + 1.0, scale);
+            let px_sel_w = snap_to_physical(sel_w, scale) as u16;
+            let px_sel_h = snap_to_physical(10.0, scale) as u16;
+
+            out.push(UiQuad::solid(
+                [px_sel_x, px_sel_y],
+                [px_sel_w, px_sel_h],
+                UiQuad::rgba(40, 110, 200, 180),
+            ));
+        }
+
         font.layout_text(
             &state.input_buffer,
             text_offset_x,
