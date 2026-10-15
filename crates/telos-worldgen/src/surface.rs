@@ -6,8 +6,10 @@ use telos_voxel::registry::BlockRegistry;
 use telos_voxel::state::BlockStateId;
 
 /// Resolved block state IDs needed by surface rules and ore generation.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ResolvedBlocks {
+    /// Precomputed table mapping BlockStateId numeric values to OPAQUE_FULL flag.
+    pub opaque_states: std::sync::Arc<[bool]>,
     /// Air block state ID.
     pub air: BlockStateId,
     /// Stone block state ID.
@@ -220,19 +222,28 @@ impl ResolvedBlocks {
         let brown_mushroom = resolve_block("brown_mushroom", 88);
         let red_mushroom = resolve_block("red_mushroom", 89);
 
-        let netherrack = resolve_block("netherrack", 83);
-        let soul_sand = resolve_block("soul_sand", 84);
-        let glowstone = resolve_block("glowstone", 85);
+        let netherrack = resolve_block("netherrack", 125);
+        let soul_sand = resolve_block("soul_sand", 126);
+        let glowstone = resolve_block("glowstone", 127);
 
-        let basalt = resolve_block("basalt", 86);
-        let blackstone = resolve_block("blackstone", 87);
-        let magma_block = resolve_block("magma_block", 88);
-        let soul_soil = resolve_block("soul_soil", 89);
-        let nether_quartz_ore = resolve_block("nether_quartz_ore", 90);
-        let nether_gold_ore = resolve_block("nether_gold_ore", 91);
-        let ancient_debris = resolve_block("ancient_debris", 92);
+        let basalt = resolve_block("basalt", 128);
+        let blackstone = resolve_block("blackstone", 129);
+        let magma_block = resolve_block("magma_block", 130);
+        let soul_soil = resolve_block("soul_soil", 131);
+        let nether_quartz_ore = resolve_block("nether_quartz_ore", 132);
+        let nether_gold_ore = resolve_block("nether_gold_ore", 133);
+        let ancient_debris = resolve_block("ancient_debris", 134);
+
+        let opaque_states: std::sync::Arc<[bool]> = (0..registry.total_states())
+            .map(|id| {
+                registry
+                    .flags(BlockStateId::new(id as u32))
+                    .contains(telos_voxel::state::StateFlags::OPAQUE_FULL)
+            })
+            .collect();
 
         Self {
+            opaque_states,
             air,
             stone,
             dirt,
@@ -295,6 +306,16 @@ impl ResolvedBlocks {
             nether_gold_ore,
             ancient_debris,
         }
+    }
+
+    /// Checks if a block state represents a fully opaque 1x1x1 solid cube.
+    #[inline]
+    #[must_use]
+    pub fn is_opaque(&self, state: BlockStateId) -> bool {
+        self.opaque_states
+            .get(state.as_usize())
+            .copied()
+            .unwrap_or(false)
     }
 }
 

@@ -234,15 +234,16 @@ pub fn simulate_movement_step_with_speed_factor(
                 state.vel.z *= friction;
             }
 
-            // Jump
+            // Jump (0.42 blocks/tick = 8.42 blocks/s)
             if is_jump && state.on_ground {
-                state.vel.y = 8.4;
+                state.vel.y = 8.42;
                 state.on_ground = false;
             }
 
-            // Gravity & air drag
+            // Gravity & vertical air drag (0.98 per tick, terminal velocity 78.4 m/s)
             if !state.on_ground {
-                state.vel.y = (state.vel.y - 32.0 * dt).max(-60.0);
+                let vert_drag = 0.98f32.powf(dt * 20.0);
+                state.vel.y = ((state.vel.y - 32.0 * dt) * vert_drag).max(-78.4);
             }
 
             // Clamp velocity

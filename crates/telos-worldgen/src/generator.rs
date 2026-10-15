@@ -77,8 +77,6 @@ impl WorldGenerator {
     #[must_use]
     #[allow(clippy::large_stack_arrays)]
     pub fn generate_chunk(&self, pos: ChunkPos) -> Chunk {
-        let water_id = self.blocks.water;
-        let lava_id = self.blocks.lava;
         match self.kind {
             GeneratorKind::Void => Chunk::new_uniform(pos, BlockStateId::AIR, false),
             GeneratorKind::Flat => {
@@ -110,8 +108,9 @@ impl WorldGenerator {
                 }
 
                 let packed_blocks = bulk::from_dense(&dense);
+                let opaque = std::sync::Arc::clone(&self.blocks.opaque_states);
                 Chunk::from_blocks(pos, packed_blocks, move |state| {
-                    state != BlockStateId::AIR && state != water_id && state != lava_id
+                    opaque.get(state.as_usize()).copied().unwrap_or(false)
                 })
             }
             GeneratorKind::Nether => {
@@ -174,9 +173,10 @@ impl WorldGenerator {
 
                 // 7. Construct compact paletted chunk representation with uniform elision
                 let packed_blocks = bulk::from_dense(&dense);
+                let opaque = std::sync::Arc::clone(&self.blocks.opaque_states);
 
                 Chunk::from_blocks(pos, packed_blocks, move |state| {
-                    state != BlockStateId::AIR && state != water_id && state != lava_id
+                    opaque.get(state.as_usize()).copied().unwrap_or(false)
                 })
             }
         }

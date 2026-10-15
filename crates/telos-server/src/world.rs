@@ -811,11 +811,11 @@ impl ServerWorld {
 
         if key.level == 1 {
             let mut snapshots = Vec::with_capacity(8);
-            for dy in 0..2 {
-                for dz in 0..2 {
-                    for dx in 0..2 {
+            for oz in 0..2 {
+                for oy in 0..2 {
+                    for ox in 0..2 {
                         let child_pos =
-                            ChunkPos::new(key.x * 2 + dx, key.y * 2 + dy, key.z * 2 + dz);
+                            ChunkPos::new(key.x * 2 + ox, key.y * 2 + oy, key.z * 2 + oz);
                         snapshots.push(self.get_or_generate_chunk(child_pos));
                     }
                 }
@@ -833,14 +833,14 @@ impl ServerWorld {
             self.pyramid.downsample_and_store(key, &children)
         } else {
             let mut children_nodes = Vec::with_capacity(8);
-            for dy in 0..2 {
-                for dz in 0..2 {
-                    for dx in 0..2 {
+            for oz in 0..2 {
+                for oy in 0..2 {
+                    for ox in 0..2 {
                         let child_key = LodNodeKey::new(
                             key.level - 1,
-                            key.x * 2 + dx,
-                            key.y * 2 + dy,
-                            key.z * 2 + dz,
+                            key.x * 2 + ox,
+                            key.y * 2 + oy,
+                            key.z * 2 + oz,
                         );
                         children_nodes.push(self.ensure_lod_node(child_key));
                     }

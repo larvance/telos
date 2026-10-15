@@ -582,10 +582,9 @@ pub fn generate_nether_chunk(seed: u64, pos: ChunkPos, blocks: &ResolvedBlocks) 
     }
 
     let packed_blocks = bulk::from_dense(&dense);
-    let water_id = blocks.water;
-    let lava_id = blocks.lava;
+    let opaque = std::sync::Arc::clone(&blocks.opaque_states);
     Chunk::from_blocks(pos, packed_blocks, move |state| {
-        state != BlockStateId::AIR && state != water_id && state != lava_id
+        opaque.get(state.as_usize()).copied().unwrap_or(false)
     })
 }
 

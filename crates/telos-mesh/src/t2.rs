@@ -314,121 +314,19 @@ pub fn mesh_cross_model(
     let n2 = Vec3::new(1.0, 0.0, 1.0).normalize();
 
     // Diagonal 1: (0, 0) to (1, 1)
-    // Forward quad
     let v0 = T2Vertex::new(p000, [0.0, 1.0], material, n1, 3, sky, block, false, false);
     let v1 = T2Vertex::new(p101, [1.0, 1.0], material, n1, 3, sky, block, false, false);
     let v2 = T2Vertex::new(p111, [1.0, 0.0], material, n1, 3, sky, block, false, false);
     let v3 = T2Vertex::new(p010, [0.0, 0.0], material, n1, 3, sky, block, false, false);
     out.push(T2Quad::new(v0, v1, v2, v3));
 
-    // Reverse quad
-    let v0_r = T2Vertex::new(p101, [0.0, 1.0], material, -n1, 3, sky, block, false, false);
-    let v1_r = T2Vertex::new(p000, [1.0, 1.0], material, -n1, 3, sky, block, false, false);
-    let v2_r = T2Vertex::new(p010, [1.0, 0.0], material, -n1, 3, sky, block, false, false);
-    let v3_r = T2Vertex::new(p111, [0.0, 0.0], material, -n1, 3, sky, block, false, false);
-    out.push(T2Quad::new(v0_r, v1_r, v2_r, v3_r));
-
     // Diagonal 2: (1, 0) to (0, 1)
-    // Offset slightly along normal n2 (0.0005 blocks) to avoid exact coplanar Z-fighting at the center line (0.5, 0.5)
-    let offset2 = n2 * 0.0005;
-    let p100_off = p100 + offset2;
-    let p001_off = p001 + offset2;
-    let p011_off = p011 + offset2;
-    let p110_off = p110 + offset2;
-
-    // Forward quad
-    let v0_2 = T2Vertex::new(
-        p100_off,
-        [0.0, 1.0],
-        material,
-        n2,
-        3,
-        sky,
-        block,
-        false,
-        false,
-    );
-    let v1_2 = T2Vertex::new(
-        p001_off,
-        [1.0, 1.0],
-        material,
-        n2,
-        3,
-        sky,
-        block,
-        false,
-        false,
-    );
-    let v2_2 = T2Vertex::new(
-        p011_off,
-        [1.0, 0.0],
-        material,
-        n2,
-        3,
-        sky,
-        block,
-        false,
-        false,
-    );
-    let v3_2 = T2Vertex::new(
-        p110_off,
-        [0.0, 0.0],
-        material,
-        n2,
-        3,
-        sky,
-        block,
-        false,
-        false,
-    );
+    // Note: t2_cutout_pipeline uses vk::CullModeFlags::NONE so a single quad renders double-sided without Z-fighting.
+    let v0_2 = T2Vertex::new(p100, [0.0, 1.0], material, n2, 3, sky, block, false, false);
+    let v1_2 = T2Vertex::new(p001, [1.0, 1.0], material, n2, 3, sky, block, false, false);
+    let v2_2 = T2Vertex::new(p011, [1.0, 0.0], material, n2, 3, sky, block, false, false);
+    let v3_2 = T2Vertex::new(p110, [0.0, 0.0], material, n2, 3, sky, block, false, false);
     out.push(T2Quad::new(v0_2, v1_2, v2_2, v3_2));
-
-    // Reverse quad
-    let v0_2r = T2Vertex::new(
-        p001_off,
-        [0.0, 1.0],
-        material,
-        -n2,
-        3,
-        sky,
-        block,
-        false,
-        false,
-    );
-    let v1_2r = T2Vertex::new(
-        p100_off,
-        [1.0, 1.0],
-        material,
-        -n2,
-        3,
-        sky,
-        block,
-        false,
-        false,
-    );
-    let v2_2r = T2Vertex::new(
-        p110_off,
-        [1.0, 0.0],
-        material,
-        -n2,
-        3,
-        sky,
-        block,
-        false,
-        false,
-    );
-    let v3_2r = T2Vertex::new(
-        p011_off,
-        [0.0, 0.0],
-        material,
-        -n2,
-        3,
-        sky,
-        block,
-        false,
-        false,
-    );
-    out.push(T2Quad::new(v0_2r, v1_2r, v2_2r, v3_2r));
 }
 
 /// Tessellates an upright or wall-mounted torch at chunk cell `(bx, by, bz)`.
@@ -1047,8 +945,8 @@ mod tests {
         let mut quads = Vec::new();
         mesh_cross_model(5, 10, 15, 7, 15, 0, &mut quads);
 
-        // Cross emits 4 quads (2 diagonals, double-sided)
-        assert_eq!(quads.len(), 4);
+        // Cross emits 2 quads (2 diagonals, rendered double-sided via CullModeFlags::NONE)
+        assert_eq!(quads.len(), 2);
 
         // Verify bounding coordinates of quad vertices
         for q in &quads {

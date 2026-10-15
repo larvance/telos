@@ -45,6 +45,9 @@ fn test_container_layout_serialization_roundtrip_json() {
     let custom = ContainerLayoutDef {
         width: 200,
         height: 180,
+        show_titles: true,
+        title: Some("Custom Vault".to_string()),
+        inventory_title: Some("Player Backpack".to_string()),
         title_pos: [10, 8],
         inventory_title_pos: Some([10, 80]),
         background_texture: Some("textures/gui/container/custom_chest.png".to_string()),
@@ -71,6 +74,9 @@ fn test_container_layout_serialization_roundtrip_ron() {
     let custom = ContainerLayoutDef {
         width: 190,
         height: 170,
+        show_titles: false,
+        title: None,
+        inventory_title: None,
         title_pos: [6, 6],
         inventory_title_pos: None,
         background_texture: None,

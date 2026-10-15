@@ -408,28 +408,31 @@ pub fn render_chest_container_styled<'a>(
         }
     }
 
-    // 3. Titles: Container title (e.g. "Chest") and "Inventory"
-    let title_color = UiQuad::rgba(64, 64, 64, 255);
     let scale_f = gui_scale as f32;
-    font.layout_text(
-        title,
-        (origin_x as f32 / scale_f) + layout.title_pos[0] as f32,
-        (origin_y as f32 / scale_f) + layout.title_pos[1] as f32,
-        title_color,
-        false,
-        gui_scale,
-        out,
-    );
-    let inv_title_pos = layout.inventory_title_pos.unwrap_or([8, 72]);
-    font.layout_text(
-        "Inventory",
-        (origin_x as f32 / scale_f) + inv_title_pos[0] as f32,
-        (origin_y as f32 / scale_f) + inv_title_pos[1] as f32,
-        title_color,
-        false,
-        gui_scale,
-        out,
-    );
+
+    // 3. Titles: Container title (e.g. "Chest") and "Inventory"
+    if layout.show_titles {
+        let title_color = UiQuad::rgba(64, 64, 64, 255);
+        font.layout_text(
+            title,
+            (origin_x as f32 / scale_f) + layout.title_pos[0] as f32,
+            (origin_y as f32 / scale_f) + layout.title_pos[1] as f32,
+            title_color,
+            false,
+            gui_scale,
+            out,
+        );
+        let inv_title_pos = layout.inventory_title_pos.unwrap_or([8, 72]);
+        font.layout_text(
+            "Inventory",
+            (origin_x as f32 / scale_f) + inv_title_pos[0] as f32,
+            (origin_y as f32 / scale_f) + inv_title_pos[1] as f32,
+            title_color,
+            false,
+            gui_scale,
+            out,
+        );
+    }
 
     let default_slot_sz = to_physical_pixels(16, gui_scale) as u16;
 
@@ -709,28 +712,31 @@ pub fn render_furnace_container_styled<'a>(
         ));
     }
 
-    // 3. Titles: Container title (e.g. "Furnace") and "Inventory"
-    let title_color = UiQuad::rgba(64, 64, 64, 255);
     let scale_f = gui_scale as f32;
-    font.layout_text(
-        title,
-        (origin_x as f32 / scale_f) + layout.title_pos[0] as f32,
-        (origin_y as f32 / scale_f) + layout.title_pos[1] as f32,
-        title_color,
-        false,
-        gui_scale,
-        out,
-    );
-    let inv_title_pos = layout.inventory_title_pos.unwrap_or([8, 72]);
-    font.layout_text(
-        "Inventory",
-        (origin_x as f32 / scale_f) + inv_title_pos[0] as f32,
-        (origin_y as f32 / scale_f) + inv_title_pos[1] as f32,
-        title_color,
-        false,
-        gui_scale,
-        out,
-    );
+
+    // 3. Titles: Container title (e.g. "Furnace") and "Inventory"
+    if layout.show_titles {
+        let title_color = UiQuad::rgba(64, 64, 64, 255);
+        font.layout_text(
+            title,
+            (origin_x as f32 / scale_f) + layout.title_pos[0] as f32,
+            (origin_y as f32 / scale_f) + layout.title_pos[1] as f32,
+            title_color,
+            false,
+            gui_scale,
+            out,
+        );
+        let inv_title_pos = layout.inventory_title_pos.unwrap_or([8, 72]);
+        font.layout_text(
+            "Inventory",
+            (origin_x as f32 / scale_f) + inv_title_pos[0] as f32,
+            (origin_y as f32 / scale_f) + inv_title_pos[1] as f32,
+            title_color,
+            false,
+            gui_scale,
+            out,
+        );
+    }
 
     let default_slot_sz = to_physical_pixels(16, gui_scale) as u16;
 
@@ -978,28 +984,31 @@ pub fn render_crafting_table_container_styled<'a>(
         ));
     }
 
-    // 3. Titles: "Crafting" at title_pos and "Inventory" at inventory_title_pos
-    let title_color = UiQuad::rgba(64, 64, 64, 255);
     let scale_f = gui_scale as f32;
-    font.layout_text(
-        title,
-        (origin_x as f32 / scale_f) + layout.title_pos[0] as f32,
-        (origin_y as f32 / scale_f) + layout.title_pos[1] as f32,
-        title_color,
-        false,
-        gui_scale,
-        out,
-    );
-    let inv_title_pos = layout.inventory_title_pos.unwrap_or([8, 72]);
-    font.layout_text(
-        "Inventory",
-        (origin_x as f32 / scale_f) + inv_title_pos[0] as f32,
-        (origin_y as f32 / scale_f) + inv_title_pos[1] as f32,
-        title_color,
-        false,
-        gui_scale,
-        out,
-    );
+
+    // 3. Titles: "Crafting" at title_pos and "Inventory" at inventory_title_pos
+    if layout.show_titles {
+        let title_color = UiQuad::rgba(64, 64, 64, 255);
+        font.layout_text(
+            title,
+            (origin_x as f32 / scale_f) + layout.title_pos[0] as f32,
+            (origin_y as f32 / scale_f) + layout.title_pos[1] as f32,
+            title_color,
+            false,
+            gui_scale,
+            out,
+        );
+        let inv_title_pos = layout.inventory_title_pos.unwrap_or([8, 72]);
+        font.layout_text(
+            "Inventory",
+            (origin_x as f32 / scale_f) + inv_title_pos[0] as f32,
+            (origin_y as f32 / scale_f) + inv_title_pos[1] as f32,
+            title_color,
+            false,
+            gui_scale,
+            out,
+        );
+    }
 
     let default_slot_sz = to_physical_pixels(16, gui_scale) as u16;
 
@@ -1223,28 +1232,31 @@ pub fn render_anvil_container_styled<'a>(
         ));
     }
 
-    // 3. Titles: "Repair & Name" at title_pos and "Inventory" at inventory_title_pos
-    let title_color = UiQuad::rgba(64, 64, 64, 255);
     let scale_f = gui_scale as f32;
-    font.layout_text(
-        title,
-        (origin_x as f32 / scale_f) + layout.title_pos[0] as f32,
-        (origin_y as f32 / scale_f) + layout.title_pos[1] as f32,
-        title_color,
-        false,
-        gui_scale,
-        out,
-    );
-    let inv_title_pos = layout.inventory_title_pos.unwrap_or([8, 74]);
-    font.layout_text(
-        "Inventory",
-        (origin_x as f32 / scale_f) + inv_title_pos[0] as f32,
-        (origin_y as f32 / scale_f) + inv_title_pos[1] as f32,
-        title_color,
-        false,
-        gui_scale,
-        out,
-    );
+
+    // 3. Titles: "Repair & Name" at title_pos and "Inventory" at inventory_title_pos
+    if layout.show_titles {
+        let title_color = UiQuad::rgba(64, 64, 64, 255);
+        font.layout_text(
+            title,
+            (origin_x as f32 / scale_f) + layout.title_pos[0] as f32,
+            (origin_y as f32 / scale_f) + layout.title_pos[1] as f32,
+            title_color,
+            false,
+            gui_scale,
+            out,
+        );
+        let inv_title_pos = layout.inventory_title_pos.unwrap_or([8, 74]);
+        font.layout_text(
+            "Inventory",
+            (origin_x as f32 / scale_f) + inv_title_pos[0] as f32,
+            (origin_y as f32 / scale_f) + inv_title_pos[1] as f32,
+            title_color,
+            false,
+            gui_scale,
+            out,
+        );
+    }
 
     // 4. Level cost display if cost > 0
     if cost > 0 {

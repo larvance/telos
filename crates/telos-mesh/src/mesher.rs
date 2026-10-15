@@ -493,8 +493,8 @@ mod tests {
         assert!(!layers.opaque.is_empty());
         // Verify cutout T0 has leaf faces
         assert!(!layers.cutout.is_empty());
-        // Verify T2 cutout has poppy cross quads (4 quads)
-        assert_eq!(layers.t2_cutout.quad_count(), 4);
+        // Verify T2 cutout has poppy cross quads (2 quads double-sided)
+        assert_eq!(layers.t2_cutout.quad_count(), 2);
         // Verify T2 translucent has water faces (2 blocks with shared internal face culled: 10 quads)
         assert_eq!(layers.t2_translucent.quad_count(), 10);
         // Verify T1 has slab faces

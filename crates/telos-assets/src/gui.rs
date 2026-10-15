@@ -130,6 +130,15 @@ pub struct ContainerLayoutDef {
     pub width: u32,
     /// Height of the container window in GUI pixels.
     pub height: u32,
+    /// Whether to render text titles on this container window (default: false).
+    #[serde(default)]
+    pub show_titles: bool,
+    /// Optional custom primary title string (e.g. "Crafting", "Chest").
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Optional custom secondary inventory title string (e.g. "Inventory").
+    #[serde(default)]
+    pub inventory_title: Option<String>,
     /// Top-left relative position of the container primary title label.
     pub title_pos: [i32; 2],
     /// Optional relative position of the secondary "Inventory" label.
@@ -207,6 +216,9 @@ impl ContainerLayoutDef {
         Self {
             width: 176,
             height: 166,
+            show_titles: false,
+            title: None,
+            inventory_title: None,
             title_pos: [8, 6],
             inventory_title_pos: None,
             background_texture: Some("textures/gui/container/inventory.png".to_string()),
@@ -217,7 +229,7 @@ impl ContainerLayoutDef {
         }
     }
 
-    /// Default Minecraft standard dual chest container layout (176x166, 63 slots).
+    /// Default canonical standard dual chest container layout (176x166, 63 slots).
     #[must_use]
     #[allow(clippy::cast_possible_wrap)]
     pub fn default_chest() -> Self {
@@ -247,6 +259,9 @@ impl ContainerLayoutDef {
         Self {
             width: 176,
             height: 166,
+            show_titles: true,
+            title: Some("Chest".to_string()),
+            inventory_title: Some("Inventory".to_string()),
             title_pos: [8, 6],
             inventory_title_pos: Some([8, 72]),
             background_texture: Some("textures/gui/container/generic_54.png".to_string()),
@@ -257,7 +272,7 @@ impl ContainerLayoutDef {
         }
     }
 
-    /// Default Minecraft standard dual furnace container layout (176x166, 39 slots).
+    /// Default canonical standard dual furnace container layout (176x166, 39 slots).
     #[must_use]
     #[allow(clippy::cast_possible_wrap)]
     pub fn default_furnace() -> Self {
@@ -285,6 +300,9 @@ impl ContainerLayoutDef {
         Self {
             width: 176,
             height: 166,
+            show_titles: true,
+            title: Some("Furnace".to_string()),
+            inventory_title: Some("Inventory".to_string()),
             title_pos: [8, 6],
             inventory_title_pos: Some([8, 74]),
             background_texture: Some("textures/gui/container/furnace.png".to_string()),
@@ -295,7 +313,7 @@ impl ContainerLayoutDef {
         }
     }
 
-    /// Default Minecraft standard dual crafting table container layout (176x166, 46 slots).
+    /// Default canonical standard dual crafting table container layout (176x166, 46 slots).
     #[must_use]
     #[allow(clippy::cast_possible_wrap)]
     pub fn default_crafting_table() -> Self {
@@ -329,6 +347,9 @@ impl ContainerLayoutDef {
         Self {
             width: 176,
             height: 166,
+            show_titles: true,
+            title: Some("Crafting".to_string()),
+            inventory_title: Some("Inventory".to_string()),
             title_pos: [28, 6],
             inventory_title_pos: Some([8, 74]),
             background_texture: Some("textures/gui/container/crafting_table.png".to_string()),
@@ -339,7 +360,7 @@ impl ContainerLayoutDef {
         }
     }
 
-    /// Default Minecraft standard dual anvil container layout (176x166, 39 slots).
+    /// Default canonical standard dual anvil container layout (176x166, 39 slots).
     #[must_use]
     #[allow(clippy::cast_possible_wrap)]
     pub fn default_anvil() -> Self {
@@ -371,6 +392,9 @@ impl ContainerLayoutDef {
         Self {
             width: 176,
             height: 166,
+            show_titles: true,
+            title: Some("Repair & Name".to_string()),
+            inventory_title: Some("Inventory".to_string()),
             title_pos: [60, 6],
             inventory_title_pos: Some([8, 74]),
             background_texture: Some("textures/gui/container/anvil.png".to_string()),

@@ -292,28 +292,39 @@ pub fn render_inventory_screen_styled<'a>(
         ));
     }
 
-    // 3. Titles: "Crafting" and "Inventory"
-    let title_color = UiQuad::rgba(64, 64, 64, 255);
     let scale_f = gui_scale as f32;
-    font.layout_text(
-        "Crafting",
-        (origin_x as f32 / scale_f) + layout.title_pos[0] as f32,
-        (origin_y as f32 / scale_f) + layout.title_pos[1] as f32,
-        title_color,
-        false,
-        gui_scale,
-        out,
-    );
-    let inv_title_pos = layout.inventory_title_pos.unwrap_or([8, 72]);
-    font.layout_text(
-        "Inventory",
-        (origin_x as f32 / scale_f) + inv_title_pos[0] as f32,
-        (origin_y as f32 / scale_f) + inv_title_pos[1] as f32,
-        title_color,
-        false,
-        gui_scale,
-        out,
-    );
+
+    // 3. Titles: rendered only when explicitly enabled by layout
+    if layout.show_titles {
+        let title_color = UiQuad::rgba(64, 64, 64, 255);
+        if let Some(title) = layout.title.as_deref().or(Some("Crafting")) {
+            if !title.is_empty() {
+                font.layout_text(
+                    title,
+                    (origin_x as f32 / scale_f) + layout.title_pos[0] as f32,
+                    (origin_y as f32 / scale_f) + layout.title_pos[1] as f32,
+                    title_color,
+                    false,
+                    gui_scale,
+                    out,
+                );
+            }
+        }
+        if let Some(inv_title) = layout.inventory_title.as_deref().or(Some("Inventory")) {
+            if !inv_title.is_empty() {
+                let inv_title_pos = layout.inventory_title_pos.unwrap_or([8, 72]);
+                font.layout_text(
+                    inv_title,
+                    (origin_x as f32 / scale_f) + inv_title_pos[0] as f32,
+                    (origin_y as f32 / scale_f) + inv_title_pos[1] as f32,
+                    title_color,
+                    false,
+                    gui_scale,
+                    out,
+                );
+            }
+        }
+    }
 
     let default_slot_sz = to_physical_pixels(16, gui_scale) as u16;
 

@@ -160,7 +160,18 @@ void main() {
     float sun_v = dot(ray_dir, sun_b) / 0.16 + 0.5;
     if (cos_sun > 0.85 && sun_u >= 0.0 && sun_u <= 1.0 && sun_v >= 0.0 && sun_v <= 1.0) {
         vec4 sun_tex = texture(u_celestial, vec3(sun_u, 1.0 - sun_v, 0.0));
-        sky = mix(sky, sun_tex.rgb, sun_tex.a * weather_clear);
+        // Additive luminance blend: celestial textures use dark/black backgrounds
+        vec3 sun_rgb = sun_tex.rgb;
+        float sun_lum = max(sun_rgb.r, max(sun_rgb.g, sun_rgb.b));
+        // Fallback brilliant core if texture pixels are completely black
+        if (sun_lum < 0.05) {
+            float du = sun_u - 0.5;
+            float dv = sun_v - 0.5;
+            if (du * du + dv * dv <= 0.44 * 0.44) {
+                sun_rgb = vec3(1.0, 0.98, 0.88);
+            }
+        }
+        sky += sun_rgb * (2.2 * weather_clear);
     }
 
     // Moon disc and phases (rendered behind clouds)
@@ -178,7 +189,7 @@ void main() {
     if (cos_moon > 0.85 && moon_u >= 0.0 && moon_u <= 1.0 && moon_v >= 0.0 && moon_v <= 1.0) {
         uint phase_layer = 1u + (pc.moon_phase & 7u);
         vec4 moon_tex = texture(u_celestial, vec3(moon_u, 1.0 - moon_v, float(phase_layer)));
-        sky = mix(sky, moon_tex.rgb, moon_tex.a * weather_clear);
+        sky += moon_tex.rgb * (1.3 * weather_clear);
     }
 
     // ------------------------------------------------------------------------
@@ -216,11 +227,12 @@ void main() {
             t0 = max(0.0, t0);
             t1 = min(t1, t0 + 2400.0); // Clamp max distance to prevent horizon slowdown
 
-            const int STEPS = 20;
+            const int STEPS = 28;
             float dt = (t1 - t0) / float(STEPS);
 
-            // Temporal / screen-space dithering jitter to eliminate banding
-            float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+            // Subdued dithering jitter to eliminate banding while preventing harsh stippled noise
+            float raw_jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+            float jitter = 0.5 + (raw_jitter - 0.5) * 0.20;
             float t = t0 + dt * jitter;
 
             vec3 wind = vec3(pc.wind_time * 8.0, 0.0, pc.wind_time * 4.0);

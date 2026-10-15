@@ -4,15 +4,19 @@ use glam::{DVec3, FloatExt, Vec3};
 
 /// Player physical collision width and depth in blocks.
 pub const PLAYER_WIDTH: f64 = 0.6;
-/// Player physical collision height in blocks.
+/// Player physical collision height in blocks (standing).
 pub const PLAYER_HEIGHT: f64 = 1.8;
-/// Player eye level offset from feet in blocks.
+/// Player physical collision height in blocks (sneaking/crouching).
+pub const SNEAK_HEIGHT: f64 = 1.5;
+/// Player eye level offset from feet in blocks (standing).
 pub const EYE_HEIGHT: f64 = 1.62;
+/// Player eye level offset from feet in blocks (sneaking/crouching).
+pub const SNEAK_EYE_HEIGHT: f64 = 1.27;
 
-/// Downward gravitational acceleration in blocks/s^2.
+/// Downward gravitational acceleration in blocks/s^2 (0.08 blocks/tick^2).
 pub const GRAVITY: f32 = 32.0;
-/// Instantaneous upward vertical impulse on jump in blocks/s (reaches ~1.25m jump clearance).
-pub const JUMP_VELOCITY: f32 = 9.8;
+/// Instantaneous upward vertical impulse on jump in blocks/s (0.42 blocks/tick, reaches ~1.25m jump clearance).
+pub const JUMP_VELOCITY: f32 = 8.42;
 /// Walking speed in blocks/s.
 pub const WALK_SPEED: f32 = 4.317;
 /// Sprinting speed in blocks/s.
@@ -325,6 +329,14 @@ impl PlayerPhysicsController {
             self.on_ground = false;
         } else {
             // Walking dynamics (Survival, Adventure)
+            if input.sneak && !self.flying {
+                self.height = SNEAK_HEIGHT;
+                self.eye_height = SNEAK_EYE_HEIGHT;
+            } else {
+                self.height = PLAYER_HEIGHT;
+                self.eye_height = EYE_HEIGHT;
+            }
+
             let base_speed = if input.sprint {
                 SPRINT_SPEED
             } else if input.sneak {
@@ -335,16 +347,17 @@ impl PlayerPhysicsController {
             let move_speed = base_speed * self.speed_multiplier.max(0.1);
 
             let target_h = wish_dir * move_speed;
-            let accel = if self.on_ground { 15.0 * dt } else { 10.0 * dt };
+            let accel = if self.on_ground { 18.0 * dt } else { 6.0 * dt };
 
             if wish_dir == Vec3::ZERO {
-                let friction = if self.on_ground {
-                    0.0001f32.powf(dt)
+                // Canonical voxel friction: 0.546 on ground (0.6 * 0.91), 0.91 in air per tick (20 ticks/sec)
+                let drag = if self.on_ground {
+                    0.546f32.powf(dt * 20.0)
                 } else {
-                    0.92f32.powf(dt)
+                    0.91f32.powf(dt * 20.0)
                 };
-                self.vel.x *= friction;
-                self.vel.z *= friction;
+                self.vel.x *= drag;
+                self.vel.z *= drag;
                 if self.vel.x.abs() < 1e-3 {
                     self.vel.x = 0.0;
                 }
@@ -361,7 +374,7 @@ impl PlayerPhysicsController {
                 self.vel.y = JUMP_VELOCITY + self.jump_boost;
                 self.on_ground = false;
 
-                // Forward leap impulse on jump (Minecraft adds forward momentum when jumping while moving)
+                // Forward leap impulse on jump adds forward momentum when jumping while moving
                 if wish_dir != Vec3::ZERO {
                     let boost = if input.sprint { 4.0 } else { 1.5 };
                     self.vel.x += wish_dir.x * boost;
@@ -369,13 +382,16 @@ impl PlayerPhysicsController {
                 }
             }
 
-            // Gravity
-            self.vel.y = (self.vel.y - GRAVITY * dt).max(-60.0);
-
             let wish_disp = self.vel.as_dvec3() * f64::from(dt);
 
             // Execute swept collision resolution
             self.move_and_slide(wish_disp, input.sneak, &mut get_colliders);
+
+            // Gravity & vertical air drag (0.98 per tick, terminal velocity 78.4 m/s)
+            if !self.on_ground {
+                let vert_drag = 0.98f32.powf(dt * 20.0);
+                self.vel.y = ((self.vel.y - GRAVITY * dt) * vert_drag).max(-78.4);
+            }
         }
     }
 
@@ -449,40 +465,50 @@ impl PlayerPhysicsController {
         // 2. Sneak edge-guard: prevent walking off drops when sneaking on ground
         let (mut wish_dx, mut wish_dz) = (wish_disp.x, wish_disp.z);
         if self.on_ground && sneak {
-            // Check if offset in X maintains solid ground support under player base center
-            let test_x_box = Aabb::new(
-                DVec3::new(
-                    self.pos.x + wish_dx - 0.05,
-                    self.pos.y - 0.5,
-                    self.pos.z - 0.05,
-                ),
-                DVec3::new(
-                    self.pos.x + wish_dx + 0.05,
-                    self.pos.y + 0.05,
-                    self.pos.z + 0.05,
-                ),
-            );
-            let has_support_x = colliders.iter().any(|c| c.intersects(&test_x_box));
-            if !has_support_x {
-                wish_dx = 0.0;
+            while wish_dx.abs() > 1e-4 {
+                let test_x_box = Aabb::new(
+                    DVec3::new(
+                        self.pos.x + wish_dx - 1e-4,
+                        self.pos.y - 0.5,
+                        self.pos.z - 1e-4,
+                    ),
+                    DVec3::new(
+                        self.pos.x + wish_dx + 1e-4,
+                        self.pos.y - 1e-4,
+                        self.pos.z + 1e-4,
+                    ),
+                );
+                if colliders.iter().any(|c| c.intersects(&test_x_box)) {
+                    break;
+                }
+                wish_dx -= wish_dx.signum() * 0.01;
+                if (wish_dx > 0.0 && wish_disp.x < 0.0) || (wish_dx < 0.0 && wish_disp.x > 0.0) {
+                    wish_dx = 0.0;
+                    break;
+                }
             }
 
-            // Check if offset in Z maintains solid ground support under player base center
-            let test_z_box = Aabb::new(
-                DVec3::new(
-                    self.pos.x - 0.05,
-                    self.pos.y - 0.5,
-                    self.pos.z + wish_dz - 0.05,
-                ),
-                DVec3::new(
-                    self.pos.x + 0.05,
-                    self.pos.y + 0.05,
-                    self.pos.z + wish_dz + 0.05,
-                ),
-            );
-            let has_support_z = colliders.iter().any(|c| c.intersects(&test_z_box));
-            if !has_support_z {
-                wish_dz = 0.0;
+            while wish_dz.abs() > 1e-4 {
+                let test_z_box = Aabb::new(
+                    DVec3::new(
+                        self.pos.x - 1e-4,
+                        self.pos.y - 0.5,
+                        self.pos.z + wish_dz - 1e-4,
+                    ),
+                    DVec3::new(
+                        self.pos.x + 1e-4,
+                        self.pos.y - 1e-4,
+                        self.pos.z + wish_dz + 1e-4,
+                    ),
+                );
+                if colliders.iter().any(|c| c.intersects(&test_z_box)) {
+                    break;
+                }
+                wish_dz -= wish_dz.signum() * 0.01;
+                if (wish_dz > 0.0 && wish_disp.z < 0.0) || (wish_dz < 0.0 && wish_disp.z > 0.0) {
+                    wish_dz = 0.0;
+                    break;
+                }
             }
         }
 

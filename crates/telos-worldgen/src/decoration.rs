@@ -103,7 +103,7 @@ pub fn apply_surface_decorations(
 
             if biome == BiomeId::Plains || biome == BiomeId::Forest || biome == BiomeId::Mountains {
                 let cluster_val = noise2(seed.wrapping_add(SALT_CLUSTER), x_f * 0.025, z_f * 0.025);
-                if cluster_val > 0.32 {
+                if cluster_val > 0.44 {
                     cell_meadow[cell_idx] = true;
                     let species_val =
                         noise2(seed.wrapping_add(SALT_SPECIES), x_f * 0.012, z_f * 0.012);
@@ -118,9 +118,9 @@ pub fn apply_surface_decorations(
                         FlowerKind::OxeyeDaisy
                     };
 
-                    let meadow_intensity = (cluster_val - 0.32) * 3.0;
+                    let meadow_intensity = (cluster_val - 0.44) * 3.5;
                     cell_flower_chance[cell_idx] =
-                        (0.35f32 * meadow_intensity + 0.15f32).min(0.60f32);
+                        (0.10f32 * meadow_intensity + 0.06f32).min(0.18f32);
                 }
             }
 
@@ -285,14 +285,14 @@ fn evaluate_decoration_fast(
     match biome {
         BiomeId::Plains => {
             if in_meadow {
-                // Radial proximity bonus to cell jitter anchor
-                let proximity_bonus = if dist_sq <= 2 { 0.15 } else { 0.0 };
-                let effective_chance = (flower_chance + proximity_bonus).min(0.70);
+                // Subtle proximity bias to cell jitter anchor
+                let proximity_bonus = if dist_sq <= 1 { 0.04 } else { 0.0 };
+                let effective_chance = (flower_chance + proximity_bonus).min(0.20);
 
                 if roll < effective_chance {
                     flower_kind.to_state(blocks)
-                } else if roll < 0.72 {
-                    if roll < 0.58 {
+                } else if roll < 0.65 {
+                    if roll < 0.52 {
                         blocks.short_grass
                     } else {
                         blocks.tall_grass
@@ -306,7 +306,7 @@ fn evaluate_decoration_fast(
                     blocks.short_grass
                 } else if roll < 0.28 {
                     blocks.tall_grass
-                } else if roll < 0.30 {
+                } else if roll < 0.29 {
                     // Stray single wildflower
                     match (h >> 4) & 3 {
                         0 => blocks.poppy,

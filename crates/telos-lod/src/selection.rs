@@ -63,18 +63,16 @@ impl LodClipmap {
 
         for level in 1..=self.config.max_level {
             let shift = 5 + i32::from(level);
-            let node_size = 1 << shift;
 
             let cam_nx = (camera_pos.x as i32) >> shift;
             let cam_ny = (camera_pos.y as i32) >> shift;
             let cam_nz = (camera_pos.z as i32) >> shift;
 
-            // In level-L node units, the ring extends from R_inner (R0 / 64) to R_outer (2 * R0 / 64)
+            // In level-L node units, the ring extends from R_inner (R0 / 64) to R_outer (R0 / 32)
             #[allow(clippy::cast_possible_truncation)]
-            let r_inner = ((self.config.r0 / (node_size as f32 * 2.0)).floor() as i32).max(1);
+            let r_inner = ((self.config.r0 / 64.0).floor() as i32).max(1);
             #[allow(clippy::cast_possible_truncation)]
-            let r_outer =
-                ((self.config.r0 * 2.0 / (node_size as f32)).ceil() as i32).max(r_inner + 1);
+            let r_outer = ((self.config.r0 / 32.0).ceil() as i32).max(r_inner + 1);
 
             let r_inner_sq = r_inner * r_inner;
             let r_outer_sq = r_outer * r_outer;

@@ -29,7 +29,11 @@ layout(push_constant) uniform PostCompositePushConstants {
 
 float sample_cascade_pcf(int c_idx, vec3 w_pos, vec3 norm, vec3 light_d) {
     float cos_theta = clamp(dot(norm, light_d), 0.0, 1.0);
-    float n_bias = u_shadow_normal_bias * (1.0 - cos_theta);
+    float tan_theta = sqrt(clamp(1.0 - cos_theta * cos_theta, 0.0, 1.0)) / max(cos_theta, 0.001);
+
+    // Normal bias proportional to cascade texel footprint and grazing slope
+    float cascade_scale = pow(1.8, float(c_idx));
+    float n_bias = u_shadow_normal_bias * cascade_scale * clamp(1.0 + tan_theta * 0.4, 1.0, 3.5);
     vec3 biased_pos = w_pos + norm * n_bias;
 
     vec4 light_clip = u_light_view_proj[c_idx] * vec4(biased_pos, 1.0);
@@ -43,7 +47,8 @@ float sample_cascade_pcf(int c_idx, vec3 w_pos, vec3 norm, vec3 light_d) {
         return 1.0;
     }
 
-    float bias = max(u_shadow_bias * (1.0 - cos_theta), u_shadow_bias * 0.2);
+    // Depth bias scaled by cascade depth range and surface slope
+    float bias = u_shadow_bias * clamp(1.0 + tan_theta * 0.35, 1.0, 3.0);
 
     float shadow = 0.0;
     vec2 texel_size = 1.0 / textureSize(u_shadow_map, 0).xy;
@@ -175,17 +180,18 @@ void main() {
         if (cascade < 3) {
             float split_val = u_cascade_splits[cascade];
             float prev_split = (cascade == 0) ? 0.0 : u_cascade_splits[cascade - 1];
-            float fade_margin = (split_val - prev_split) * 0.15;
+            float fade_margin = (split_val - prev_split) * 0.25;
             if (dist > split_val - fade_margin) {
                 float next_shadow = sample_cascade_pcf(cascade + 1, world_pos, cardinal_normal, light_dir);
-                float blend = clamp((dist - (split_val - fade_margin)) / max(fade_margin, 0.001), 0.0, 1.0);
+                float blend = smoothstep(0.0, 1.0, (dist - (split_val - fade_margin)) / max(fade_margin, 0.001));
                 shadow_factor = mix(shadow_factor, next_shadow, blend);
             }
         }
 
-        // If the surface faces away from the sun, it is already shaded by voxel face shading
+        // If the surface faces away from the sun, smoothly transition into self-shadow
         float NdotL = dot(cardinal_normal, light_dir);
-        float effective_shadow = (NdotL > 0.0) ? shadow_factor : 0.0;
+        float grazing_fade = smoothstep(0.0, 0.08, NdotL);
+        float effective_shadow = shadow_factor * grazing_fade;
         float shadow_light = mix(0.50, 1.0, effective_shadow);
         color *= shadow_light;
     }

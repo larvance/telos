@@ -19,6 +19,9 @@ fn test_custom_container_bounds_and_hit_testing() {
     let mut layout = ContainerLayoutDef {
         width: 200,
         height: 180,
+        show_titles: false,
+        title: None,
+        inventory_title: None,
         title_pos: [8, 6],
         inventory_title_pos: Some([8, 72]),
         background_texture: None,
