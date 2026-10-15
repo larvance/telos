@@ -73,18 +73,30 @@ void main() {
     float depth = texture(u_depth, sample_uv).r;
     bool is_sky = (depth <= 0.00001);
 
-    // Fast 4-tap box blur on SSAO to soften ambient contact shadows
+    // Bilateral depth-aware 5-tap cross blur on SSAO to soften ambient contact shadows without edge bleeding
     vec2 texel = 1.0 / u_screen_size;
-    float ssao = 0.0;
-    ssao += texture(u_ssao, v_uv + vec2(-texel.x, -texel.y)).r;
-    ssao += texture(u_ssao, v_uv + vec2( texel.x, -texel.y)).r;
-    ssao += texture(u_ssao, v_uv + vec2(-texel.x,  texel.y)).r;
-    ssao += texture(u_ssao, v_uv + vec2( texel.x,  texel.y)).r;
-    ssao *= 0.25;
+    float ssao_center = texture(u_ssao, v_uv).r;
+    float total_ssao = ssao_center;
+    float total_weight = 1.0;
+    vec2 ssao_offsets[4] = vec2[](
+        vec2(-texel.x, 0.0),
+        vec2( texel.x, 0.0),
+        vec2(0.0, -texel.y),
+        vec2(0.0,  texel.y)
+    );
+    for (int i = 0; i < 4; ++i) {
+        vec2 sample_coord = v_uv + ssao_offsets[i];
+        float sample_d = texture(u_depth, sample_coord).r;
+        float d_diff = abs(sample_d - depth);
+        float w = exp(-d_diff * 400.0);
+        total_ssao += texture(u_ssao, sample_coord).r * w;
+        total_weight += w;
+    }
+    float ssao = total_ssao / total_weight;
 
     // Bit 0: SSAO enabled (only for geometry, not sky)
     if ((u_flags & 1u) != 0u && !is_sky) {
-        color *= mix(1.0, ssao, 0.65);
+        color *= mix(1.0, ssao, 0.35);
     }
 
     // World position reconstruction from depth
@@ -104,8 +116,32 @@ void main() {
 
     // Bit 4: Cascaded Shadow Mapping (CSM)
     if ((u_flags & 16u) != 0u && !is_sky) {
-        vec3 d_x = dFdx(world_pos);
-        vec3 d_y = dFdy(world_pos);
+        // Bilateral edge-aware depth reconstruction: picks adjacent texels on the same voxel surface,
+        // preventing gradient explosion across silhouette edges and eliminating camera-rotation normal swimming
+        float d_l = texture(u_depth, v_uv - vec2(texel.x, 0.0)).r;
+        float d_r = texture(u_depth, v_uv + vec2(texel.x, 0.0)).r;
+        float d_t = texture(u_depth, v_uv - vec2(0.0, texel.y)).r;
+        float d_b = texture(u_depth, v_uv + vec2(0.0, texel.y)).r;
+
+        vec4 clip_l = vec4((v_uv.x - texel.x) * 2.0 - 1.0, 1.0 - v_uv.y * 2.0, d_l, 1.0);
+        vec4 w_h_l = u_inv_view_proj * clip_l;
+        vec3 p_l = w_h_l.xyz / max(w_h_l.w, 0.00001);
+
+        vec4 clip_r = vec4((v_uv.x + texel.x) * 2.0 - 1.0, 1.0 - v_uv.y * 2.0, d_r, 1.0);
+        vec4 w_h_r = u_inv_view_proj * clip_r;
+        vec3 p_r = w_h_r.xyz / max(w_h_r.w, 0.00001);
+
+        vec4 clip_t = vec4(v_uv.x * 2.0 - 1.0, 1.0 - (v_uv.y - texel.y) * 2.0, d_t, 1.0);
+        vec4 w_h_t = u_inv_view_proj * clip_t;
+        vec3 p_t = w_h_t.xyz / max(w_h_t.w, 0.00001);
+
+        vec4 clip_b = vec4(v_uv.x * 2.0 - 1.0, 1.0 - (v_uv.y + texel.y) * 2.0, d_b, 1.0);
+        vec4 w_h_b = u_inv_view_proj * clip_b;
+        vec3 p_b = w_h_b.xyz / max(w_h_b.w, 0.00001);
+
+        vec3 d_x = (abs(d_l - depth) < abs(d_r - depth)) ? (world_pos - p_l) : (p_r - world_pos);
+        vec3 d_y = (abs(d_t - depth) < abs(d_b - depth)) ? (world_pos - p_t) : (p_b - world_pos);
+
         vec3 raw_normal = cross(d_y, d_x);
         float n_len = length(raw_normal);
         vec3 normal = (n_len > 1e-5) ? (raw_normal / n_len) : vec3(0.0, 1.0, 0.0);
@@ -113,15 +149,15 @@ void main() {
             normal = -normal;
         }
 
-        // Snap to voxel cardinal face normal to eliminate camera-rotation jitter
+        // Snap to voxel cardinal face normal to guarantee rotation-invariance
         vec3 abs_n = abs(normal);
         vec3 cardinal_normal;
         if (abs_n.y >= abs_n.x && abs_n.y >= abs_n.z) {
-            cardinal_normal = vec3(0.0, sign(normal.y), 0.0);
+            cardinal_normal = vec3(0.0, normal.y >= 0.0 ? 1.0 : -1.0, 0.0);
         } else if (abs_n.x >= abs_n.z) {
-            cardinal_normal = vec3(sign(normal.x), 0.0, 0.0);
+            cardinal_normal = vec3(normal.x >= 0.0 ? 1.0 : -1.0, 0.0, 0.0);
         } else {
-            cardinal_normal = vec3(0.0, 0.0, sign(normal.z));
+            cardinal_normal = vec3(0.0, 0.0, normal.z >= 0.0 ? 1.0 : -1.0);
         }
 
         // Determine cascade by distance
@@ -165,8 +201,8 @@ void main() {
         float sun_cos = max(0.0, dot(ray_dir, normalize(u_sun_dir)));
         float mie_phase = pow(max(0.0, sun_cos * 0.5 + 0.5), 6.0) * 0.7 + pow(max(0.0, sun_cos), 32.0) * 0.3;
 
-        // Time of day atmospheric colors harmonized with sky.frag
-        float sun_elev = sin((u_time_of_day / 24000.0) * 6.2831853 - 1.5707963);
+        // Time of day atmospheric colors harmonized with celestial sun direction
+        float sun_elev = normalize(u_sun_dir).y;
         vec3 day_fog = vec3(0.68, 0.82, 0.98);
         vec3 sunset_fog = vec3(0.98, 0.45, 0.15);
         vec3 night_fog = vec3(0.04, 0.05, 0.09);
@@ -224,7 +260,7 @@ void main() {
 
     // Dynamic underwater sunlight caustics visible through water surface
     if ((u_flags & 32u) == 0u && scene_sample.a < 0.95 && !is_sky) {
-        float sun_elev = sin((u_time_of_day / 24000.0) * 6.2831853 - 1.5707963);
+        float sun_elev = normalize(u_sun_dir).y;
         if (sun_elev > 0.0) {
             float caustic_time = u_time_of_day * 0.06;
             vec2 cp = world_pos.xz;

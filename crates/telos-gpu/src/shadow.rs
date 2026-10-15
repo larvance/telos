@@ -77,12 +77,10 @@ impl CascadeMatrices {
         } else if light_dir.y < 0.0 {
             light_dir = -light_dir;
         }
-        let light_dir = light_dir.normalize();
-
-        let light_up = if light_dir.y.abs() > 0.95 {
-            Vec3::Z
-        } else {
+        let light_up = if light_dir.z.abs() > 0.95 {
             Vec3::Y
+        } else {
+            Vec3::Z
         };
         let world_light_view = Mat4::look_to_rh(Vec3::ZERO, -light_dir, light_up);
         let cam_light = world_light_view.transform_point3(cam_pos);

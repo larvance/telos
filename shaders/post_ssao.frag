@@ -6,14 +6,14 @@ layout(location = 0) out float out_occlusion;
 layout(set = 0, binding = 0) uniform sampler2D u_depth;
 
 layout(push_constant) uniform SsaorPushConstants {
-    mat4 u_inv_proj;
-    mat4 u_proj;
+    mat4 u_inv_view_proj;
+    mat4 u_view_proj;
     vec2 u_screen_size;
     float u_radius;
     float u_bias;
 };
 
-// 16 Poisson/spiral hemisphere sample points
+// 16 Poisson/spiral hemisphere sample points (z > 0 in hemisphere)
 const vec3 SAMPLES[16] = vec3[16](
     vec3( 0.23,  0.18, 0.42), vec3(-0.31,  0.22, 0.51),
     vec3( 0.15, -0.38, 0.63), vec3(-0.25, -0.19, 0.35),
@@ -25,10 +25,10 @@ const vec3 SAMPLES[16] = vec3[16](
     vec3( 0.11,  0.64, 0.29), vec3(-0.09, -0.59, 0.33)
 );
 
-vec3 get_view_pos(vec2 uv, float depth) {
+vec3 get_world_pos(vec2 uv, float depth) {
     vec4 clip = vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
-    vec4 view_pos = u_inv_proj * clip;
-    return view_pos.xyz / max(view_pos.w, 0.00001);
+    vec4 world_pos = u_inv_view_proj * clip;
+    return world_pos.xyz / max(world_pos.w, 0.00001);
 }
 
 void main() {
@@ -40,11 +40,23 @@ void main() {
         return;
     }
 
-    vec3 origin = get_view_pos(v_uv, depth);
+    vec3 origin = get_world_pos(v_uv, depth);
 
-    // Reconstruct surface normal from screen-space view-position derivatives
-    vec3 dx = dFdx(origin);
-    vec3 dy = dFdy(origin);
+    // Bilateral edge-aware reconstruction of world surface normal to avoid depth discontinuities
+    vec2 texel = 1.0 / u_screen_size;
+    float d_l = texture(u_depth, v_uv - vec2(texel.x, 0.0)).r;
+    float d_r = texture(u_depth, v_uv + vec2(texel.x, 0.0)).r;
+    float d_t = texture(u_depth, v_uv - vec2(0.0, texel.y)).r;
+    float d_b = texture(u_depth, v_uv + vec2(0.0, texel.y)).r;
+
+    vec3 p_l = get_world_pos(v_uv - vec2(texel.x, 0.0), d_l);
+    vec3 p_r = get_world_pos(v_uv + vec2(texel.x, 0.0), d_r);
+    vec3 p_t = get_world_pos(v_uv - vec2(0.0, texel.y), d_t);
+    vec3 p_b = get_world_pos(v_uv + vec2(0.0, texel.y), d_b);
+
+    vec3 dx = (abs(d_l - depth) < abs(d_r - depth)) ? (origin - p_l) : (p_r - origin);
+    vec3 dy = (abs(d_t - depth) < abs(d_b - depth)) ? (origin - p_t) : (p_b - origin);
+
     vec3 normal = cross(dy, dx);
     float normal_len = length(normal);
     if (normal_len < 0.00001) {
@@ -52,31 +64,41 @@ void main() {
         return;
     }
     normal /= normal_len;
-    // In view space (looking along -Z), a front-facing surface normal has normal.z > 0 (towards camera)
-    if (normal.z < 0.0) {
-        normal = -normal;
+
+    // Cardinal snap for voxel faces
+    vec3 abs_n = abs(normal);
+    vec3 cardinal_n;
+    if (abs_n.y >= abs_n.x && abs_n.y >= abs_n.z) {
+        cardinal_n = vec3(0.0, normal.y >= 0.0 ? 1.0 : -1.0, 0.0);
+    } else if (abs_n.x >= abs_n.z) {
+        cardinal_n = vec3(normal.x >= 0.0 ? 1.0 : -1.0, 0.0, 0.0);
+    } else {
+        cardinal_n = vec3(0.0, 0.0, normal.z >= 0.0 ? 1.0 : -1.0);
     }
 
-    // Pseudo-random noise rotation based on pixel coordinates
-    float angle = fract(sin(dot(v_uv * u_screen_size, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
-    mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+    // World-space tangent and bitangent orthogonal to cardinal face
+    vec3 helper = (abs(cardinal_n.y) > 0.9) ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+    vec3 tangent = normalize(cross(cardinal_n, helper));
+    vec3 bitangent = cross(cardinal_n, tangent);
+
+    // World-space anchored pseudo-random rotation angle (strictly stationary in world space on head rotation)
+    vec3 block_coord = floor(origin * 16.0);
+    float angle = fract(sin(dot(block_coord, vec3(12.9898, 78.233, 45.164))) * 43758.5453) * 6.2831853;
+    float cos_a = cos(angle);
+    float sin_a = sin(angle);
+    vec3 rot_tangent = tangent * cos_a + bitangent * sin_a;
+    vec3 rot_bitangent = -tangent * sin_a + bitangent * cos_a;
 
     float occlusion = 0.0;
     float valid_samples = 0.0;
 
     for (int i = 0; i < 16; i++) {
-        vec3 sample_dir = SAMPLES[i];
-        sample_dir.xy = rot * sample_dir.xy;
-
-        // Orient sample into normal-facing hemisphere
-        if (dot(sample_dir, normal) < 0.0) {
-            sample_dir = -sample_dir;
-        }
-
+        vec3 s = SAMPLES[i];
+        vec3 sample_dir = rot_tangent * s.x + rot_bitangent * s.y + cardinal_n * s.z;
         vec3 sample_pos = origin + sample_dir * u_radius;
 
-        // Project sample point back to screen UV
-        vec4 sample_clip = u_proj * vec4(sample_pos, 1.0);
+        // Project world-space sample point back to screen UV
+        vec4 sample_clip = u_view_proj * vec4(sample_pos, 1.0);
         vec2 sample_ndc = sample_clip.xy / max(sample_clip.w, 0.00001);
         vec2 sample_uv = vec2(sample_ndc.x * 0.5 + 0.5, 0.5 - sample_ndc.y * 0.5);
 
@@ -86,15 +108,17 @@ void main() {
         }
 
         float sample_depth = texture(u_depth, sample_uv).r;
-        vec3 actual_view_pos = get_view_pos(sample_uv, sample_depth);
+        vec3 actual_pos = get_world_pos(sample_uv, sample_depth);
 
-        // Distance range check to avoid false occlusion across depth discontinuities
-        float dist_diff = origin.z - actual_view_pos.z;
-        float range_check = smoothstep(0.0, 1.0, u_radius / (abs(dist_diff) + 0.001));
+        // True 3D Euclidean distance range check (rotation-invariant)
+        float dist = length(actual_pos - origin);
+        float range_check = smoothstep(0.0, 1.0, u_radius / (dist + 0.001));
 
-        // In reversed-Z, a higher depth value means closer to camera
-        // So actual geometry occludes sample if actual_view_pos is closer than (sample_pos + bias)
-        if (actual_view_pos.z >= sample_pos.z + u_bias) {
+        // Occlusion check along the face normal: occluding geometry must be above surface but near sample
+        float actual_height = dot(actual_pos - origin, cardinal_n);
+        float sample_height = dot(sample_pos - origin, cardinal_n);
+
+        if (actual_height >= u_bias && actual_height <= sample_height + 0.08) {
             occlusion += range_check;
         }
         valid_samples += 1.0;

@@ -7009,14 +7009,24 @@ impl App {
             // PHASE 2.25: CASCADED SHADOW MAPS (CSM) (Phase 73)
             // ==========================================
             let mut rendered_shadows = false;
-            let sun_angle = (self.client_time_of_day / 24000.0) * std::f32::consts::TAU;
-            let sun_dir = [sun_angle.sin(), sun_angle.cos(), 0.2];
+            let sun_ang = telos_core::time::sun_angle(
+                self.client_time_of_day as u64,
+                self.client_time_of_day.fract(),
+            );
+            let core_sun = telos_core::time::sun_direction(sun_ang);
+            let is_day = core_sun.y >= -0.05;
+            let celestial_dir = if is_day {
+                core_sun
+            } else {
+                telos_core::time::moon_direction(sun_ang)
+            };
+            let sun_vec = Vec3::new(celestial_dir.x, celestial_dir.y, 0.15).normalize();
+            let sun_dir = [sun_vec.x, sun_vec.y, sun_vec.z];
 
             if self.game_settings.video.shadows
                 && self.current_screen == AppScreen::InGame
                 && let (Some(csm), Some(shadow_pipeline)) = (&self.csm, &self.shadow_pipeline)
             {
-                let sun_vec = Vec3::new(sun_dir[0], sun_dir[1], sun_dir[2]);
                 let cascade_matrices = CascadeMatrices::compute(
                     self.camera.position,
                     self.camera.forward(),
@@ -7181,19 +7191,17 @@ impl App {
             if use_postprocess {
                 let pp = self.postprocess.as_ref().unwrap();
 
-                let proj_mat = self.camera.projection_matrix(aspect);
-                let inv_proj_mat = proj_mat.inverse();
                 let screen_size = [
                     swapchain_extent.width as f32,
                     swapchain_extent.height as f32,
                 ];
 
                 let ssao_pc = SsaoPushConstants {
-                    inv_proj: inv_proj_mat.to_cols_array(),
-                    proj: proj_mat.to_cols_array(),
+                    inv_proj: inv_view_proj,
+                    proj: view_proj,
                     screen_size,
                     radius: 0.75,
-                    bias: 0.025,
+                    bias: 0.04,
                 };
 
                 let mut flags = 0u32;
