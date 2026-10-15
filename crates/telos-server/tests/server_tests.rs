@@ -607,8 +607,7 @@ fn test_survival_stats_and_inventory_interaction() {
             }
             S2cMessage::InventoryBulk(bulk) => {
                 assert_eq!(bulk.slots.len(), 46);
-                assert_eq!(bulk.slots[0].item, 1); // Stone
-                assert_eq!(bulk.slots[0].count, 64);
+                assert_eq!(bulk.slots[0].count, 0, "Initial inventory should be empty");
                 assert_eq!(bulk.carried.count, 0);
                 got_bulk = true;
             }
@@ -660,6 +659,13 @@ fn test_survival_stats_and_inventory_interaction() {
         xp_updated,
         "XP level must increase after receiving 60 XP points"
     );
+
+    // Provide test items in player inventory for inventory click and crafting tests
+    {
+        let mut inv = server.player_inventory_mut(1).unwrap();
+        inv.slots[0] = telos_sim::ItemStack::new(1, 64); // Stone
+        inv.slots[2] = telos_sim::ItemStack::new(5, 64); // Oak Log
+    }
 
     // Test Inventory click: Left click on slot 0 (stone x64) to pick it up
     client_conn
@@ -2248,4 +2254,183 @@ fn test_server_safe_spawn_ground_search_and_unloaded_chunk_pregeneration() {
     assert_eq!(join.spawn_x, spawn_pos.x);
     assert_eq!(join.spawn_y, spawn_pos.y);
     assert_eq!(join.spawn_z, spawn_pos.z);
+}
+
+#[test]
+fn test_server_mob_physics_lands_and_does_not_sink_into_blocks() {
+    use glam::DVec3;
+    use telos_core::coords::BlockPos;
+    use telos_server::Server;
+    use telos_server::config::ServerConfig;
+    use telos_sim::{EntityType, Position, Velocity};
+    use telos_voxel::state::BlockStateId;
+
+    let config = ServerConfig {
+        tps: 20,
+        view_distance: 2,
+        vertical_view_distance: 2,
+        ..Default::default()
+    };
+    let mut server = Server::new(1234, config);
+
+    // Place a flat solid platform at Y=64
+    for x in -2..=2 {
+        for z in -2..=2 {
+            server
+                .world_mut()
+                .set_block(BlockPos::new(x, 64, z), BlockStateId(1));
+        }
+    }
+
+    // Spawn a Zombie at Y=66.5 (falling above platform)
+    let net_id = server.spawn_mob(EntityType::Zombie, DVec3::new(0.5, 66.5, 0.5));
+    let entity = *server
+        .tracked_mobs
+        .get(&net_id)
+        .expect("Mob must be tracked");
+
+    // Tick server mob entities for gravity and landing
+    for _ in 0..20 {
+        server.tick_mob_entities();
+    }
+
+    let pos = server
+        .ecs_world()
+        .get::<Position>(entity)
+        .expect("Mob must have Position")
+        .0;
+    let vel = server
+        .ecs_world()
+        .get::<Velocity>(entity)
+        .expect("Mob must have Velocity")
+        .0;
+
+    // Platform is at Y=64, top of block is Y=65.0. Mob must land precisely on Y=65.0 and NOT sink!
+    assert!(
+        (pos.y - 65.0).abs() < 1e-3,
+        "Mob landed at Y={}, expected 65.0",
+        pos.y
+    );
+    assert!(
+        vel.y.abs() < 1e-3,
+        "Mob vertical velocity must be 0 after landing, got {}",
+        vel.y
+    );
+}
+
+#[test]
+fn test_server_mob_physics_end_to_end_with_player() {
+    use glam::DVec3;
+    use telos_sim::{EntityType, Position, Velocity};
+
+    let config = ServerConfig {
+        tps: 20,
+        view_distance: 2,
+        simulation_distance: 2,
+        ..Default::default()
+    };
+    let mut server = Server::new(4321, config);
+
+    // Build platform around (0, 64, 0)
+    for x in -5..=5 {
+        for z in -5..=5 {
+            server
+                .world_mut()
+                .set_block(BlockPos::new(x, 64, z), BlockStateId(1));
+        }
+    }
+
+    // Connect player at (0.0, 65.0, 0.0)
+    let (server_conn, client_conn) = MemoryConnection::pair_default();
+    server.add_connection(Box::new(server_conn));
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::Hello(C2sHello {
+                protocol: 1,
+                build: BoundedString::new("0.1.0").unwrap(),
+                features: 0,
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::LoginStart(C2sLoginStart {
+                username: BoundedString::new("PlayerTest").unwrap(),
+                mode: AuthMode::Offline,
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::ClientSettings(C2sClientSettings {
+                view_distance: 2,
+                simulation_distance: 2,
+                locale: BoundedString::new("en_US").unwrap(),
+            })),
+        )
+        .unwrap();
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::ConfigAck(C2sConfigAck)),
+        )
+        .unwrap();
+    server.tick();
+
+    // Place player at (0.0, 65.0, 0.0)
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::PlayerPosition(C2sPlayerPosition {
+                x: 0.0,
+                y: 65.0,
+                z: 0.0,
+                yaw: 0.0,
+                pitch: 0.0,
+                on_ground: true,
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    // Spawn Zombie near player at (1.0, 67.0, 1.0)
+    let net_id = server.spawn_mob(EntityType::Zombie, DVec3::new(1.0, 67.0, 1.0));
+    let entity = *server
+        .tracked_mobs
+        .get(&net_id)
+        .expect("Mob must be tracked");
+
+    for _ in 0..25 {
+        server.tick();
+    }
+
+    let pos = server
+        .ecs_world()
+        .get::<Position>(entity)
+        .expect("Mob must have Position")
+        .0;
+    let vel = server
+        .ecs_world()
+        .get::<Velocity>(entity)
+        .expect("Mob must have Velocity")
+        .0;
+
+    // Platform is at Y=64, top of block is Y=65.0. Mob must land precisely on Y=65.0 and NOT sink!
+    assert!(
+        (pos.y - 65.0).abs() < 1e-3,
+        "Mob landed at Y={}, expected 65.0",
+        pos.y
+    );
+    assert!(
+        vel.y.abs() < 1e-3,
+        "Mob vertical velocity must be 0 after landing, got {}",
+        vel.y
+    );
 }

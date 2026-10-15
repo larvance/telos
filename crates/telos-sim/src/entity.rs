@@ -264,6 +264,210 @@ pub fn tick_item_physics_step_fluid(
     }
 }
 
+/// Performs a single-tick physics simulation step for a living mob entity against terrain collision.
+///
+/// Handles vertical gravity, landing on solid blocks, ceiling collision, horizontal movement,
+/// and automatic 1-block step-up over obstacles.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+pub fn tick_mob_physics_step(
+    pos: &mut DVec3,
+    vel: &mut Vec3,
+    half_x: f64,
+    half_z: f64,
+    height: f64,
+    mut is_solid: impl FnMut(i32, i32, i32) -> bool,
+) {
+    // 1. Vertical acceleration (gravity)
+    vel.y = (vel.y - 0.08).max(-2.0);
+
+    let next_y = pos.y + f64::from(vel.y);
+
+    let min_x = (pos.x - half_x + 0.05).floor() as i32;
+    let max_x = (pos.x + half_x - 0.05).floor() as i32;
+    let min_z = (pos.z - half_z + 0.05).floor() as i32;
+    let max_z = (pos.z + half_z - 0.05).floor() as i32;
+
+    if vel.y <= 0.0 {
+        // Falling or resting: check floor contact
+        let check_y_min = next_y.floor() as i32;
+        let check_y_max = pos.y.floor() as i32;
+        let mut landed_surface = None;
+
+        for by in (check_y_min..=check_y_max).rev() {
+            let mut solid = false;
+            for bx in min_x..=max_x {
+                for bz in min_z..=max_z {
+                    if is_solid(bx, by, bz) {
+                        solid = true;
+                        break;
+                    }
+                }
+                if solid {
+                    break;
+                }
+            }
+            if solid {
+                landed_surface = Some(f64::from(by + 1));
+                break;
+            }
+        }
+
+        if let Some(surf_y) = landed_surface {
+            if next_y <= surf_y || pos.y <= surf_y + 0.05 {
+                pos.y = surf_y;
+                vel.y = 0.0;
+            } else {
+                pos.y = next_y;
+            }
+        } else {
+            pos.y = next_y;
+        }
+    } else {
+        // Jumping up: check ceiling collision
+        let head_y = next_y + height;
+        let check_by = head_y.floor() as i32;
+        let mut ceiling_hit = false;
+        for bx in min_x..=max_x {
+            for bz in min_z..=max_z {
+                if is_solid(bx, check_by, bz) {
+                    ceiling_hit = true;
+                    break;
+                }
+            }
+            if ceiling_hit {
+                break;
+            }
+        }
+
+        if ceiling_hit {
+            pos.y = f64::from(check_by) - height;
+            vel.y = 0.0;
+        } else {
+            pos.y = next_y;
+        }
+    }
+
+    // 2. Horizontal movement & step-up
+    let next_x = pos.x + f64::from(vel.x);
+    let next_z = pos.z + f64::from(vel.z);
+
+    // Apply horizontal drag/friction
+    vel.x *= 0.6;
+    vel.z *= 0.6;
+
+    let foot_by = pos.y.floor() as i32;
+    let head_by = (pos.y + height - 0.05).floor() as i32;
+
+    // Check X axis collision
+    let test_min_x = (next_x - half_x + 0.05).floor() as i32;
+    let test_max_x = (next_x + half_x - 0.05).floor() as i32;
+
+    let mut collides_x = false;
+    for by in foot_by..=head_by {
+        for bx in test_min_x..=test_max_x {
+            for bz in min_z..=max_z {
+                if is_solid(bx, by, bz) {
+                    collides_x = true;
+                    break;
+                }
+            }
+            if collides_x {
+                break;
+            }
+        }
+        if collides_x {
+            break;
+        }
+    }
+
+    if collides_x {
+        // Check 1-block step-up: foot block is solid, but step-up is clear
+        let mut can_step_up = true;
+        let step_foot_by = foot_by + 1;
+        let step_head_by = (f64::from(step_foot_by) + height - 0.05).floor() as i32;
+        for by in step_foot_by..=step_head_by {
+            for bx in test_min_x..=test_max_x {
+                for bz in min_z..=max_z {
+                    if is_solid(bx, by, bz) {
+                        can_step_up = false;
+                        break;
+                    }
+                }
+                if !can_step_up {
+                    break;
+                }
+            }
+            if !can_step_up {
+                break;
+            }
+        }
+
+        if can_step_up && vel.y == 0.0 {
+            pos.y = f64::from(step_foot_by);
+            pos.x = next_x;
+        } else {
+            vel.x = 0.0;
+        }
+    } else {
+        pos.x = next_x;
+    }
+
+    // Check Z axis collision
+    let cur_min_x = (pos.x - half_x + 0.05).floor() as i32;
+    let cur_max_x = (pos.x + half_x - 0.05).floor() as i32;
+    let test_min_z = (next_z - half_z + 0.05).floor() as i32;
+    let test_max_z = (next_z + half_z - 0.05).floor() as i32;
+
+    let mut collides_z = false;
+    for by in foot_by..=head_by {
+        for bx in cur_min_x..=cur_max_x {
+            for bz in test_min_z..=test_max_z {
+                if is_solid(bx, by, bz) {
+                    collides_z = true;
+                    break;
+                }
+            }
+            if collides_z {
+                break;
+            }
+        }
+        if collides_z {
+            break;
+        }
+    }
+
+    if collides_z {
+        let mut can_step_up = true;
+        let step_foot_by = foot_by + 1;
+        let step_head_by = (f64::from(step_foot_by) + height - 0.05).floor() as i32;
+        for by in step_foot_by..=step_head_by {
+            for bx in cur_min_x..=cur_max_x {
+                for bz in test_min_z..=test_max_z {
+                    if is_solid(bx, by, bz) {
+                        can_step_up = false;
+                        break;
+                    }
+                }
+                if !can_step_up {
+                    break;
+                }
+            }
+            if !can_step_up {
+                break;
+            }
+        }
+
+        if can_step_up && vel.y == 0.0 {
+            pos.y = f64::from(step_foot_by);
+            pos.z = next_z;
+        } else {
+            vel.z = 0.0;
+        }
+    } else {
+        pos.z = next_z;
+    }
+}
+
 /// Attempts to merge `source` into `target`. Returns true if items were transferred.
 pub fn merge_item_stacks(target: &mut ItemStack, source: &mut ItemStack) -> bool {
     if source.is_empty() || target.item != source.item || target.count >= 64 {
@@ -1473,7 +1677,7 @@ pub fn mob_ai_system(
 /// System that applies physics velocity integration, gravity, and drag to entities.
 #[allow(clippy::type_complexity)]
 pub fn mob_movement_system(
-    mut query: Query<
+    _query: Query<
         (&mut Position, &mut Velocity),
         (
             Without<SimulationFrozen>,
@@ -1484,19 +1688,8 @@ pub fn mob_movement_system(
         ),
     >,
 ) {
-    for (mut pos, mut vel) in &mut query {
-        // Integrate horizontal and vertical velocity
-        pos.0.x += f64::from(vel.0.x);
-        pos.0.y += f64::from(vel.0.y);
-        pos.0.z += f64::from(vel.0.z);
-
-        // Apply gravity
-        vel.0.y = (vel.0.y - 0.08).max(-2.0);
-
-        // Apply horizontal drag/friction
-        vel.0.x *= 0.6;
-        vel.0.z *= 0.6;
-    }
+    // Physical velocity integration and terrain collision are handled authoritatively
+    // by `Server::tick_mob_entities` using `tick_mob_physics_step`.
 }
 
 /// System that handles 3D aquatic swimming physics, fluid drag, buoyancy, and dry land suffocation/flopping.
@@ -1555,14 +1748,7 @@ pub fn aquatic_movement_system(
         } else {
             // Out of water (dry land flopping and suffocation)
             aquatic.dry_ticks += 1;
-
-            pos.0.x += f64::from(vel.0.x);
-            pos.0.y += f64::from(vel.0.y);
-            pos.0.z += f64::from(vel.0.z);
-
-            vel.0.y = (vel.0.y - 0.08).max(-2.0);
-            vel.0.x *= 0.5;
-            vel.0.z *= 0.5;
+            // Physical integration on dry land is executed by tick_mob_physics_step
 
             // Fish flop periodically on land
             if aquatic.entity_type == EntityType::Fish && aquatic.dry_ticks % 15 == 0 {
@@ -1634,18 +1820,13 @@ pub fn boat_movement_system(
             // Low forward friction (glides smoothly), higher lateral resistance
             vel.0.x *= 0.94;
             vel.0.z *= 0.94;
-            vel.0.y *= 0.82;
+            // Integrate velocity in water
+            pos.0.x += f64::from(vel.0.x);
+            pos.0.y += f64::from(vel.0.y);
+            pos.0.z += f64::from(vel.0.z);
         } else {
-            // Land physics: gravity + ground friction
-            vel.0.y = (vel.0.y - 0.08).max(-2.0);
-            vel.0.x *= 0.60;
-            vel.0.z *= 0.60;
+            // Land physics is handled authoritatively with terrain collision by tick_mob_entities
         }
-
-        // Integrate velocity
-        pos.0.x += f64::from(vel.0.x);
-        pos.0.y += f64::from(vel.0.y);
-        pos.0.z += f64::from(vel.0.z);
 
         if boat.rock_ticks > 0 {
             boat.rock_ticks -= 1;
@@ -2012,5 +2193,75 @@ mod tests {
         // Position should reflect water surface bobbing
         let pos = world.get::<Position>(e).unwrap();
         assert!(pos.0.y >= 61.5 && pos.0.y <= 62.5);
+    }
+
+    #[test]
+    fn test_mob_physics_falling_lands_on_solid_ground() {
+        let mut pos = DVec3::new(10.0, 66.0, 10.0);
+        let mut vel = Vec3::ZERO;
+        let aabb = EntityType::Zombie.default_aabb();
+        let half_x = f64::from(aabb.half_size.x);
+        let half_z = f64::from(aabb.half_size.z);
+        let height = f64::from(aabb.half_size.y * 2.0);
+
+        // Ground is solid at Y <= 63 (top of ground is 64.0)
+        let is_solid = |_x: i32, y: i32, _z: i32| y <= 63;
+
+        for _ in 0..30 {
+            tick_mob_physics_step(&mut pos, &mut vel, half_x, half_z, height, is_solid);
+        }
+
+        assert_eq!(pos.y, 64.0, "Mob must land squarely on top of solid ground");
+        assert_eq!(vel.y, 0.0, "Vertical velocity must be zeroed upon landing");
+    }
+
+    #[test]
+    fn test_mob_physics_step_up_over_one_block() {
+        let mut pos = DVec3::new(10.2, 64.0, 10.5);
+        let mut vel = Vec3::new(0.5, 0.0, 0.0);
+        let aabb = EntityType::Zombie.default_aabb();
+        let half_x = f64::from(aabb.half_size.x);
+        let half_z = f64::from(aabb.half_size.z);
+        let height = f64::from(aabb.half_size.y * 2.0);
+
+        // Base ground at Y = 63 (top 64.0), and 1-block obstacle at X >= 11, Y = 64 (top 65.0)
+        let is_solid = |x: i32, y: i32, _z: i32| y <= 63 || (x >= 11 && y == 64);
+
+        for _ in 0..10 {
+            vel.x = 0.4;
+            tick_mob_physics_step(&mut pos, &mut vel, half_x, half_z, height, is_solid);
+        }
+
+        assert!(
+            pos.x > 11.0,
+            "Mob must advance onto step: pos.x was {}",
+            pos.x
+        );
+        assert_eq!(pos.y, 65.0, "Mob must have stepped up to Y = 65.0");
+    }
+
+    #[test]
+    fn test_mob_physics_wall_blocks_movement() {
+        let mut pos = DVec3::new(10.2, 64.0, 10.5);
+        let mut vel = Vec3::new(0.5, 0.0, 0.0);
+        let aabb = EntityType::Zombie.default_aabb();
+        let half_x = f64::from(aabb.half_size.x);
+        let half_z = f64::from(aabb.half_size.z);
+        let height = f64::from(aabb.half_size.y * 2.0);
+
+        // 3-block high wall at X = 11
+        let is_solid = |x: i32, y: i32, _z: i32| y <= 63 || (x == 11 && (64..=66).contains(&y));
+
+        for _ in 0..10 {
+            vel.x = 0.5;
+            tick_mob_physics_step(&mut pos, &mut vel, half_x, half_z, height, is_solid);
+        }
+
+        assert!(
+            pos.x <= 10.8,
+            "Mob must be blocked by wall: pos.x was {}",
+            pos.x
+        );
+        assert_eq!(pos.y, 64.0, "Mob must stay at ground height");
     }
 }

@@ -44,8 +44,8 @@ use telos_sim::{
     ARMOR_SLOTS, ARROW_DESPAWN_FLYING_TICKS, ARROW_DESPAWN_STUCK_TICKS, ARROW_PICKUP_RADIUS,
     AiState, AquaticMob, ArrowEntity, ArrowStepOutcome, AttackCooldown, AttributeKind, Attributes,
     BOW_FULL_CHARGE_TICKS, BOW_MAX_RELEASE_SPEED, BOW_MIN_CHARGE_TICKS, BOW_MIN_RELEASE_SPEED,
-    BoatEntity, CombatTracker, DamageType, EffectInstance, EnchantmentKind, EntityType, Experience,
-    FishingBobberEntity, GameMode, Health, Hunger, HurtTime, ITEM_ARROW, ITEM_BOW,
+    BoatEntity, CombatTracker, DamageType, EffectInstance, EnchantmentKind, EntityAabb, EntityType,
+    Experience, FishingBobberEntity, GameMode, Health, Hunger, HurtTime, ITEM_ARROW, ITEM_BOW,
     ITEM_DESPAWN_TICKS, ITEM_FISHING_ROD, ITEM_FLINT_AND_STEEL, ITEM_MERGE_RADIUS, ITEM_MINECART,
     ITEM_OAK_BOAT, ITEM_PICKUP_RADIUS, Inventory, ItemEntity, ItemStack, MinecartEntity, Mob,
     MobBundle, MoveMode, NetEntity, PLAYER_DROP_PICKUP_DELAY, PlayerPositions, Position,
@@ -54,6 +54,7 @@ use telos_sim::{
     apply_mitigated_damage, block_to_drop_item, build_sim_schedule, calculate_total_epf,
     determine_rail_shape, is_boat, is_flint_and_steel, is_minecart, merge_item_stacks,
     roll_fishing_loot, tick_arrow_physics_step, tick_item_physics_step_fluid,
+    tick_mob_physics_step,
 };
 use telos_voxel::fluid::{FluidKind, FluidState, calculate_fluid_flow};
 use telos_voxel::state::BlockStateId;
@@ -1134,6 +1135,100 @@ impl Server {
     pub fn clear_mobs(&mut self) {
         let mob_ids: Vec<u32> = self.tracked_mobs.keys().copied().collect();
         for id in mob_ids {
+            self.despawn_mob(id);
+        }
+    }
+
+    /// Advances physical velocity integration, gravity, terrain collision, step-up,
+    /// and floor adherence for all active mob entities.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+    pub fn tick_mob_entities(&mut self) {
+        let mob_entries: Vec<(u32, bevy_ecs::entity::Entity)> =
+            self.tracked_mobs.iter().map(|(&k, &v)| (k, v)).collect();
+
+        if mob_entries.is_empty() {
+            return;
+        }
+
+        let mut to_despawn = Vec::new();
+
+        for (net_id, entity) in mob_entries {
+            let Some((
+                pos,
+                vel,
+                aabb_opt,
+                is_aquatic_in_water,
+                is_boat_in_water,
+                is_cart_on_rail,
+                is_bobber,
+                is_riding,
+                is_frozen,
+            )) = self.ecs_world.get_entity(entity).ok().and_then(|ent| {
+                let p = *ent.get::<Position>()?;
+                let v = *ent.get::<Velocity>()?;
+                let aabb = ent.get::<EntityAabb>().copied();
+                let aquatic = ent.get::<AquaticMob>().is_some_and(|a| a.in_water);
+                let boat = ent.get::<BoatEntity>().is_some_and(|b| b.in_water);
+                let cart = ent.get::<MinecartEntity>().is_some_and(|c| c.on_rail);
+                let bobber = ent.get::<FishingBobberEntity>().is_some();
+                let riding = ent.get::<Riding>().is_some();
+                let frozen = ent.get::<SimulationFrozen>().is_some();
+                Some((p, v, aabb, aquatic, boat, cart, bobber, riding, frozen))
+            })
+            else {
+                continue;
+            };
+
+            // Skip entities whose movement is fully driven elsewhere
+            if is_frozen
+                || is_riding
+                || is_bobber
+                || is_aquatic_in_water
+                || is_boat_in_water
+                || is_cart_on_rail
+            {
+                continue;
+            }
+
+            let (half_x, half_z, height) = if let Some(aabb) = aabb_opt {
+                (
+                    f64::from(aabb.half_size.x),
+                    f64::from(aabb.half_size.z),
+                    f64::from(aabb.half_size.y * 2.0),
+                )
+            } else {
+                (0.3, 0.3, 1.8)
+            };
+
+            let world = self.worlds.default_world();
+            let reg = world.registry();
+            let is_solid = |bx: i32, by: i32, bz: i32| -> bool {
+                let state = world.get_loaded_block(BlockPos::new(bx, by, bz));
+                telos_sim::is_solid_ground(state, reg)
+            };
+
+            let mut cur_pos = pos.0;
+            let mut cur_vel = vel.0;
+
+            tick_mob_physics_step(&mut cur_pos, &mut cur_vel, half_x, half_z, height, is_solid);
+
+            if cur_pos.y < -100.0 {
+                to_despawn.push(net_id);
+                continue;
+            }
+
+            // Write back updated components
+            if let Ok(mut ent) = self.ecs_world.get_entity_mut(entity) {
+                if let Some(mut p) = ent.get_mut::<Position>() {
+                    p.0 = cur_pos;
+                }
+                if let Some(mut v) = ent.get_mut::<Velocity>() {
+                    v.0 = cur_vel;
+                }
+            }
+        }
+
+        for id in to_despawn {
             self.despawn_mob(id);
         }
     }
@@ -3261,18 +3356,6 @@ impl Server {
 
                                 // Spawn player entity in ECS simulation
                                 let mut inv = Inventory::default();
-                                inv.slots[0] = ItemStack::new(1, 64); // Stone
-                                inv.slots[1] = ItemStack::new(2, 64); // Dirt
-                                inv.slots[2] = ItemStack::new(5, 64); // Oak Log
-                                inv.slots[3] = ItemStack::new(4, 64); // Cobblestone
-                                inv.slots[4] = ItemStack::new(7, 64); // Oak Planks
-                                inv.slots[5] = ItemStack::new(19, 64); // Wire (logic_wire)
-                                inv.slots[6] = ItemStack::new(21, 64); // Power Block (logic_power_block)
-                                inv.slots[7] = ItemStack::new(22, 64); // Lever (logic_lever)
-                                inv.slots[8] = ItemStack::new(24, 64); // Lamp (logic_lamp)
-                                inv.slots[9] = ItemStack::new(26, 64); // Repeater (logic_repeater)
-                                inv.slots[10] = ItemStack::new(28, 64); // Inverter (logic_inverter)
-                                inv.slots[11] = ItemStack::new(30, 64); // Diode (logic_diode)
                                 inv.update_crafting();
 
                                 let ecs_entity = self
@@ -6743,59 +6826,8 @@ impl Server {
             self.handle_mob_death(mob_id, None);
         }
 
-        // Voxel terrain collision and floor adherence for mobs
-        let default_world = self.worlds.default_world_mut();
-        let mut mob_query = self
-            .ecs_world
-            .query::<(&NetEntity, &mut Position, &mut Velocity)>();
-        let mut fallen_mobs = Vec::new();
-        for (net, mut pos, mut vel) in mob_query.iter_mut(&mut self.ecs_world) {
-            #[allow(clippy::cast_possible_truncation)]
-            let bx = pos.0.x.floor() as i32;
-            #[allow(clippy::cast_possible_truncation)]
-            let by = pos.0.y.floor() as i32;
-            #[allow(clippy::cast_possible_truncation)]
-            let bz = pos.0.z.floor() as i32;
-
-            let foot_block = default_world.get_loaded_block(BlockPos::new(bx, by, bz));
-            let ground_block = default_world.get_loaded_block(BlockPos::new(bx, by - 1, bz));
-            let reg = default_world.registry();
-
-            if telos_sim::is_solid_ground(ground_block, reg) {
-                let floor_y = f64::from(by);
-                if pos.0.y <= floor_y + 0.15 && vel.0.y <= 0.0 {
-                    pos.0.y = floor_y;
-                    vel.0.y = 0.0;
-                }
-            } else if telos_sim::is_solid_ground(foot_block, reg) {
-                // Step-up over 1-block obstacle if headroom is clear
-                let head_block = default_world.get_loaded_block(BlockPos::new(bx, by + 1, bz));
-                if telos_sim::is_solid_ground(head_block, reg) {
-                    // Blocked by 2+ block tall obstacle
-                    vel.0.x = 0.0;
-                    vel.0.z = 0.0;
-                } else {
-                    let floor_y = f64::from(by + 1);
-                    pos.0.y = floor_y;
-                    vel.0.y = 0.0;
-                }
-            } else {
-                // Fallback to surface height if floating above unloaded chunks
-                let surface_y = default_world.get_surface_y(bx, bz);
-                let floor_y = f64::from(surface_y) + 1.0;
-                if pos.0.y < floor_y {
-                    pos.0.y = floor_y;
-                    vel.0.y = 0.0;
-                }
-            }
-
-            if pos.0.y < -100.0 {
-                fallen_mobs.push(net.net_id);
-            }
-        }
-        for id in fallen_mobs {
-            self.despawn_mob(id);
-        }
+        // Voxel terrain collision, gravity, step-up, and floor adherence for mobs
+        self.tick_mob_entities();
 
         // 5b. Mod event dispatching and world edit application
         self.event_queue.push(GameEvent::Tick {
@@ -7112,6 +7144,11 @@ impl Server {
                     self.mob_positions.insert(net_id, pos.0);
                     self.mob_yaws.insert(net_id, rot.yaw);
 
+                    let on_ground = self
+                        .ecs_world
+                        .get::<Velocity>(entity)
+                        .is_none_or(|v| v.0.y.abs() < 1e-4);
+
                     let move_msg = S2cMessage::EntityMove(S2cEntityMove {
                         net_id,
                         x: pos.0.x,
@@ -7120,7 +7157,7 @@ impl Server {
                         yaw: rot.yaw,
                         pitch: rot.pitch,
                         head_yaw: rot.head_yaw,
-                        on_ground: true,
+                        on_ground,
                     });
 
                     for s in self.sessions.values_mut() {

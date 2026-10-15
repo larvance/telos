@@ -11,8 +11,8 @@ pub const EYE_HEIGHT: f64 = 1.62;
 
 /// Downward gravitational acceleration in blocks/s^2.
 pub const GRAVITY: f32 = 32.0;
-/// Instantaneous upward vertical impulse on jump in blocks/s.
-pub const JUMP_VELOCITY: f32 = 8.4;
+/// Instantaneous upward vertical impulse on jump in blocks/s (reaches ~1.25m jump clearance).
+pub const JUMP_VELOCITY: f32 = 9.8;
 /// Walking speed in blocks/s.
 pub const WALK_SPEED: f32 = 4.317;
 /// Sprinting speed in blocks/s.
@@ -491,7 +491,7 @@ impl PlayerPhysicsController {
         let (normal_box, normal_dx, normal_dz) =
             Self::resolve_horizontal(player_box, wish_dx, wish_dz, &colliders);
 
-        let can_attempt_step = self.on_ground || self.vel.y > 0.0;
+        let can_attempt_step = self.on_ground;
         if can_attempt_step
             && (normal_dx.abs() < wish_dx.abs() - 1e-4 || normal_dz.abs() < wish_dz.abs() - 1e-4)
         {
@@ -541,7 +541,9 @@ impl PlayerPhysicsController {
 
                 if step_dist_sq > normal_dist_sq + 1e-4 {
                     player_box = elevated_box;
-                    self.on_ground = true;
+                    if step_down_dy > -STEP_HEIGHT + 1e-4 {
+                        self.on_ground = true;
+                    }
                     if self.vel.y < 0.0 {
                         self.vel.y = 0.0;
                     }
@@ -841,5 +843,50 @@ mod tests {
 
         // Spectator should have phased through the wall at X = 1
         assert!(controller.pos.x > 2.0);
+    }
+
+    #[test]
+    fn test_jump_near_block_corner_does_not_double_jump() {
+        let mut controller =
+            PlayerPhysicsController::new(DVec3::new(0.6, 64.0, 0.6), GameMode::Survival);
+        controller.on_ground = true;
+
+        // Ground at Y = 63, and a 2-block high obstacle at X = 1, Y = 64..=65
+        let colliders = |bx: i32, by: i32, bz: i32, out: &mut Vec<Aabb>| {
+            if by == 63 {
+                out.push(Aabb::from_block(bx, by, bz));
+            } else if bx == 1 && (by == 64 || by == 65) && bz == 0 {
+                out.push(Aabb::from_block(bx, by, bz));
+            }
+        };
+
+        let input = PlayerInputState {
+            jump: true,
+            forward: true,
+            ..Default::default()
+        };
+
+        let mut max_y = controller.pos.y;
+        let mut airborne_grounded_count = 0;
+
+        for _step in 0..40 {
+            controller.update(0.05, 0.0, &input, colliders);
+            max_y = max_y.max(controller.pos.y);
+
+            // While airborne (y > 64.1 and vel.y > 0.0), controller must NOT be on_ground
+            if controller.pos.y > 64.1 && controller.vel.y > 0.5 && controller.on_ground {
+                airborne_grounded_count += 1;
+            }
+        }
+
+        assert_eq!(
+            airborne_grounded_count, 0,
+            "Player must not become on_ground mid-air while rising near a block corner"
+        );
+        // Standard jump reaches ~65.25m. Double jump would reach >66.5m.
+        assert!(
+            max_y < 66.0,
+            "Jump height must not double due to corner step-up adding velocity (max_y: {max_y})"
+        );
     }
 }

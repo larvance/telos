@@ -2,6 +2,7 @@
 
 pub mod camera;
 pub mod entity_client;
+pub mod fps;
 pub mod opengl_renderer;
 pub mod physics;
 pub mod touch_controls;
@@ -11,6 +12,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+use crate::fps::FpsTracker;
 
 use crate::physics::{
     Aabb, GameMode, PlayerCapabilities, PlayerInputState, PlayerPhysicsController,
@@ -1433,6 +1436,7 @@ struct App {
     controller: FlyController,
     last_frame_time: Instant,
     last_fps_time: Instant,
+    fps_tracker: FpsTracker,
     frame_counter: u32,
     visible_chunks_last: usize,
     visible_lod_nodes_last: usize,
@@ -2012,6 +2016,7 @@ impl App {
             controller,
             last_frame_time: Instant::now(),
             last_fps_time: Instant::now(),
+            fps_tracker: FpsTracker::new(),
             frame_counter: 0,
             visible_chunks_last: 0,
             visible_lod_nodes_last: 0,
@@ -5057,6 +5062,7 @@ impl App {
             }
         }
         self.last_frame_start = Instant::now();
+        self.fps_tracker.tick();
 
         if self.current_screen == AppScreen::InGame {
             self.poll_network();
@@ -5321,6 +5327,7 @@ impl App {
         let moon_dir = telos_core::time::moon_direction(sun_angle);
         let day_number = self.client_world_age / telos_core::time::DAY_TICKS;
         let moon_phase = telos_core::time::moon_phase(day_number);
+        self.update_hud_state(day_number, moon_phase);
 
         self.lightmap_lut.update(
             sun_dir.y,
@@ -7253,91 +7260,6 @@ impl App {
             {
                 let gui_scale = compute_gui_scale(swapchain_extent.width, swapchain_extent.height);
 
-                // Update HUD dynamic state
-                self.hud_state.selected_slot = self.selected_hotbar_slot;
-                self.hud_state.player_pos = [
-                    f64::from(self.camera.position.x),
-                    f64::from(self.camera.position.y),
-                    f64::from(self.camera.position.z),
-                ];
-                let (cpos, _) = telos_voxel::coords::split_block_pos(BlockPos::new(
-                    self.camera.position.x.floor() as i32,
-                    self.camera.position.y.floor() as i32,
-                    self.camera.position.z.floor() as i32,
-                ));
-                self.hud_state.chunk_pos = [cpos.x(), cpos.y(), cpos.z()];
-
-                let yaw_deg = self.camera.yaw.to_degrees();
-                let pitch_deg = self.camera.pitch.to_degrees();
-                self.hud_state.yaw = yaw_deg;
-                self.hud_state.pitch = pitch_deg;
-
-                let normalized_yaw = (yaw_deg % 360.0 + 360.0) % 360.0;
-                self.hud_state.facing = if (45.0..135.0).contains(&normalized_yaw) {
-                    "East (+X)".to_string()
-                } else if (135.0..225.0).contains(&normalized_yaw) {
-                    "South (+Z)".to_string()
-                } else if (225.0..315.0).contains(&normalized_yaw) {
-                    "West (-X)".to_string()
-                } else {
-                    "North (-Z)".to_string()
-                };
-
-                self.hud_state.frame_time_ms = (dt * 1000.0).max(0.01);
-                self.hud_state.chunks_rendered = self.visible_chunks_last as u32;
-                self.hud_state.lod_nodes_rendered = self.visible_lod_nodes_last as u32;
-                self.hud_state.time_of_day = self.client_time_of_day as u64;
-                self.hud_state.day_number = day_number;
-                self.hud_state.moon_phase_name = match moon_phase {
-                    0 => "Full Moon",
-                    1 => "Waning Gibbous",
-                    2 => "Third Quarter",
-                    3 => "Waning Crescent",
-                    4 => "New Moon",
-                    5 => "Waxing Crescent",
-                    6 => "First Quarter",
-                    7 => "Waxing Gibbous",
-                    _ => "Unknown",
-                }
-                .to_string();
-
-                let weather_kind_name = if self.weather_thunder_level > 0.05 {
-                    "Thunder"
-                } else if self.weather_rain_level > 0.05 {
-                    "Rain"
-                } else {
-                    "Clear"
-                };
-                self.hud_state.weather_name = weather_kind_name.to_string();
-                self.hud_state.weather_rain_level = self.weather_rain_level;
-                self.hud_state.weather_thunder_level = self.weather_thunder_level;
-
-                let climate = telos_worldgen::ClimatePoint::sample(
-                    self.world_seed,
-                    self.camera.position.x,
-                    self.camera.position.z,
-                );
-                let is_dry = climate.humidity < -0.35 && climate.temperature > 0.5;
-                let local_precip =
-                    if self.weather_rain_level <= 0.01 && self.weather_thunder_level <= 0.01 {
-                        "None"
-                    } else {
-                        match telos_sim::weather::precipitation_at(
-                            climate.temperature,
-                            self.camera.position.y,
-                            is_dry,
-                        ) {
-                            telos_sim::weather::PrecipitationKind::None => "None (Dry)",
-                            telos_sim::weather::PrecipitationKind::Rain => "Rain",
-                            telos_sim::weather::PrecipitationKind::Snow => "Snow",
-                        }
-                    };
-                self.hud_state.local_precipitation = local_precip.to_string();
-                #[allow(clippy::cast_possible_truncation)]
-                {
-                    self.hud_state.audio_channels = self.audio.active_players_count() as u32;
-                }
-
                 let mut ui_quads = Vec::with_capacity(512);
                 let width_gui = swapchain_extent.width as f32 / gui_scale as f32;
                 let height_gui = swapchain_extent.height as f32 / gui_scale as f32;
@@ -7864,7 +7786,7 @@ impl App {
         should_exit
     }
 
-    fn update_hud_state(&mut self, dt: f32, day_number: u64, moon_phase: u32) {
+    fn update_hud_state(&mut self, day_number: u64, moon_phase: u32) {
         self.hud_state.selected_slot = self.selected_hotbar_slot;
         self.hud_state.player_pos = [
             f64::from(self.camera.position.x),
@@ -7894,7 +7816,8 @@ impl App {
             "North (-Z)".to_string()
         };
 
-        self.hud_state.frame_time_ms = (dt * 1000.0).max(0.01);
+        self.hud_state.fps = self.fps_tracker.fps();
+        self.hud_state.frame_time_ms = self.fps_tracker.frame_time_ms();
         self.hud_state.chunks_rendered = self.visible_chunks_last as u32;
         self.hud_state.lod_nodes_rendered = self.visible_lod_nodes_last as u32;
         self.hud_state.time_of_day = self.client_time_of_day as u64;
@@ -8336,6 +8259,7 @@ impl App {
             }
         }
         self.last_frame_start = Instant::now();
+        self.fps_tracker.tick();
 
         if self.current_screen == AppScreen::InGame {
             self.poll_network();
@@ -8510,7 +8434,7 @@ impl App {
             )
         });
 
-        self.update_hud_state(dt, day_number, moon_phase);
+        self.update_hud_state(day_number, moon_phase);
         let ui_quads = self.build_ui_quads(width, height);
         let mut gl_ui_verts = Vec::new();
         opengl_renderer::ui_quads_to_gl_vertices(&ui_quads, &mut gl_ui_verts);

@@ -85,7 +85,7 @@ pub use entity::{
     SimulationFrozen, TargetablePlayer, Velocity, aquatic_movement_system, boat_movement_system,
     fishing_bobber_movement_system, has_line_of_sight, merge_item_stacks, mob_ai_system,
     mob_hurt_decay_system, mob_movement_system, tick_arrow_physics_step, tick_item_physics_step,
-    tick_item_physics_step_fluid,
+    tick_item_physics_step_fluid, tick_mob_physics_step,
 };
 pub use event::{EventFilter, EventQueue, GameEvent};
 pub use experience::{
