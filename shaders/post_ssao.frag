@@ -26,7 +26,7 @@ const vec3 SAMPLES[16] = vec3[16](
 );
 
 vec3 get_view_pos(vec2 uv, float depth) {
-    vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 clip = vec4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
     vec4 view_pos = u_inv_proj * clip;
     return view_pos.xyz / max(view_pos.w, 0.00001);
 }
@@ -45,13 +45,17 @@ void main() {
     // Reconstruct surface normal from screen-space view-position derivatives
     vec3 dx = dFdx(origin);
     vec3 dy = dFdy(origin);
-    vec3 normal = cross(dx, dy);
+    vec3 normal = cross(dy, dx);
     float normal_len = length(normal);
     if (normal_len < 0.00001) {
         out_occlusion = 1.0;
         return;
     }
     normal /= normal_len;
+    // In view space (looking along -Z), a front-facing surface normal has normal.z > 0 (towards camera)
+    if (normal.z < 0.0) {
+        normal = -normal;
+    }
 
     // Pseudo-random noise rotation based on pixel coordinates
     float angle = fract(sin(dot(v_uv * u_screen_size, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
@@ -73,7 +77,8 @@ void main() {
 
         // Project sample point back to screen UV
         vec4 sample_clip = u_proj * vec4(sample_pos, 1.0);
-        vec2 sample_uv = (sample_clip.xy / max(sample_clip.w, 0.00001)) * 0.5 + 0.5;
+        vec2 sample_ndc = sample_clip.xy / max(sample_clip.w, 0.00001);
+        vec2 sample_uv = vec2(sample_ndc.x * 0.5 + 0.5, 0.5 - sample_ndc.y * 0.5);
 
         // Boundary check
         if (sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0) {

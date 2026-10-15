@@ -88,7 +88,7 @@ void main() {
     }
 
     // World position reconstruction from depth
-    vec4 clip = vec4(v_uv * 2.0 - 1.0, depth, 1.0);
+    vec4 clip = vec4(v_uv.x * 2.0 - 1.0, 1.0 - v_uv.y * 2.0, depth, 1.0);
     vec4 world_h = u_inv_view_proj * clip;
     vec3 world_pos = world_h.xyz / max(world_h.w, 0.00001);
     vec3 ray = world_pos - u_cam_pos;
@@ -104,9 +104,24 @@ void main() {
 
     // Bit 4: Cascaded Shadow Mapping (CSM)
     if ((u_flags & 16u) != 0u && !is_sky) {
-        vec3 normal = normalize(cross(dFdx(world_pos), dFdy(world_pos)));
+        vec3 d_x = dFdx(world_pos);
+        vec3 d_y = dFdy(world_pos);
+        vec3 raw_normal = cross(d_y, d_x);
+        float n_len = length(raw_normal);
+        vec3 normal = (n_len > 1e-5) ? (raw_normal / n_len) : vec3(0.0, 1.0, 0.0);
         if (dot(normal, -ray_dir) < 0.0) {
             normal = -normal;
+        }
+
+        // Snap to voxel cardinal face normal to eliminate camera-rotation jitter
+        vec3 abs_n = abs(normal);
+        vec3 cardinal_normal;
+        if (abs_n.y >= abs_n.x && abs_n.y >= abs_n.z) {
+            cardinal_normal = vec3(0.0, sign(normal.y), 0.0);
+        } else if (abs_n.x >= abs_n.z) {
+            cardinal_normal = vec3(sign(normal.x), 0.0, 0.0);
+        } else {
+            cardinal_normal = vec3(0.0, 0.0, sign(normal.z));
         }
 
         // Determine cascade by distance
@@ -118,7 +133,7 @@ void main() {
             }
         }
 
-        float shadow_factor = sample_cascade_pcf(cascade, world_pos, normal, light_dir);
+        float shadow_factor = sample_cascade_pcf(cascade, world_pos, cardinal_normal, light_dir);
 
         // Smooth cross-fade between cascades at outer boundary to eliminate seam artifacts
         if (cascade < 3) {
@@ -126,16 +141,16 @@ void main() {
             float prev_split = (cascade == 0) ? 0.0 : u_cascade_splits[cascade - 1];
             float fade_margin = (split_val - prev_split) * 0.15;
             if (dist > split_val - fade_margin) {
-                float next_shadow = sample_cascade_pcf(cascade + 1, world_pos, normal, light_dir);
+                float next_shadow = sample_cascade_pcf(cascade + 1, world_pos, cardinal_normal, light_dir);
                 float blend = clamp((dist - (split_val - fade_margin)) / max(fade_margin, 0.001), 0.0, 1.0);
                 shadow_factor = mix(shadow_factor, next_shadow, blend);
             }
         }
 
-        float cos_theta = clamp(dot(normal, light_dir), 0.0, 1.0);
-        float direct_contrib = shadow_factor * cos_theta;
-        // Blend between ambient shadow floor (0.38) and fully illuminated surface (1.0)
-        float shadow_light = mix(0.38, 1.0, direct_contrib);
+        // If the surface faces away from the sun, it is already shaded by voxel face shading
+        float NdotL = dot(cardinal_normal, light_dir);
+        float effective_shadow = (NdotL > 0.0) ? shadow_factor : 0.0;
+        float shadow_light = mix(0.50, 1.0, effective_shadow);
         color *= shadow_light;
     }
 
@@ -254,7 +269,7 @@ void main() {
                 if (proj.w <= 0.001) break;
 
                 vec3 ndc = proj.xyz / proj.w;
-                vec2 march_uv = ndc.xy * 0.5 + 0.5;
+                vec2 march_uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 
                 if (march_uv.x < 0.005 || march_uv.x > 0.995 || march_uv.y < 0.005 || march_uv.y > 0.995 || ndc.z < 0.0 || ndc.z > 1.0) {
                     break;

@@ -59,11 +59,11 @@ impl CascadeMatrices {
     #[allow(clippy::too_many_arguments)]
     pub fn compute(
         cam_pos: Vec3,
-        cam_forward: Vec3,
-        cam_up: Vec3,
+        _cam_forward: Vec3,
+        _cam_up: Vec3,
         fov_y: f32,
         aspect: f32,
-        z_near: f32,
+        _z_near: f32,
         splits: [f32; NUM_CASCADES],
         sun_dir: Vec3,
         resolution: u32,
@@ -79,88 +79,53 @@ impl CascadeMatrices {
         }
         let light_dir = light_dir.normalize();
 
-        let cam_fwd = cam_forward.normalize();
-        let cam_right = cam_fwd.cross(cam_up).normalize();
-        let cam_up_actual = cam_right.cross(cam_fwd).normalize();
+        let light_up = if light_dir.y.abs() > 0.95 {
+            Vec3::Z
+        } else {
+            Vec3::Y
+        };
+        let world_light_view = Mat4::look_to_rh(Vec3::ZERO, -light_dir, light_up);
+        let cam_light = world_light_view.transform_point3(cam_pos);
 
         let tan_half_fov = (fov_y * 0.5).tan();
 
         for i in 0..NUM_CASCADES {
-            let d_near = if i == 0 { z_near } else { splits[i - 1] };
             let d_far = splits[i];
 
-            let h_near = d_near * tan_half_fov;
-            let w_near = h_near * aspect;
+            // Conservative rotation-invariant bounding sphere radius covering the frustum slice out to d_far
             let h_far = d_far * tan_half_fov;
             let w_far = h_far * aspect;
+            let frustum_radius = (d_far * d_far + w_far * w_far + h_far * h_far).sqrt();
+            let radius = frustum_radius * 1.02;
 
-            let c_near = cam_pos + cam_fwd * d_near;
-            let c_far = cam_pos + cam_fwd * d_far;
-
-            // 8 frustum corners in world space
-            let corners = [
-                c_near - cam_right * w_near - cam_up_actual * h_near,
-                c_near + cam_right * w_near - cam_up_actual * h_near,
-                c_near - cam_right * w_near + cam_up_actual * h_near,
-                c_near + cam_right * w_near + cam_up_actual * h_near,
-                c_far - cam_right * w_far - cam_up_actual * h_far,
-                c_far + cam_right * w_far - cam_up_actual * h_far,
-                c_far - cam_right * w_far + cam_up_actual * h_far,
-                c_far + cam_right * w_far + cam_up_actual * h_far,
-            ];
-
-            let mut frustum_center = Vec3::ZERO;
-            for corner in &corners {
-                frustum_center += *corner;
-            }
-            frustum_center /= 8.0;
-
-            let light_up = if light_dir.y.abs() > 0.95 {
-                Vec3::Z
-            } else {
-                Vec3::Y
-            };
-            let light_view = Mat4::look_to_rh(frustum_center, -light_dir, light_up);
-
-            // Compute AABB in light space
-            let mut min_x = f32::INFINITY;
-            let mut max_x = f32::NEG_INFINITY;
-            let mut min_y = f32::INFINITY;
-            let mut max_y = f32::NEG_INFINITY;
-            let mut min_z = f32::INFINITY;
-            let mut max_z = f32::NEG_INFINITY;
-
-            for corner in &corners {
-                let p = light_view.transform_point3(*corner);
-                min_x = min_x.min(p.x);
-                max_x = max_x.max(p.x);
-                min_y = min_y.min(p.y);
-                max_y = max_y.max(p.y);
-                min_z = min_z.min(p.z);
-                max_z = max_z.max(p.z);
-            }
-
-            // Expand Z to capture shadow casters behind the camera frustum along the light direction
-            let z_margin = (max_z - min_z).max(120.0) * 0.75;
-            min_z -= z_margin;
-            max_z += z_margin;
-
-            // Texel-grid snapping to stabilize shadows against sub-pixel shimmer
             #[allow(clippy::cast_precision_loss)]
             let res_f32 = resolution as f32;
-            let world_units_per_texel_x = (max_x - min_x) / res_f32;
-            let world_units_per_texel_y = (max_y - min_y) / res_f32;
+            let texel_size = (radius * 2.0) / res_f32;
 
-            if world_units_per_texel_x > 1e-5 && world_units_per_texel_y > 1e-5 {
-                min_x = (min_x / world_units_per_texel_x).floor() * world_units_per_texel_x;
-                max_x = (max_x / world_units_per_texel_x).floor() * world_units_per_texel_x;
-                min_y = (min_y / world_units_per_texel_y).floor() * world_units_per_texel_y;
-                max_y = (max_y / world_units_per_texel_y).floor() * world_units_per_texel_y;
-            }
+            let snapped_x = if texel_size > 1e-5 {
+                (cam_light.x / texel_size).floor() * texel_size
+            } else {
+                cam_light.x
+            };
+            let snapped_y = if texel_size > 1e-5 {
+                (cam_light.y / texel_size).floor() * texel_size
+            } else {
+                cam_light.y
+            };
+
+            let min_x = snapped_x - radius;
+            let max_x = snapped_x + radius;
+            let min_y = snapped_y - radius;
+            let max_y = snapped_y + radius;
+
+            // Generous Z range along light direction to capture tall shadow casters (trees, mountains, cliffs)
+            let z_margin = (radius * 2.5).max(160.0);
+            let min_z = cam_light.z - z_margin;
+            let max_z = cam_light.z + z_margin;
 
             // In Vulkan right-handed orthographic, glam maps Z to [0, 1]
             let light_proj = Mat4::orthographic_rh(min_x, max_x, min_y, max_y, min_z, max_z);
-            light_view_proj[i] = light_proj * light_view;
+            light_view_proj[i] = light_proj * world_light_view;
         }
 
         Self {
@@ -525,4 +490,70 @@ mod tests {
             "Texel stabilization should prevent large matrix shifts on sub-texel movement: diff={diff}"
         );
     }
+
+    #[test]
+    fn test_camera_rotation_invariance() {
+        let cam_pos = Vec3::new(128.0, 64.0, 256.0);
+        let sun_dir = Vec3::new(0.4, 0.8, 0.3);
+
+        let cascades_looking_north = CascadeMatrices::compute(
+            cam_pos,
+            Vec3::new(0.0, 0.0, -1.0),
+            Vec3::Y,
+            std::f32::consts::FRAC_PI_3,
+            16.0 / 9.0,
+            0.1,
+            DEFAULT_CASCADE_SPLITS,
+            sun_dir,
+            2048,
+        );
+
+        let cascades_looking_east = CascadeMatrices::compute(
+            cam_pos,
+            Vec3::new(1.0, 0.2, 0.0).normalize(),
+            Vec3::Y,
+            std::f32::consts::FRAC_PI_3,
+            16.0 / 9.0,
+            0.1,
+            DEFAULT_CASCADE_SPLITS,
+            sun_dir,
+            2048,
+        );
+
+        let cascades_looking_down = CascadeMatrices::compute(
+            cam_pos,
+            Vec3::new(0.0, -0.9, -0.1).normalize(),
+            Vec3::Z,
+            std::f32::consts::FRAC_PI_3,
+            16.0 / 9.0,
+            0.1,
+            DEFAULT_CASCADE_SPLITS,
+            sun_dir,
+            2048,
+        );
+
+        // When standing still and moving head, cascade matrices MUST remain identical
+        for i in 0..NUM_CASCADES {
+            let diff_east = (cascades_looking_north.light_view_proj[i]
+                - cascades_looking_east.light_view_proj[i])
+                .to_cols_array()
+                .iter()
+                .fold(0.0f32, |acc, &x| acc.max(x.abs()));
+            assert!(
+                diff_east < 1e-6,
+                "Cascade {i} should be completely invariant to camera yaw/pitch: diff={diff_east}"
+            );
+
+            let diff_down = (cascades_looking_north.light_view_proj[i]
+                - cascades_looking_down.light_view_proj[i])
+                .to_cols_array()
+                .iter()
+                .fold(0.0f32, |acc, &x| acc.max(x.abs()));
+            assert!(
+                diff_down < 1e-6,
+                "Cascade {i} should be completely invariant to camera pitch down: diff={diff_down}"
+            );
+        }
+    }
 }
+
