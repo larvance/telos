@@ -23,24 +23,71 @@ fi
 
 cd "$REPO_DIR"
 
+BUILD_TYPE="release"
 DEV_BIN="$REPO_DIR/target/release/telos-launcher"
 TARGET_BIN="$REPO_DIR/target/release/telos"
 if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
+    BUILD_TYPE="debug"
     DEV_BIN="$REPO_DIR/target/debug/telos-launcher"
     TARGET_BIN="$REPO_DIR/target/debug/telos"
 fi
+LAUNCHER_HASH_FILE="$REPO_DIR/target/.telos-launcher-${BUILD_TYPE}.codehash"
+APP_HASH_FILE="$REPO_DIR/target/.telos-app-${BUILD_TYPE}.codehash"
+
+compute_launcher_hash() {
+    (
+        cd "$REPO_DIR" && \
+        find apps/telos-launcher/src \
+             apps/telos-launcher/ui \
+             apps/telos-launcher/icons \
+             apps/telos-launcher/Cargo.toml \
+             apps/telos-launcher/tauri.conf.json \
+             apps/telos-launcher/build.rs \
+             Cargo.lock \
+             -type f -not -path "*/node_modules/*" -not -path "*/target/*" -not -path "*/.git/*" -print0 2>/dev/null \
+            | sort -z \
+            | xargs -0 sha256sum 2>/dev/null \
+            | sha256sum \
+            | awk '{print $1}'
+    )
+}
+
+compute_app_hash() {
+    (
+        cd "$REPO_DIR" && \
+        find apps/telos \
+             crates \
+             shaders \
+             Cargo.toml \
+             Cargo.lock \
+             -type f -not -path "*/target/*" -not -path "*/.git/*" -not -path "*/node_modules/*" -print0 2>/dev/null \
+            | sort -z \
+            | xargs -0 sha256sum 2>/dev/null \
+            | sha256sum \
+            | awk '{print $1}'
+    )
+}
 
 # Fast path: If an existing launcher instance is already running, activate it immediately!
 if [[ -x "$DEV_BIN" ]] && "$DEV_BIN" --activate >/dev/null 2>&1; then
     exit 0
 fi
 
-# Ensure launcher binary exists and is up-to-date if cargo is available
+# Ensure launcher binary exists and is up-to-date by comparing code hash
 NEED_LAUNCHER_BUILD=0
+CURRENT_LAUNCHER_HASH=""
 if [[ ! -x "$DEV_BIN" ]]; then
     NEED_LAUNCHER_BUILD=1
-elif [[ -n "$(find "$REPO_DIR/apps/telos-launcher/src" "$REPO_DIR/apps/telos-launcher/ui" "$REPO_DIR/apps/telos-launcher/Cargo.toml" "$REPO_DIR/apps/telos-launcher/tauri.conf.json" -newer "$DEV_BIN" 2>/dev/null | head -n 1)" ]]; then
-    NEED_LAUNCHER_BUILD=1
+else
+    CURRENT_LAUNCHER_HASH="$(compute_launcher_hash)"
+    if [[ -f "$LAUNCHER_HASH_FILE" ]]; then
+        SAVED_LAUNCHER_HASH="$(cat "$LAUNCHER_HASH_FILE" 2>/dev/null || true)"
+        if [[ "$SAVED_LAUNCHER_HASH" != "$CURRENT_LAUNCHER_HASH" ]]; then
+            NEED_LAUNCHER_BUILD=1
+        fi
+    else
+        NEED_LAUNCHER_BUILD=1
+    fi
 fi
 
 # Execute build with an OS-level progress window (never use desktop notifications)
@@ -139,6 +186,11 @@ if [[ "$NEED_LAUNCHER_BUILD" == "1" && -z "${TELOS_NO_DEV:-}" && -z "${TELOS_NO_
     else
         build_with_os_progress "Telos Launcher" "Building latest launcher updates..." cargo build --release -p telos-launcher --bin telos-launcher
     fi
+    mkdir -p "$REPO_DIR/target"
+    if [[ -z "$CURRENT_LAUNCHER_HASH" ]]; then
+        CURRENT_LAUNCHER_HASH="$(compute_launcher_hash)"
+    fi
+    echo "$CURRENT_LAUNCHER_HASH" > "$LAUNCHER_HASH_FILE"
 fi
 
 # If launcher is available and enabled, delegate to it
@@ -148,10 +200,33 @@ fi
 
 # Direct build fallback if TELOS_NO_DEV=1
 if [[ -z "${TELOS_NO_BUILD:-}" ]] && command -v cargo >/dev/null 2>&1; then
-    if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
-        build_with_os_progress "Telos" "Compiling local game binary..." cargo build --bin telos
+    NEED_APP_BUILD=0
+    CURRENT_APP_HASH=""
+    if [[ ! -x "$TARGET_BIN" ]]; then
+        NEED_APP_BUILD=1
     else
-        build_with_os_progress "Telos" "Compiling release game binary..." cargo build --release --bin telos
+        CURRENT_APP_HASH="$(compute_app_hash)"
+        if [[ -f "$APP_HASH_FILE" ]]; then
+            SAVED_APP_HASH="$(cat "$APP_HASH_FILE" 2>/dev/null || true)"
+            if [[ "$SAVED_APP_HASH" != "$CURRENT_APP_HASH" ]]; then
+                NEED_APP_BUILD=1
+            fi
+        else
+            NEED_APP_BUILD=1
+        fi
+    fi
+
+    if [[ "$NEED_APP_BUILD" == "1" ]]; then
+        if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
+            build_with_os_progress "Telos" "Compiling local game binary..." cargo build --bin telos
+        else
+            build_with_os_progress "Telos" "Compiling release game binary..." cargo build --release --bin telos
+        fi
+        mkdir -p "$REPO_DIR/target"
+        if [[ -z "$CURRENT_APP_HASH" ]]; then
+            CURRENT_APP_HASH="$(compute_app_hash)"
+        fi
+        echo "$CURRENT_APP_HASH" > "$APP_HASH_FILE"
     fi
 fi
 

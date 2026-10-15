@@ -26,17 +26,45 @@ fi
 
 cd "$REPO_DIR"
 
+BUILD_TYPE="release"
 TARGET_BIN="$REPO_DIR/target/release/telos"
 if [[ "${TELOS_DEBUG:-0}" == "1" ]]; then
+    BUILD_TYPE="debug"
     TARGET_BIN="$REPO_DIR/target/debug/telos"
 fi
+APP_HASH_FILE="$REPO_DIR/target/.telos-app-${BUILD_TYPE}.codehash"
 
-# If target binary does not exist or sources are newer, compile it first
+compute_app_hash() {
+    (
+        cd "$REPO_DIR" && \
+        find apps/telos \
+             crates \
+             shaders \
+             Cargo.toml \
+             Cargo.lock \
+             -type f -not -path "*/target/*" -not -path "*/.git/*" -not -path "*/node_modules/*" -print0 2>/dev/null \
+            | sort -z \
+            | xargs -0 sha256sum 2>/dev/null \
+            | sha256sum \
+            | awk '{print $1}'
+    )
+}
+
+# If target binary does not exist or source code hash has changed, compile it first
 NEED_BUILD=0
+CURRENT_APP_HASH=""
 if [[ ! -x "$TARGET_BIN" ]]; then
     NEED_BUILD=1
-elif [[ -n "$(find "$REPO_DIR/crates" "$REPO_DIR/Cargo.toml" -newer "$TARGET_BIN" 2>/dev/null | head -n 1)" ]]; then
-    NEED_BUILD=1
+else
+    CURRENT_APP_HASH="$(compute_app_hash)"
+    if [[ -f "$APP_HASH_FILE" ]]; then
+        SAVED_APP_HASH="$(cat "$APP_HASH_FILE" 2>/dev/null || true)"
+        if [[ "$SAVED_APP_HASH" != "$CURRENT_APP_HASH" ]]; then
+            NEED_BUILD=1
+        fi
+    else
+        NEED_BUILD=1
+    fi
 fi
 
 # Execute build with an OS-level progress window (never use desktop notifications)
@@ -135,6 +163,11 @@ if [[ "$NEED_BUILD" == "1" ]] && command -v cargo >/dev/null 2>&1; then
     else
         build_with_os_progress "Telos Dev" "Compiling release game binary..." cargo build --release --bin telos
     fi
+    mkdir -p "$REPO_DIR/target"
+    if [[ -z "$CURRENT_APP_HASH" ]]; then
+        CURRENT_APP_HASH="$(compute_app_hash)"
+    fi
+    echo "$CURRENT_APP_HASH" > "$APP_HASH_FILE"
 fi
 
 # Immediately open the game

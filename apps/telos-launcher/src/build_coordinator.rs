@@ -4,6 +4,8 @@
 //! or launch the game client, preventing duplicate compilation while streaming real-time
 //! crate compilation progress.
 
+#![allow(dead_code)]
+
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -55,6 +57,46 @@ pub fn resolve_repo_dir() -> PathBuf {
     PathBuf::from("/home/usr/Projects/voxel")
 }
 
+/// Computes a deterministic SHA-256 hash of all source files for the Telos game app.
+#[must_use]
+pub fn compute_app_code_hash(repo_dir: &Path) -> Option<String> {
+    let script = r#"find apps/telos crates shaders Cargo.toml Cargo.lock -type f -not -path "*/target/*" -not -path "*/.git/*" -not -path "*/node_modules/*" -print0 2>/dev/null | sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | awk '{print $1}'"#;
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .current_dir(repo_dir)
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if hash.len() == 64 {
+            return Some(hash);
+        }
+    }
+    None
+}
+
+/// Computes a deterministic SHA-256 hash of all source files for the Telos launcher.
+#[must_use]
+pub fn compute_launcher_code_hash(repo_dir: &Path) -> Option<String> {
+    let script = r#"find apps/telos-launcher/src apps/telos-launcher/ui apps/telos-launcher/icons apps/telos-launcher/Cargo.toml apps/telos-launcher/tauri.conf.json apps/telos-launcher/build.rs Cargo.lock -type f -not -path "*/node_modules/*" -not -path "*/target/*" -not -path "*/.git/*" -print0 2>/dev/null | sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | awk '{print $1}'"#;
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .current_dir(repo_dir)
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if hash.len() == 64 {
+            return Some(hash);
+        }
+    }
+    None
+}
+
 /// Spawns the background build worker that coordinates locking and builds.
 pub fn start_build_worker(
     repo_dir: PathBuf,
@@ -70,6 +112,30 @@ pub fn start_build_worker(
             } else {
                 repo_dir.join("target/release/telos")
             };
+
+            let mode = if is_debug { "debug" } else { "release" };
+            let hash_file = repo_dir.join("target").join(format!(".telos-app-{mode}.codehash"));
+            let current_hash = compute_app_code_hash(&repo_dir);
+
+            // Fast path: if target binary already exists, verify if the code hash is unchanged.
+            // If the code hash hasn't changed, do not compile the app at all!
+            if target_bin.exists() {
+                if let Some(ref cur_hash) = current_hash {
+                    let mut up_to_date = false;
+                    if let Ok(saved_hash) = std::fs::read_to_string(&hash_file) {
+                        if saved_hash.trim() == cur_hash {
+                            up_to_date = true;
+                        }
+                    }
+
+                    if up_to_date {
+                        let _ = tx.send(BuildEvent::Success {
+                            already_built: true,
+                        });
+                        return;
+                    }
+                }
+            }
 
             let lock_dir = repo_dir.join("target");
             let _ = std::fs::create_dir_all(&lock_dir);
@@ -113,9 +179,17 @@ pub fn start_build_worker(
 
             // Lock is now held exclusively by this process!
             // 2. Multi-instance rule: If we waited for the lock, check if the other instance built it!
-            if waited_for_lock {
-                let bin_is_fresh =
-                    target_bin
+            if waited_for_lock && target_bin.exists() {
+                let mut fresh_or_matching = false;
+                if let (Some(cur_hash), Ok(saved_hash)) =
+                    (&current_hash, std::fs::read_to_string(&hash_file))
+                {
+                    if saved_hash.trim() == cur_hash {
+                        fresh_or_matching = true;
+                    }
+                }
+                if !fresh_or_matching {
+                    fresh_or_matching = target_bin
                         .metadata()
                         .and_then(|m| m.modified())
                         .map_or(false, |mtime| {
@@ -124,8 +198,9 @@ pub fn start_build_worker(
                                     .checked_sub(Duration::from_secs(5))
                                     .unwrap_or(start_time)
                         });
+                }
 
-                if bin_is_fresh && target_bin.exists() {
+                if fresh_or_matching {
                     let _ = rustix::fs::flock(&lock_file, rustix::fs::FlockOperation::Unlock);
                     let _ = tx.send(BuildEvent::Success {
                         already_built: true,
@@ -134,7 +209,7 @@ pub fn start_build_worker(
                 }
             }
 
-            // 3. We are the builder or binary is missing: execute `cargo build`
+            // 3. We are the builder or binary is missing/outdated: execute `cargo build`
             let _ = tx.send(BuildEvent::Status("Starting Cargo build...".into()));
 
             let mut cmd = Command::new("cargo");
@@ -209,6 +284,10 @@ pub fn start_build_worker(
 
             match status {
                 Ok(exit) if exit.success() => {
+                    if let Some(ref cur_hash) = current_hash {
+                        let _ = std::fs::create_dir_all(repo_dir.join("target"));
+                        let _ = std::fs::write(&hash_file, cur_hash);
+                    }
                     let _ = tx.send(BuildEvent::Success {
                         already_built: false,
                     });

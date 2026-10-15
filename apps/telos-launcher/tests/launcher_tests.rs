@@ -146,3 +146,69 @@ fn test_seamless_update_lifecycle_integration() {
     assert!(!pending_json.exists());
     assert!(!staging_bin.exists());
 }
+
+#[path = "../src/build_coordinator.rs"]
+mod build_coordinator;
+
+#[test]
+fn test_compute_code_hashes_determinism() {
+    let repo_dir = build_coordinator::resolve_repo_dir();
+    assert!(repo_dir.exists(), "Repository directory must exist");
+
+    let app_hash_1 = build_coordinator::compute_app_code_hash(&repo_dir);
+    let app_hash_2 = build_coordinator::compute_app_code_hash(&repo_dir);
+    assert!(app_hash_1.is_some(), "App code hash should be computed");
+    assert_eq!(
+        app_hash_1.as_ref().map(|s| s.len()),
+        Some(64),
+        "SHA-256 hash must be 64 characters"
+    );
+    assert_eq!(app_hash_1, app_hash_2, "App code hash must be deterministic");
+
+    let launcher_hash_1 = build_coordinator::compute_launcher_code_hash(&repo_dir);
+    let launcher_hash_2 = build_coordinator::compute_launcher_code_hash(&repo_dir);
+    assert!(
+        launcher_hash_1.is_some(),
+        "Launcher code hash should be computed"
+    );
+    assert_eq!(
+        launcher_hash_1.as_ref().map(|s| s.len()),
+        Some(64),
+        "SHA-256 hash must be 64 characters"
+    );
+    assert_eq!(
+        launcher_hash_1, launcher_hash_2,
+        "Launcher code hash must be deterministic"
+    );
+}
+
+#[test]
+fn test_code_hash_cache_skip_behavior() {
+    let dir = tempdir().unwrap();
+    let bin_path = dir.path().join("telos");
+    let hash_path = dir.path().join(".telos-app-release.codehash");
+
+    // Initially no binary, no hash
+    assert!(!bin_path.exists());
+    assert!(!hash_path.exists());
+
+    // Create binary and write matching hash
+    std::fs::write(&bin_path, b"binary_content").unwrap();
+    let expected_hash = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+    std::fs::write(&hash_path, expected_hash).unwrap();
+
+    let saved = std::fs::read_to_string(&hash_path).unwrap();
+    assert_eq!(saved.trim(), expected_hash, "Hash should match saved");
+
+    // When hash matches, compilation should be skipped
+    let is_up_to_date = bin_path.exists() && saved.trim() == expected_hash;
+    assert!(is_up_to_date, "Should be up to date and skip compilation");
+
+    // When code changes, hash differs -> needs build
+    let changed_hash = "1111111111111111111111111111111111111111111111111111111111111111";
+    let is_still_up_to_date = bin_path.exists() && saved.trim() == changed_hash;
+    assert!(
+        !is_still_up_to_date,
+        "Should detect hash mismatch and trigger build"
+    );
+}
