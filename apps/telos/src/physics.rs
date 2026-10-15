@@ -31,6 +31,11 @@ pub const FLY_SPRINT_SPEED: f32 = 35.0;
 pub const STEP_HEIGHT: f64 = 0.6;
 
 pub use telos_sim::capabilities::{GameMode, PlayerCapabilities};
+pub use telos_sim::physics::{
+    ForceAccumulator, ForceProvider, ForceProviderStandard, ForceProviderStandardState,
+    MovementStates, PhysicsBodyState, PhysicsBodyStateUpdaterSymplecticEuler, PhysicsConstants,
+    PhysicsFlags, PhysicsMath, PhysicsValues,
+};
 
 /// Axis-aligned bounding box in world space with double precision coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -149,6 +154,10 @@ pub struct PlayerPhysicsController {
     pub speed_multiplier: f32,
     /// Jump velocity bonus from active status effects.
     pub jump_boost: f32,
+    /// Active locomotion movement states (idle, walking, sprinting, crouching, sliding, mantling, etc.).
+    pub movement_states: MovementStates,
+    /// Physical values (mass, drag coefficient, friction, dimensions).
+    pub physics_values: PhysicsValues,
 }
 
 impl Default for PlayerPhysicsController {
@@ -178,6 +187,8 @@ impl PlayerPhysicsController {
             eye_height: EYE_HEIGHT,
             speed_multiplier: 1.0,
             jump_boost: 0.0,
+            movement_states: MovementStates::default(),
+            physics_values: PhysicsValues::player(),
         }
     }
 
@@ -329,7 +340,50 @@ impl PlayerPhysicsController {
             self.on_ground = false;
         } else {
             // Walking dynamics (Survival, Adventure)
-            if input.sneak && !self.flying {
+            // Low ceiling detection: check if overhead clearance is restricted
+            let head_box = Aabb::new(
+                DVec3::new(
+                    self.pos.x - self.width * 0.45,
+                    self.pos.y + SNEAK_HEIGHT,
+                    self.pos.z - self.width * 0.45,
+                ),
+                DVec3::new(
+                    self.pos.x + self.width * 0.45,
+                    self.pos.y + PLAYER_HEIGHT,
+                    self.pos.z + self.width * 0.45,
+                ),
+            );
+            let mut head_colliders = Vec::new();
+            let min_bx = head_box.min.x.floor() as i32;
+            let max_bx = head_box.max.x.floor() as i32;
+            let min_by = head_box.min.y.floor() as i32;
+            let max_by = head_box.max.y.floor() as i32;
+            let min_bz = head_box.min.z.floor() as i32;
+            let max_bz = head_box.max.z.floor() as i32;
+            for bx in min_bx..=max_bx {
+                for by in min_by..=max_by {
+                    for bz in min_bz..=max_bz {
+                        get_colliders(bx, by, bz, &mut head_colliders);
+                    }
+                }
+            }
+            let low_ceiling = head_colliders.iter().any(|c| c.intersects(&head_box));
+
+            self.movement_states.update(
+                self.vel.as_dvec3(),
+                self.on_ground,
+                self.flying,
+                false,
+                input.forward,
+                input.backward,
+                input.left,
+                input.right,
+                input.sprint,
+                input.sneak,
+                low_ceiling,
+            );
+
+            if self.movement_states.crouching && !self.flying {
                 self.height = SNEAK_HEIGHT;
                 self.eye_height = SNEAK_EYE_HEIGHT;
             } else {
@@ -337,9 +391,11 @@ impl PlayerPhysicsController {
                 self.eye_height = EYE_HEIGHT;
             }
 
-            let base_speed = if input.sprint {
+            let base_speed = if self.movement_states.sliding {
+                SPRINT_SPEED * 1.15
+            } else if input.sprint {
                 SPRINT_SPEED
-            } else if input.sneak {
+            } else if self.movement_states.crouching {
                 SNEAK_SPEED
             } else {
                 self.capabilities.walk_speed
@@ -350,8 +406,9 @@ impl PlayerPhysicsController {
             let accel = if self.on_ground { 18.0 * dt } else { 6.0 * dt };
 
             if wish_dir == Vec3::ZERO {
-                // Canonical voxel friction: 0.546 on ground (0.6 * 0.91), 0.91 in air per tick (20 ticks/sec)
-                let drag = if self.on_ground {
+                let drag = if self.movement_states.sliding {
+                    0.96f32.powf(dt * 20.0)
+                } else if self.on_ground {
                     0.546f32.powf(dt * 20.0)
                 } else {
                     0.91f32.powf(dt * 20.0)

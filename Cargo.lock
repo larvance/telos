@@ -6277,6 +6277,7 @@ name = "telos"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "bytemuck",
  "clap",
  "glam",
@@ -6285,6 +6286,9 @@ dependencies = [
  "image",
  "mimalloc",
  "raw-window-handle",
+ "ring",
+ "serde",
+ "serde_json",
  "telos-assets",
  "telos-audio",
  "telos-content",
@@ -6300,6 +6304,7 @@ dependencies = [
  "telos-ui",
  "telos-voxel",
  "telos-worldgen",
+ "tempfile",
  "tracing",
  "winit",
 ]

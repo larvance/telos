@@ -8,13 +8,13 @@ use crate::quad::UiQuad;
 use crate::scale::snap_to_physical;
 
 fn default_group_name() -> String {
-    "Custom Servers".to_string()
+    String::new()
 }
 
 /// A collapsible group organizing server entries.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ServerGroup {
-    /// Group display name (e.g. "Favorites", "Custom Servers", "LAN Worlds").
+    /// Group display name (e.g. "Favorites", "Custom Servers", "LAN Servers").
     pub name: String,
     /// Whether this group is collapsed in the UI.
     pub collapsed: bool,
@@ -66,9 +66,9 @@ impl ServerEntry {
     ) -> Self {
         let is_lan_val = is_lan;
         let group = if is_lan_val {
-            "LAN Worlds".to_string()
+            "LAN Servers".to_string()
         } else {
-            "Custom Servers".to_string()
+            String::new()
         };
         Self {
             name: name.into(),
@@ -191,7 +191,7 @@ impl Default for ServerListScreen {
 }
 
 impl ServerListScreen {
-    /// Creates a new empty `ServerListScreen` with default groups.
+    /// Creates a new empty `ServerListScreen` with default empty groups.
     #[must_use]
     pub fn new() -> Self {
         let direct_input = MenuTextInput::new(
@@ -207,17 +207,11 @@ impl ServerListScreen {
         let add_address_input =
             MenuTextInput::new(22, 0.0, 0.0, 300.0, 24.0, "Server Address (host:port)");
         let add_group_input =
-            MenuTextInput::new(23, 0.0, 0.0, 300.0, 24.0, "Group Name (e.g. Favorites)");
-
-        let groups = vec![
-            ServerGroup::new("Favorites", false),
-            ServerGroup::new("Custom Servers", false),
-            ServerGroup::new("LAN Worlds", false),
-        ];
+            MenuTextInput::new(23, 0.0, 0.0, 300.0, 24.0, "Group Name (optional)");
 
         Self {
             servers: Vec::new(),
-            groups,
+            groups: Vec::new(),
             selected_index: None,
             direct_connect_address: String::new(),
             direct_connect_focused: false,
@@ -247,22 +241,32 @@ impl ServerListScreen {
         let mut items = Vec::new();
         let mut cur_y = list_top - self.scroll_offset;
 
-        // Ensure all servers have a group represented in groups
+        // 1. Groupless non-LAN servers (rendered directly without group headers)
+        for (s_idx, s) in self.servers.iter().enumerate() {
+            if !s.is_lan && s.group.trim().is_empty() {
+                items.push(ServerListItem::ServerCard {
+                    server_idx: s_idx,
+                    y: cur_y,
+                    height: card_h,
+                });
+                cur_y += card_h + spacing;
+            }
+        }
+
+        // 2. Custom groups that have servers
         for (g_idx, group) in self.groups.iter().enumerate() {
+            if group.name == "LAN Servers" || group.name == "LAN Worlds" {
+                continue;
+            }
             let matching_servers: Vec<usize> = self
                 .servers
                 .iter()
                 .enumerate()
-                .filter(|(_, s)| s.group == group.name)
+                .filter(|(_, s)| !s.is_lan && s.group == group.name)
                 .map(|(i, _)| i)
                 .collect();
 
-            // Always display groups that have servers, or default groups
-            if !matching_servers.is_empty()
-                || group.name == "Favorites"
-                || group.name == "Custom Servers"
-                || (group.name == "LAN Worlds" && self.servers.iter().any(|s| s.is_lan))
-            {
+            if !matching_servers.is_empty() {
                 items.push(ServerListItem::GroupHeader {
                     group_idx: g_idx,
                     name: group.name.clone(),
@@ -286,33 +290,62 @@ impl ServerListScreen {
             }
         }
 
-        // Servers that don't match any known group
+        // 3. Any custom servers with an unknown group name
         let known_group_names: Vec<&str> = self.groups.iter().map(|g| g.name.as_str()).collect();
         let orphan_servers: Vec<usize> = self
             .servers
             .iter()
             .enumerate()
-            .filter(|(_, s)| !known_group_names.contains(&s.group.as_str()))
+            .filter(|(_, s)| {
+                !s.is_lan
+                    && !s.group.trim().is_empty()
+                    && !known_group_names.contains(&s.group.as_str())
+            })
             .map(|(i, _)| i)
             .collect();
 
-        if !orphan_servers.is_empty() {
+        for s_idx in orphan_servers {
+            items.push(ServerListItem::ServerCard {
+                server_idx: s_idx,
+                y: cur_y,
+                height: card_h,
+            });
+            cur_y += card_h + spacing;
+        }
+
+        // 4. LAN Servers at the bottom
+        let lan_servers: Vec<usize> = self
+            .servers
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.is_lan)
+            .map(|(i, _)| i)
+            .collect();
+
+        if !lan_servers.is_empty() {
+            let lan_group_idx = self.groups.iter().position(|g| g.name == "LAN Servers");
+            let collapsed = lan_group_idx.map_or(false, |idx| self.groups[idx].collapsed);
+            let g_idx = lan_group_idx.unwrap_or(usize::MAX);
+
             items.push(ServerListItem::GroupHeader {
-                group_idx: usize::MAX,
-                name: "Other Servers".to_string(),
-                collapsed: false,
-                count: orphan_servers.len(),
+                group_idx: g_idx,
+                name: "LAN Servers".to_string(),
+                collapsed,
+                count: lan_servers.len(),
                 y: cur_y,
                 height: header_h,
             });
             cur_y += header_h + spacing;
-            for s_idx in orphan_servers {
-                items.push(ServerListItem::ServerCard {
-                    server_idx: s_idx,
-                    y: cur_y,
-                    height: card_h,
-                });
-                cur_y += card_h + spacing;
+
+            if !collapsed {
+                for s_idx in lan_servers {
+                    items.push(ServerListItem::ServerCard {
+                        server_idx: s_idx,
+                        y: cur_y,
+                        height: card_h,
+                    });
+                    cur_y += card_h + spacing;
+                }
             }
         }
 
@@ -535,12 +568,9 @@ impl ServerListScreen {
                                 if name.is_empty() {
                                     name = "Voxel Server".to_string();
                                 }
-                                let mut group = self.add_group_input.text.trim().to_string();
-                                if group.is_empty() {
-                                    group = "Custom Servers".to_string();
-                                }
+                                let group = self.add_group_input.text.trim().to_string();
 
-                                if !self.groups.iter().any(|g| g.name == group) {
+                                if !group.is_empty() && !self.groups.iter().any(|g| g.name == group) {
                                     self.groups.push(ServerGroup::new(&group, false));
                                 }
 
@@ -588,6 +618,9 @@ impl ServerListScreen {
                             if let Some(group) = self.groups.get_mut(group_idx) {
                                 group.collapsed = !group.collapsed;
                                 return Some(ServerListAction::ServersModified);
+                            } else if group_idx == usize::MAX {
+                                self.groups.push(ServerGroup::new("LAN Servers", true));
+                                return Some(ServerListAction::ServersModified);
                             }
                             break;
                         }
@@ -631,8 +664,8 @@ impl ServerListScreen {
                         self.add_name_input.focused = true;
                         self.add_address_input.text.clear();
                         self.add_address_input.cursor_pos = 0;
-                        self.add_group_input.text = "Custom Servers".to_string();
-                        self.add_group_input.cursor_pos = self.add_group_input.text.len();
+                        self.add_group_input.text.clear();
+                        self.add_group_input.cursor_pos = 0;
                     }
                     4 => {
                         return Some(ServerListAction::Cancel);
@@ -691,12 +724,9 @@ impl ServerListScreen {
                 if name.is_empty() {
                     name = "Voxel Server".to_string();
                 }
-                let mut group = self.add_group_input.text.trim().to_string();
-                if group.is_empty() {
-                    group = "Custom Servers".to_string();
-                }
+                let group = self.add_group_input.text.trim().to_string();
 
-                if !self.groups.iter().any(|g| g.name == group) {
+                if !group.is_empty() && !self.groups.iter().any(|g| g.name == group) {
                     self.groups.push(ServerGroup::new(&group, false));
                 }
 
@@ -723,13 +753,13 @@ impl ServerListScreen {
             existing.ping_ms = entry.ping_ms;
         } else {
             let mut new_entry = entry;
-            new_entry.group = "LAN Worlds".to_string();
-            if !self.groups.iter().any(|g| g.name == "LAN Worlds") {
-                self.groups.push(ServerGroup::new("LAN Worlds", false));
+            new_entry.group = "LAN Servers".to_string();
+            if !self.groups.iter().any(|g| g.name == "LAN Servers") {
+                self.groups.push(ServerGroup::new("LAN Servers", false));
             }
             self.servers.push(new_entry);
             if self.selected_index.is_none() {
-                self.selected_index = Some(0);
+                self.selected_index = Some(self.servers.len() - 1);
             }
         }
     }

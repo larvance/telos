@@ -27,6 +27,7 @@ pub mod logic;
 pub mod movement;
 pub mod nav;
 pub mod particle;
+pub mod physics;
 pub mod portal;
 pub mod potion;
 pub mod prediction;
@@ -136,6 +137,11 @@ pub use nav::{
     is_passable, is_solid_ground, is_walkable_node, octile_heuristic, update_mob_navigation_paths,
 };
 pub use particle::{Particle, ParticleGpu, ParticleKind, ParticleSystem};
+pub use physics::{
+    ForceAccumulator, ForceProvider, ForceProviderStandard, ForceProviderStandardState,
+    MovementStates, PhysicsBodyState, PhysicsBodyStateUpdaterSymplecticEuler, PhysicsConstants,
+    PhysicsFlags, PhysicsMath, PhysicsValues,
+};
 pub use portal::{
     FrameBlockKind, OVERWORLD_TO_NETHER_RATIO, PortalAxis, PortalFrame, detect_portal_frame,
     find_contiguous_portal_blocks, generate_portal_structure_blocks, nether_to_overworld_coords,

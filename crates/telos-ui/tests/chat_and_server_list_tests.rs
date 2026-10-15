@@ -225,10 +225,14 @@ fn test_server_list_direct_connect_actions() {
 
 #[test]
 fn test_server_groups_collapsible() {
-    use telos_ui::server_list::ServerListItem;
+    use telos_ui::server_list::{ServerGroup, ServerListItem};
 
     let font = BitmapFont::new_fallback(0);
     let mut screen = ServerListScreen::new();
+    screen.groups = vec![
+        ServerGroup::new("Favorites", false),
+        ServerGroup::new("Custom Servers", false),
+    ];
 
     screen.servers.push(
         ServerEntry::new("Fav 1", "fav1.telos.io", "Favorite 1", 10, 50, false)
@@ -415,3 +419,61 @@ fn test_menu_button_hover_animation() {
     assert_eq!(quads[0].kind(), QuadKind::NineSlice);
     assert_eq!(quads[0].uv[2], layers.button);
 }
+
+#[test]
+fn test_default_empty_server_list_and_groupless_servers() {
+    use telos_ui::server_list::ServerListItem;
+
+    // 1. By default, groups is completely empty and servers is empty
+    let screen = ServerListScreen::new();
+    assert!(screen.groups.is_empty(), "Groups must be empty by default");
+    assert!(screen.servers.is_empty(), "Servers must be empty by default");
+    let layout = screen.compute_list_layout(32.0);
+    assert!(layout.is_empty(), "Layout must be empty when no servers exist");
+
+    // 2. Add first server with no group -> groupless
+    let mut screen = ServerListScreen::new();
+    screen.servers.push(ServerEntry::new(
+        "Groupless Server",
+        "1.2.3.4:25565",
+        "A cool server",
+        0,
+        10,
+        false,
+    ));
+    assert_eq!(screen.servers[0].group, "");
+
+    let layout = screen.compute_list_layout(32.0);
+    assert_eq!(layout.len(), 1);
+    assert!(
+        matches!(layout[0], ServerListItem::ServerCard { server_idx: 0, .. }),
+        "Groupless server should be rendered directly as a ServerCard without GroupHeader"
+    );
+
+    // 3. Add a LAN server -> appears at the bottom under 'LAN Servers'
+    screen.add_or_update_lan_server(ServerEntry::new(
+        "Local LAN World",
+        "192.168.1.100:25565",
+        "Singleplayer LAN",
+        1,
+        8,
+        true,
+    ));
+
+    let layout2 = screen.compute_list_layout(32.0);
+    // Should have:
+    // [0] ServerCard (Groupless)
+    // [1] GroupHeader ("LAN Servers")
+    // [2] ServerCard (LAN)
+    assert_eq!(layout2.len(), 3);
+    assert!(matches!(layout2[0], ServerListItem::ServerCard { server_idx: 0, .. }));
+    match &layout2[1] {
+        ServerListItem::GroupHeader { name, count, .. } => {
+            assert_eq!(name, "LAN Servers");
+            assert_eq!(*count, 1);
+        }
+        _ => panic!("Expected LAN Servers GroupHeader at index 1"),
+    }
+    assert!(matches!(layout2[2], ServerListItem::ServerCard { server_idx: 1, .. }));
+}
+

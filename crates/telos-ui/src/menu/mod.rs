@@ -3,6 +3,7 @@
 pub mod advancements_screen;
 pub mod main_menu;
 pub mod modal_form;
+pub mod open_to_lan;
 pub mod pause_menu;
 pub mod settings_screen;
 pub mod widgets;
@@ -14,6 +15,7 @@ pub use advancements_screen::{
 };
 pub use main_menu::{MainMenuAction, MainMenuScreen};
 pub use modal_form::{CustomWidgetState, ModalFormAction, ModalFormScreen};
+pub use open_to_lan::{OpenToLanAction, OpenToLanScreen};
 pub use pause_menu::{PauseMenuAction, PauseMenuScreen};
 pub use settings_screen::{SettingsScreen, SettingsTab};
 pub use widgets::{ButtonStyle, MenuButton, MenuSlider, MenuTextInput};

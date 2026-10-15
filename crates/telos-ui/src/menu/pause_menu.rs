@@ -16,6 +16,8 @@ pub enum PauseMenuAction {
     Options,
     /// Open singleplayer game to LAN / P2P invite.
     OpenToLan,
+    /// Copy active invite link to clipboard.
+    CopyInviteLink,
     /// Save and cleanly quit to title.
     SaveAndQuit,
 }
@@ -27,6 +29,8 @@ pub struct PauseMenuScreen {
     pub buttons: Vec<MenuButton>,
     /// Screen title text.
     pub title: String,
+    /// Active LAN port if world is opened to LAN, dynamically changing button 5 to Copy Invite Link.
+    pub lan_opened_port: Option<u16>,
 }
 
 impl Default for PauseMenuScreen {
@@ -42,6 +46,7 @@ impl PauseMenuScreen {
         Self {
             buttons: Vec::new(),
             title: "Game Paused".to_string(),
+            lan_opened_port: None,
         }
     }
 
@@ -59,6 +64,12 @@ impl PauseMenuScreen {
         let start_y = height_gui * 0.28;
 
         self.title = catalog.translate("menu.game").to_string();
+
+        let lan_label = if let Some(port) = self.lan_opened_port {
+            format!("Copy Invite Link (Port {port})")
+        } else {
+            catalog.translate("menu.shareToLan").to_string()
+        };
 
         self.buttons = vec![
             MenuButton::new(
@@ -85,14 +96,7 @@ impl PauseMenuScreen {
                 btn_h,
                 catalog.translate("menu.options"),
             ),
-            MenuButton::new(
-                5,
-                btn_x,
-                start_y + 96.0,
-                btn_w,
-                btn_h,
-                catalog.translate("menu.shareToLan"),
-            ),
+            MenuButton::new(5, btn_x, start_y + 96.0, btn_w, btn_h, lan_label),
             MenuButton::new(
                 3,
                 btn_x,
@@ -127,7 +131,13 @@ impl PauseMenuScreen {
                     2 => Some(PauseMenuAction::Options),
                     3 => Some(PauseMenuAction::SaveAndQuit),
                     4 => Some(PauseMenuAction::Advancements),
-                    5 => Some(PauseMenuAction::OpenToLan),
+                    5 => {
+                        if self.lan_opened_port.is_some() {
+                            Some(PauseMenuAction::CopyInviteLink)
+                        } else {
+                            Some(PauseMenuAction::OpenToLan)
+                        }
+                    }
                     _ => None,
                 };
             }

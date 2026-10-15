@@ -55,9 +55,9 @@ use telos_sim::{
 };
 use telos_ui::menu::{
     AdvancementsScreen, MainMenuAction, MainMenuScreen, ModalFormAction, ModalFormScreen,
-    PauseMenuAction, PauseMenuScreen, SettingsScreen, SettingsTab, UiAdvancementCategory,
-    UiAdvancementFrame, UiAdvancementNode, WorldCreateAction, WorldCreateWizard, WorldSelectAction,
-    WorldSelectScreen, record_world_opened,
+    OpenToLanAction, OpenToLanScreen, PauseMenuAction, PauseMenuScreen, SettingsScreen,
+    SettingsTab, UiAdvancementCategory, UiAdvancementFrame, UiAdvancementNode, WorldCreateAction,
+    WorldCreateWizard, WorldSelectAction, WorldSelectScreen, record_world_opened,
 };
 use telos_ui::settings::GameSettings;
 use telos_ui::{
@@ -113,6 +113,70 @@ pub struct ClientContainerState {
     /// Container properties (e.g. furnace burn/cook timers).
     pub properties: [i16; 4],
 }
+
+/// Persistent LAN configuration stored inside a world directory (`lan_config.json`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WorldLanConfig {
+    /// Port number (1024 - 65535).
+    pub port: u16,
+    /// LAN password (20 cryptographically random characters by default).
+    pub password: String,
+    /// Whether this world automatically opens to LAN on world load.
+    pub auto_open: bool,
+}
+
+/// Command sent to singleplayer server thread to attach a network listener.
+pub struct LanOpenCommand {
+    /// The bound QUIC listener.
+    pub listener: telos_net::QuicListener,
+    /// Whether the session is password-protected.
+    pub has_password: bool,
+}
+
+/// Generates a 20-character cryptographically random password for LAN sessions.
+pub fn generate_random_lan_password() -> String {
+    use ring::rand::SecureRandom;
+    let rng = ring::rand::SystemRandom::new();
+    let mut bytes = [0u8; 20];
+    if rng.fill(&mut bytes).is_ok() {
+        const CHARSET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        bytes
+            .iter()
+            .map(|&b| CHARSET[(b as usize) % CHARSET.len()] as char)
+            .collect()
+    } else {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(123456789, |d| d.as_nanos());
+        format!("{nanos:020x}")[..20].to_string()
+    }
+}
+
+/// Copies text to system clipboard via standard desktop utilities (Wayland/X11).
+pub fn copy_to_system_clipboard(text: &str) {
+    let tools = [
+        ("wl-copy", &[][..]),
+        ("xclip", &["-selection", "clipboard"][..]),
+        ("xsel", &["--clipboard", "--input"][..]),
+    ];
+    for (cmd, args) in tools {
+        if let Ok(mut child) = std::process::Command::new(cmd)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            let _ = child.wait();
+            return;
+        }
+    }
+}
+
 use telos_core::ident::Identifier;
 use telos_voxel::chunk::{Chunk, ChunkSnapshot};
 use telos_voxel::coords::LocalIdx;
@@ -1586,8 +1650,10 @@ struct App {
     settings_screen: SettingsScreen,
     pause_menu: PauseMenuScreen,
     is_paused: bool,
+    open_to_lan_screen: Option<OpenToLanScreen>,
+    world_lan_config: Option<WorldLanConfig>,
     server_list: ServerListScreen,
-    server_listener_tx: Option<std::sync::mpsc::Sender<telos_net::QuicListener>>,
+    server_listener_tx: Option<std::sync::mpsc::Sender<LanOpenCommand>>,
     lan_opened_port: Option<u16>,
     last_invite_link: Option<String>,
     advancements_screen: AdvancementsScreen,
@@ -2159,6 +2225,8 @@ impl App {
             settings_screen,
             pause_menu,
             is_paused: false,
+            open_to_lan_screen: None,
+            world_lan_config: None,
             server_list,
             server_listener_tx: None,
             lan_opened_port: None,
@@ -2248,7 +2316,7 @@ impl App {
             vertical_view_distance: self.game_settings.video.vertical_view_distance,
             simulation_distance: self.game_settings.video.simulation_distance,
             chunks_per_tick_per_player: 16,
-            save_directory: Some(world_dir),
+            save_directory: Some(world_dir.clone()),
             worlds: vec![world_cfg],
             enforce_tofu: false,
             ..Default::default()
@@ -2258,10 +2326,35 @@ impl App {
         let server_conn: Box<dyn Connection<S2cMessage, C2sMessage>> = Box::new(server_conn);
         self.client_conn = Box::new(client_conn);
 
-        let (listener_tx, listener_rx) = std::sync::mpsc::channel::<telos_net::QuicListener>();
+        let cfg_path = world_dir.join("lan_config.json");
+        let lan_config: WorldLanConfig = if cfg_path.is_file() {
+            std::fs::read_to_string(&cfg_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_else(|| WorldLanConfig {
+                    port: 25565,
+                    password: generate_random_lan_password(),
+                    auto_open: false,
+                })
+        } else {
+            let cfg = WorldLanConfig {
+                port: 25565,
+                password: generate_random_lan_password(),
+                auto_open: false,
+            };
+            if let Ok(json) = serde_json::to_string_pretty(&cfg) {
+                let _ = std::fs::write(&cfg_path, json);
+            }
+            cfg
+        };
+        self.world_lan_config = Some(lan_config.clone());
+
+        let (listener_tx, listener_rx) = std::sync::mpsc::channel::<LanOpenCommand>();
         self.server_listener_tx = Some(listener_tx);
         self.lan_opened_port = None;
         self.last_invite_link = None;
+        self.open_to_lan_screen = None;
+        self.pause_menu.lan_opened_port = None;
 
         let server_running = Arc::new(AtomicBool::new(true));
         self.server_running = server_running.clone();
@@ -2283,13 +2376,16 @@ impl App {
 
                     let mut timestep = FixedTimestep::new(20);
                     while running_clone.load(Ordering::Relaxed) {
-                        if let Ok(listener) = listener_rx.try_recv() {
-                            let port = listener.local_addr().port();
-                            let beacon = telos_net::LanBeacon::new(port, &server.config().motd);
+                        if let Ok(cmd) = listener_rx.try_recv() {
+                            let port = cmd.listener.local_addr().port();
+                            let mut beacon = telos_net::LanBeacon::new(port, &server.config().motd);
+                            if cmd.has_password {
+                                beacon.flags |= telos_net::lan::flags::HAS_PASSWORD;
+                            }
                             server.lan_emitter =
                                 telos_net::LanBeaconEmitter::spawn(beacon, port).ok();
-                            server.listener = Some(listener);
-                            info!(port, "Server opened to LAN & P2P with active QUIC listener");
+                            server.listener = Some(cmd.listener);
+                            info!(port, has_password = cmd.has_password, "Server opened to LAN & P2P with active QUIC listener");
                         }
                         timestep.advance(|_| {
                             server.tick();
@@ -2338,6 +2434,11 @@ impl App {
         self.camera.position = self.physics.eye_pos();
         self.client_phase = ConnectionPhase::Hello;
         self.is_paused = false;
+
+        if lan_config.auto_open {
+            self.open_singleplayer_to_lan(lan_config.port, lan_config.password, true);
+        }
+
         info!(seed, generator, "Started singleplayer server session");
     }
 
@@ -2363,6 +2464,9 @@ impl App {
         self.server_listener_tx = None;
         self.lan_opened_port = None;
         self.last_invite_link = None;
+        self.open_to_lan_screen = None;
+        self.world_lan_config = None;
+        self.pause_menu.lan_opened_port = None;
         self.client_phase = ConnectionPhase::Hello;
         self.physics.waiting_for_chunks = false;
         info!("Stopped singleplayer server session");
@@ -2442,45 +2546,61 @@ impl App {
         }
     }
 
-    fn open_singleplayer_to_lan_and_invite(&mut self) {
-        if let Some(link) = &self.last_invite_link {
-            info!(link, "Invite link already generated");
-            let toast = ToastState {
-                id: "lan".to_string(),
-                title: "Invite Link Ready in Chat".to_string(),
-                icon_item: 0,
-                frame: 1,
-                elapsed_secs: 0.0,
-                duration_secs: 5.0,
-            };
-            self.hud_state.active_toast = Some(toast);
-            let now_secs = self.start_time.elapsed().as_secs_f64();
-            self.chat_state.add_system_message(
-                format!("Invite link: {link}"),
-                UiQuad::rgba(85, 255, 85, 255),
-                now_secs,
-            );
-            return;
+    fn open_singleplayer_to_lan(&mut self, port: u16, password: String, auto_open: bool) {
+        // Persist LAN config in world directory
+        let lan_cfg = WorldLanConfig {
+            port,
+            password: password.clone(),
+            auto_open,
+        };
+        if let Some(world_dir) = &self.current_world_dir {
+            let cfg_path = world_dir.join("lan_config.json");
+            if let Ok(json) = serde_json::to_string_pretty(&lan_cfg) {
+                let _ = std::fs::write(cfg_path, json);
+            }
         }
+        self.world_lan_config = Some(lan_cfg);
 
         let Some(listener_tx) = &self.server_listener_tx else {
             warn!("Cannot open to LAN: server listener channel unavailable");
             return;
         };
 
-        // Attempt standard port 25565 first, fallback to ephemeral port 0
-        let listener = telos_net::QuicListener::bind("0.0.0.0:25565".parse().unwrap())
+        // If listener is already bound on the same port, reuse existing invite link
+        if self.lan_opened_port == Some(port) && self.last_invite_link.is_some() {
+            let link = self.last_invite_link.as_ref().unwrap();
+            copy_to_system_clipboard(link);
+            let toast = ToastState {
+                id: "lan".to_string(),
+                title: format!("Invite link copied to clipboard! (Port {port})"),
+                icon_item: 0,
+                frame: 1,
+                elapsed_secs: 0.0,
+                duration_secs: 5.0,
+            };
+            self.hud_state.active_toast = Some(toast);
+            return;
+        }
+
+        // Attempt user-specified port first, fallback to ephemeral port 0
+        let listener = telos_net::QuicListener::bind(format!("0.0.0.0:{port}").parse().unwrap())
             .or_else(|_| telos_net::QuicListener::bind("0.0.0.0:0".parse().unwrap()));
 
         let Ok(listener) = listener else {
-            warn!("Failed to bind QUIC listener on 0.0.0.0");
+            warn!(port, "Failed to bind QUIC listener on 0.0.0.0");
             return;
         };
 
         let bound_port = listener.local_addr().port();
         let cert_spki = listener.cert_spki_sha256();
-        let _ = listener_tx.send(listener);
+        let has_pwd = !password.is_empty();
+        let _ = listener_tx.send(LanOpenCommand {
+            listener,
+            has_password: has_pwd,
+        });
+
         self.lan_opened_port = Some(bound_port);
+        self.pause_menu.lan_opened_port = Some(bound_port);
 
         // Port mapper discovery (UPnP, NAT-PMP, STUN)
         let rt = telos_net::quic::runtime();
@@ -2497,11 +2617,17 @@ impl App {
             0x08, 0x09, 0x0a, 0x0b,
         ];
 
+        let mut session_secret = [0u8; 16];
+        if !password.is_empty() {
+            let hash = blake3::hash(password.as_bytes());
+            session_secret.copy_from_slice(&hash.as_bytes()[..16]);
+        }
+
         let ticket = telos_net::ticket::ConnectionTicket::create(
             "Telos LAN Game",
             &mapping,
             cert_spki,
-            [0u8; 16],
+            session_secret,
             86400,
             &signing_key,
         );
@@ -2511,23 +2637,18 @@ impl App {
             .unwrap_or_else(|_| format!("127.0.0.1:{bound_port}"));
         self.last_invite_link = Some(link.clone());
 
-        info!(bound_port, link, "Opened game session to LAN and P2P");
+        copy_to_system_clipboard(&link);
+
+        info!(bound_port, "Opened game session to LAN and copied invite link to clipboard");
         let toast = ToastState {
             id: "lan".to_string(),
-            title: format!("Opened on Port {bound_port}! Link in Chat"),
+            title: format!("Opened on Port {bound_port}! Link copied to clipboard"),
             icon_item: 0,
             frame: 1,
             elapsed_secs: 0.0,
             duration_secs: 5.0,
         };
         self.hud_state.active_toast = Some(toast);
-
-        let now_secs = self.start_time.elapsed().as_secs_f64();
-        self.chat_state.add_system_message(
-            format!("Game opened on port {bound_port}! Invite Link: {link}"),
-            UiQuad::rgba(85, 255, 85, 255),
-            now_secs,
-        );
     }
 
     fn set_cursor_captured(&self, captured: bool) {
@@ -7355,6 +7476,16 @@ impl App {
                                 gui_scale,
                                 &mut ui_quads,
                             );
+                            if let Some(ref mut lan_screen) = self.open_to_lan_screen {
+                                lan_screen.update_layout(width_gui, height_gui);
+                                lan_screen.render(
+                                    font,
+                                    width_gui,
+                                    height_gui,
+                                    gui_scale,
+                                    &mut ui_quads,
+                                );
+                            }
                         } else {
                             render_hud_styled(
                                 &self.hud_state,
@@ -8002,6 +8133,10 @@ impl App {
                         .update_layout_i18n(width_gui, height_gui, &self.catalog);
                     self.pause_menu
                         .render(font, width_gui, height_gui, gui_scale, &mut ui_quads);
+                    if let Some(ref mut lan_screen) = self.open_to_lan_screen {
+                        lan_screen.update_layout(width_gui, height_gui);
+                        lan_screen.render(font, width_gui, height_gui, gui_scale, &mut ui_quads);
+                    }
                 } else {
                     render_hud_styled(
                         &self.hud_state,
@@ -10383,7 +10518,11 @@ impl ApplicationHandler for App {
                     }
                     AppScreen::InGame => {
                         if self.is_paused {
-                            self.pause_menu.handle_mouse_move(mx, my);
+                            if let Some(ref mut lan_screen) = self.open_to_lan_screen {
+                                lan_screen.handle_mouse_move(mx, my);
+                            } else {
+                                self.pause_menu.handle_mouse_move(mx, my);
+                            }
                         } else if self.advancements_open {
                             let width_gui = win_size.width as f32 / gui_scale as f32;
                             let height_gui = win_size.height as f32 / gui_scale as f32;
@@ -10477,10 +10616,16 @@ impl ApplicationHandler for App {
                     }
                     AppScreen::InGame => {
                         if self.is_paused {
-                            self.pause_menu
-                                .buttons
-                                .iter()
-                                .any(|b| b.hovered && b.enabled)
+                            if let Some(ref lan_screen) = self.open_to_lan_screen {
+                                lan_screen.buttons.iter().any(|b| b.hovered && b.enabled)
+                                    || lan_screen.port_input.hovered
+                                    || lan_screen.password_input.hovered
+                            } else {
+                                self.pause_menu
+                                    .buttons
+                                    .iter()
+                                    .any(|b| b.hovered && b.enabled)
+                            }
                         } else if self.advancements_open {
                             self.advancements_screen.hovered_node.is_some()
                         } else if self.container_state.is_some() {
@@ -10775,42 +10920,86 @@ impl ApplicationHandler for App {
                     }
                     AppScreen::InGame => {
                         if self.is_paused {
-                            if button == MouseButton::Left
-                                && let Some(action) = self.pause_menu.handle_mouse_click(mx, my)
-                            {
-                                match action {
-                                    PauseMenuAction::Resume => {
-                                        self.is_paused = false;
-                                        self.controller.mouse_captured = true;
-                                        self.set_cursor_captured(true);
+                            if button == MouseButton::Left {
+                                if let Some(ref mut lan_screen) = self.open_to_lan_screen {
+                                    if let Some(action) = lan_screen.handle_mouse_click(mx, my) {
+                                        match action {
+                                            OpenToLanAction::GenerateRandomPassword => {
+                                                let new_pwd = generate_random_lan_password();
+                                                lan_screen.set_password(&new_pwd);
+                                            }
+                                            OpenToLanAction::Cancel => {
+                                                self.open_to_lan_screen = None;
+                                            }
+                                            OpenToLanAction::StartLan {
+                                                port,
+                                                password,
+                                                auto_open,
+                                            } => {
+                                                self.open_singleplayer_to_lan(port, password, auto_open);
+                                                self.open_to_lan_screen = None;
+                                            }
+                                        }
                                     }
-                                    PauseMenuAction::Advancements => {
-                                        self.is_paused = false;
-                                        self.advancements_open = true;
-                                        self.controller.mouse_captured = false;
-                                        self.set_cursor_captured(false);
-                                    }
-                                    PauseMenuAction::Options => {
-                                        self.settings_screen =
-                                            SettingsScreen::new(self.game_settings.clone());
-                                        self.settings_screen.update_layout_i18n(
-                                            width_gui,
-                                            height_gui,
-                                            &self.catalog,
-                                        );
-                                        self.current_screen = AppScreen::Settings {
-                                            return_to_pause: true,
-                                        };
-                                    }
-                                    PauseMenuAction::OpenToLan => {
-                                        self.open_singleplayer_to_lan_and_invite();
-                                    }
-                                    PauseMenuAction::SaveAndQuit => {
-                                        self.stop_singleplayer_server();
-                                        self.is_paused = false;
-                                        self.advancements_open = false;
-                                        self.current_screen = AppScreen::MainMenu;
-                                        self.set_cursor_captured(false);
+                                    return;
+                                }
+
+                                if let Some(action) = self.pause_menu.handle_mouse_click(mx, my) {
+                                    match action {
+                                        PauseMenuAction::Resume => {
+                                            self.is_paused = false;
+                                            self.controller.mouse_captured = true;
+                                            self.set_cursor_captured(true);
+                                        }
+                                        PauseMenuAction::Advancements => {
+                                            self.is_paused = false;
+                                            self.advancements_open = true;
+                                            self.controller.mouse_captured = false;
+                                            self.set_cursor_captured(false);
+                                        }
+                                        PauseMenuAction::Options => {
+                                            self.settings_screen =
+                                                SettingsScreen::new(self.game_settings.clone());
+                                            self.settings_screen.update_layout_i18n(
+                                                width_gui,
+                                                height_gui,
+                                                &self.catalog,
+                                            );
+                                            self.current_screen = AppScreen::Settings {
+                                                return_to_pause: true,
+                                            };
+                                        }
+                                        PauseMenuAction::OpenToLan => {
+                                            let (port, password, auto_open) = if let Some(cfg) = &self.world_lan_config {
+                                                (cfg.port, cfg.password.clone(), cfg.auto_open)
+                                            } else {
+                                                (25565, generate_random_lan_password(), false)
+                                            };
+                                            let mut lan_screen = OpenToLanScreen::new(port, &password, auto_open);
+                                            lan_screen.update_layout(width_gui, height_gui);
+                                            self.open_to_lan_screen = Some(lan_screen);
+                                        }
+                                        PauseMenuAction::CopyInviteLink => {
+                                            if let Some(link) = &self.last_invite_link {
+                                                copy_to_system_clipboard(link);
+                                                let toast = ToastState {
+                                                    id: "lan_copy".to_string(),
+                                                    title: "Invite Link Copied to Clipboard!".to_string(),
+                                                    icon_item: 0,
+                                                    frame: 1,
+                                                    elapsed_secs: 0.0,
+                                                    duration_secs: 4.0,
+                                                };
+                                                self.hud_state.active_toast = Some(toast);
+                                            }
+                                        }
+                                        PauseMenuAction::SaveAndQuit => {
+                                            self.stop_singleplayer_server();
+                                            self.is_paused = false;
+                                            self.advancements_open = false;
+                                            self.current_screen = AppScreen::MainMenu;
+                                            self.set_cursor_captured(false);
+                                        }
                                     }
                                 }
                             }
@@ -11275,6 +11464,42 @@ impl ApplicationHandler for App {
                 }
 
                 if self.is_paused {
+                    if let Some(ref mut lan_screen) = self.open_to_lan_screen {
+                        if pressed {
+                            match code {
+                                KeyCode::Escape => {
+                                    self.open_to_lan_screen = None;
+                                }
+                                KeyCode::Enter => {
+                                    if let Some(action) = lan_screen.handle_enter() {
+                                        if let OpenToLanAction::StartLan {
+                                            port,
+                                            password,
+                                            auto_open,
+                                        } = action
+                                        {
+                                            self.open_singleplayer_to_lan(port, password, auto_open);
+                                            self.open_to_lan_screen = None;
+                                        }
+                                    }
+                                }
+                                KeyCode::Backspace => {
+                                    lan_screen.handle_backspace();
+                                }
+                                _ => {
+                                    if let Some(txt) = text {
+                                        for ch in txt.chars() {
+                                            if !ch.is_control() {
+                                                lan_screen.handle_char(ch);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return;
+                    }
+
                     if pressed && code == KeyCode::Escape {
                         self.is_paused = false;
                         self.controller.mouse_captured = true;
@@ -14464,4 +14689,42 @@ mod tests {
             "Flash ({amb_flash}) should be far brighter than dark night ambient ({amb_night})"
         );
     }
+
+    #[test]
+    fn test_lan_password_generation_and_uniqueness() {
+        use super::generate_random_lan_password;
+        let p1 = generate_random_lan_password();
+        let p2 = generate_random_lan_password();
+        assert_eq!(p1.len(), 20, "Password must be exactly 20 characters");
+        assert_eq!(p2.len(), 20, "Password must be exactly 20 characters");
+        assert_ne!(p1, p2, "Generated passwords must be unique");
+        assert!(
+            p1.chars().all(|c| c.is_ascii_alphanumeric()),
+            "Password must contain alphanumeric characters: {p1}"
+        );
+    }
+
+    #[test]
+    fn test_world_lan_config_serde_and_file_persistence() {
+        use super::WorldLanConfig;
+        let tmp = tempfile::tempdir().expect("Failed to create tempdir");
+        let cfg_path = tmp.path().join("lan_config.json");
+
+        let cfg = WorldLanConfig {
+            port: 45678,
+            password: "SecureLanPassword123".to_string(),
+            auto_open: true,
+        };
+
+        let json = serde_json::to_string_pretty(&cfg).expect("Serialize config");
+        std::fs::write(&cfg_path, &json).expect("Write config");
+
+        let loaded_str = std::fs::read_to_string(&cfg_path).expect("Read config");
+        let loaded: WorldLanConfig = serde_json::from_str(&loaded_str).expect("Deserialize config");
+
+        assert_eq!(loaded.port, 45678);
+        assert_eq!(loaded.password, "SecureLanPassword123");
+        assert!(loaded.auto_open);
+    }
 }
+
