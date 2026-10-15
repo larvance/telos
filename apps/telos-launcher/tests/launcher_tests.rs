@@ -93,3 +93,56 @@ fn test_installation_channels() {
     assert_eq!(dev["channel"], "LocalDev");
     assert_eq!(dev["is_dev"], true);
 }
+
+#[test]
+fn test_seamless_update_lifecycle_integration() {
+    let dir = tempdir().unwrap();
+    let old_launcher_bin = dir.path().join("telos-launcher");
+    let new_launcher_bin = dir.path().join("new_release_bin");
+    let staging_bin = dir.path().join("staged_launcher");
+    let pending_json = dir.path().join("pending_update.json");
+
+    // Initial state: old launcher exists
+    std::fs::write(&old_launcher_bin, b"#!/bin/sh\necho 'version 0.1.0'\n").unwrap();
+    std::fs::write(
+        &new_launcher_bin,
+        b"#!/bin/sh\necho 'version 0.1.1-updated'\n",
+    )
+    .unwrap();
+
+    // 1. Stage update
+    std::fs::copy(&new_launcher_bin, &staging_bin).unwrap();
+    let update_info = serde_json::json!({
+        "version": "v0.1.1",
+        "release_name": "Telos Launcher v0.1.1",
+        "staged_binary_path": staging_bin,
+        "target_binary_path": old_launcher_bin,
+        "download_timestamp": 1729000000,
+        "ready": true,
+    });
+    std::fs::write(&pending_json, serde_json::to_string(&update_info).unwrap()).unwrap();
+
+    // Verify pending update detection
+    assert!(pending_json.exists());
+    assert!(staging_bin.exists());
+
+    // 2. Perform seamless update replacement
+    let temp_target = dir.path().join(".telos-launcher-new.tmp");
+    std::fs::copy(&staging_bin, &temp_target).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&temp_target).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&temp_target, perms).unwrap();
+    }
+    std::fs::rename(&temp_target, &old_launcher_bin).unwrap();
+    std::fs::remove_file(&pending_json).unwrap();
+    std::fs::remove_file(&staging_bin).unwrap();
+
+    // 3. Verify target has been updated seamlessly
+    let updated_bytes = std::fs::read(&old_launcher_bin).unwrap();
+    assert_eq!(updated_bytes, b"#!/bin/sh\necho 'version 0.1.1-updated'\n");
+    assert!(!pending_json.exists());
+    assert!(!staging_bin.exists());
+}

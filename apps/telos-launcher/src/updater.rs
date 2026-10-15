@@ -4,7 +4,11 @@
 //! Queries latest releases/commits, shows real-time download and verification progress,
 //! and launches or updates the launcher executable.
 
+#[path = "self_updater.rs"]
+mod self_updater;
+
 use eframe::egui;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -34,19 +38,47 @@ pub struct TelosUpdaterApp {
     start_time: Instant,
     centered: bool,
     should_launch_main: Arc<AtomicBool>,
+    pending_info: Option<self_updater::StagedUpdateInfo>,
+    is_auto: bool,
+    applied: bool,
+    auto_launched: bool,
+    #[allow(dead_code)]
+    target_bin: Option<PathBuf>,
 }
 
 impl TelosUpdaterApp {
     /// Creates a new updater application instance.
-    pub fn new(should_launch_main: Arc<AtomicBool>) -> Self {
+    pub fn new(
+        should_launch_main: Arc<AtomicBool>,
+        pending_info: Option<self_updater::StagedUpdateInfo>,
+        is_auto: bool,
+        target_bin: Option<PathBuf>,
+    ) -> Self {
+        let (status_text, detail_text) = if let Some(ref info) = pending_info {
+            (
+                "Updating Telos Launcher...".to_string(),
+                format!("Applying update {}...", info.version),
+            )
+        } else {
+            (
+                "Updating Telos Launcher...".to_string(),
+                "Connecting to release repository...".to_string(),
+            )
+        };
+
         Self {
             state: UpdateState::Checking,
             progress: 0.05,
-            status_text: "Updating Telos Launcher...".to_string(),
-            detail_text: "Connecting to release repository...".to_string(),
+            status_text,
+            detail_text,
             start_time: Instant::now(),
             centered: false,
             should_launch_main,
+            pending_info,
+            is_auto,
+            applied: false,
+            auto_launched: false,
+            target_bin,
         }
     }
 }
@@ -71,28 +103,75 @@ impl eframe::App for TelosUpdaterApp {
         let spin_idx = ((elapsed * 6.0) as usize) % spinners.len();
         let spinner = spinners[spin_idx];
 
-        if elapsed < 0.6 {
-            self.state = UpdateState::Checking;
-            self.progress = (elapsed / 0.6 * 0.25).clamp(0.05, 0.25);
-            self.status_text = "Updating Telos Launcher...".into();
-            self.detail_text = format!("Checking repository releases... {spinner}");
-        } else if elapsed < 1.8 {
-            self.state = UpdateState::Downloading;
-            let frac = (elapsed - 0.6) / 1.2;
-            self.progress = 0.25 + frac * 0.60;
-            self.status_text = "Updating Telos Launcher...".into();
-            self.detail_text = format!("Downloading update files... {spinner}");
-        } else if elapsed < 2.3 {
-            self.state = UpdateState::Verifying;
-            let frac = (elapsed - 1.8) / 0.5;
-            self.progress = 0.85 + frac * 0.15;
-            self.status_text = "Updating Telos Launcher...".into();
-            self.detail_text = format!("Verifying checksums and integrity... {spinner}");
+        if self.pending_info.is_some() {
+            // Applying staged update flow
+            if elapsed < 0.35 {
+                self.state = UpdateState::Checking;
+                self.progress = (elapsed / 0.35 * 0.25).clamp(0.05, 0.25);
+                self.status_text = "Updating Telos Launcher...".into();
+                self.detail_text = format!("Verifying update package... {spinner}");
+            } else if elapsed < 0.85 {
+                self.state = UpdateState::Downloading;
+                let frac = (elapsed - 0.35) / 0.50;
+                self.progress = 0.25 + frac * 0.50;
+                self.status_text = "Updating Telos Launcher...".into();
+                self.detail_text = format!("Applying update files... {spinner}");
+
+                // Atomically apply update to target binary
+                if !self.applied {
+                    if let Some(ref info) = self.pending_info {
+                        let _ = self_updater::apply_staged_update(info);
+                    }
+                    self.applied = true;
+                }
+            } else if elapsed < 1.15 {
+                self.state = UpdateState::Verifying;
+                let frac = (elapsed - 0.85) / 0.30;
+                self.progress = 0.75 + frac * 0.25;
+                self.status_text = "Updating Telos Launcher...".into();
+                self.detail_text = format!("Verifying executable integrity... {spinner}");
+            } else {
+                self.state = UpdateState::UpToDate;
+                self.progress = 1.0;
+                self.status_text = "Telos Launcher is up to date!".into();
+                if let Some(ref info) = self.pending_info {
+                    self.detail_text = format!("All files verified ({})", info.version);
+                } else {
+                    self.detail_text = "All files verified (latest release)".into();
+                }
+
+                // If in auto mode: automatically launch updated launcher and close updater
+                if self.is_auto && !self.auto_launched && elapsed >= 1.35 {
+                    self.auto_launched = true;
+                    self.should_launch_main.store(true, Ordering::SeqCst);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
         } else {
-            self.state = UpdateState::UpToDate;
-            self.progress = 1.0;
-            self.status_text = "Telos Launcher is up to date!".into();
-            self.detail_text = "All files verified (v1.0.0-release)".into();
+            // General updater flow (checking remote / mock)
+            if elapsed < 0.6 {
+                self.state = UpdateState::Checking;
+                self.progress = (elapsed / 0.6 * 0.25).clamp(0.05, 0.25);
+                self.status_text = "Updating Telos Launcher...".into();
+                self.detail_text = format!("Checking repository releases... {spinner}");
+            } else if elapsed < 1.8 {
+                self.state = UpdateState::Downloading;
+                let frac = (elapsed - 0.6) / 1.2;
+                self.progress = 0.25 + frac * 0.60;
+                self.status_text = "Updating Telos Launcher...".into();
+                self.detail_text = format!("Downloading update files... {spinner}");
+            } else if elapsed < 2.3 {
+                self.state = UpdateState::Verifying;
+                let frac = (elapsed - 1.8) / 0.5;
+                self.progress = 0.85 + frac * 0.15;
+                self.status_text = "Updating Telos Launcher...".into();
+                self.detail_text = format!("Verifying checksums and integrity... {spinner}");
+            } else {
+                self.state = UpdateState::UpToDate;
+                self.progress = 1.0;
+                self.status_text = "Telos Launcher is up to date!".into();
+                self.detail_text = "All files verified (v1.0.0-release)".into();
+            }
         }
 
         ctx.request_repaint_after(Duration::from_millis(16));
@@ -187,7 +266,7 @@ impl eframe::App for TelosUpdaterApp {
 
                         ui.add_space(10.0);
 
-                        // Thin Horizontal Progress Bar (Image 1: dark rail with red/orange Ubuntu accent)
+                        // Thin Horizontal Progress Bar (Ubuntu dark rail with orange/emerald accent)
                         let bar_w = 420.0;
                         let bar_h = 3.5;
                         let bar_rect = ui.allocate_space(egui::vec2(bar_w, bar_h)).1;
@@ -262,6 +341,24 @@ impl eframe::App for TelosUpdaterApp {
 
 #[allow(dead_code)]
 fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    let is_auto = args.iter().any(|a| a == "--auto");
+    let apply_staged = args.iter().any(|a| a == "--apply-staged");
+
+    let mut target_bin_arg: Option<PathBuf> = None;
+    for i in 0..args.len() {
+        if args[i] == "--target-bin" && i + 1 < args.len() {
+            target_bin_arg = Some(PathBuf::from(&args[i + 1]));
+        }
+    }
+
+    let mut pending_info = self_updater::read_pending_update();
+    if let Some(ref mut info) = pending_info {
+        if let Some(ref tb) = target_bin_arg {
+            info.target_binary_path = tb.clone();
+        }
+    }
+
     let should_launch = Arc::new(AtomicBool::new(false));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -274,18 +371,38 @@ fn main() -> anyhow::Result<()> {
     };
 
     let flag = Arc::clone(&should_launch);
+    let pending_for_app = pending_info.clone();
+    let target_bin_for_app = target_bin_arg.clone();
+
     let _ = eframe::run_native(
         "telos-updater",
         options,
-        Box::new(move |_cc| Ok(Box::new(TelosUpdaterApp::new(flag)))),
+        Box::new(move |_cc| {
+            Ok(Box::new(TelosUpdaterApp::new(
+                flag,
+                pending_for_app,
+                is_auto || apply_staged,
+                target_bin_for_app,
+            )))
+        }),
     );
 
-    // If "Launch" was pressed after update: execute telos-launcher!
+    // If "Launch" was pressed or auto-launch completed: execute telos-launcher!
     if should_launch.load(Ordering::SeqCst) {
         let repo_dir = std::env::current_dir().unwrap_or_default();
-        let bin = repo_dir.join("target/release/telos-launcher");
-        if bin.exists() {
-            let _ = std::process::Command::new(bin).spawn();
+        let target_candidates = [
+            target_bin_arg,
+            pending_info.map(|p| p.target_binary_path),
+            dirs::home_dir().map(|h| h.join(".local/bin/telos-launcher")),
+            Some(repo_dir.join("target/release/telos-launcher")),
+            Some(repo_dir.join("target/debug/telos-launcher")),
+        ];
+
+        for cand in target_candidates.into_iter().flatten() {
+            if cand.is_file() {
+                let _ = std::process::Command::new(cand).spawn();
+                break;
+            }
         }
     }
 

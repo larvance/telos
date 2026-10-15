@@ -200,6 +200,32 @@ pub fn get_local_git_commits(repo_dir: &Path, count: usize) -> Vec<PatchNoteEntr
     notes
 }
 
+/// Returns the path to the cached remote versions file: `~/.telos/versions_cache.json`.
+pub fn get_remote_versions_cache_path() -> PathBuf {
+    get_telos_base_dir().join("versions_cache.json")
+}
+
+/// Retrieves cached remote version info immediately from disk or local git without blocking on network queries.
+pub fn get_cached_remote_versions(repo_dir: &Path) -> RemoteVersionInfo {
+    let cache_file = get_remote_versions_cache_path();
+    if let Ok(data) = std::fs::read_to_string(&cache_file) {
+        if let Ok(info) = serde_json::from_str::<RemoteVersionInfo>(&data) {
+            return info;
+        }
+    }
+
+    let mut info = RemoteVersionInfo::default();
+    if let Some(hash) = get_local_git_hash(repo_dir) {
+        info.latest_commit_hash = hash;
+    }
+    let local_commits = get_local_git_commits(repo_dir, 5);
+    if !local_commits.is_empty() {
+        info.latest_commit_msg = local_commits[0].title.clone();
+        info.patch_notes = local_commits;
+    }
+    info
+}
+
 /// Fetches remote repository version info via GitHub API using curl or local fallback.
 pub fn fetch_remote_versions(repo_dir: &Path) -> RemoteVersionInfo {
     let mut info = RemoteVersionInfo::default();
@@ -244,6 +270,15 @@ pub fn fetch_remote_versions(repo_dir: &Path) -> RemoteVersionInfo {
                 }
             }
         }
+    }
+
+    // Persist to local cache for instant future launches
+    let cache_file = get_remote_versions_cache_path();
+    if let Some(parent) = cache_file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(data) = serde_json::to_string_pretty(&info) {
+        let _ = std::fs::write(&cache_file, data);
     }
 
     info

@@ -13,6 +13,7 @@
 
 mod build_coordinator;
 mod profile;
+mod self_updater;
 mod version_manager;
 
 use std::fs;
@@ -30,7 +31,8 @@ use build_coordinator::{BuildEvent, resolve_repo_dir, start_build_worker};
 use profile::{LauncherProfile, load_profile, save_profile as persist_profile};
 use version_manager::{
     ChannelKind, Installation, RemoteVersionInfo, ensure_version_cached, fetch_remote_versions,
-    get_telos_base_dir, load_or_init_installations, persist_installations,
+    get_cached_remote_versions, get_telos_base_dir, load_or_init_installations,
+    persist_installations,
 };
 
 /// Path to the single-instance UNIX domain socket.
@@ -207,7 +209,9 @@ pub struct AppState {
     /// Configured game installation profiles.
     pub installations: Mutex<Vec<Installation>>,
     /// Remote release information.
-    pub remote_versions: RemoteVersionInfo,
+    pub remote_versions: Mutex<RemoteVersionInfo>,
+    /// Real-time launcher self-update status.
+    pub updater_status: Mutex<self_updater::LauncherUpdateInfo>,
     /// Flag indicating if background build is in progress.
     pub is_building: Arc<AtomicBool>,
     /// Number of actively running game processes supervised by this launcher.
@@ -266,7 +270,7 @@ fn save_installations(
 
 #[tauri::command]
 fn get_remote_versions(state: State<'_, AppState>) -> RemoteVersionInfo {
-    state.remote_versions.clone()
+    state.remote_versions.lock().unwrap().clone()
 }
 
 #[tauri::command]
@@ -282,16 +286,41 @@ fn save_servers(state: State<'_, AppState>, servers: Vec<ServerEntry>) -> Result
 }
 
 #[tauri::command]
-fn check_updater_status(state: State<'_, AppState>) -> UpdaterInfo {
-    let current = "v0.1.0".to_string();
-    let latest = state.remote_versions.latest_release_tag.clone();
-    let update_available = current != latest;
-    UpdaterInfo {
-        current_version: current,
-        latest_version: latest,
-        update_available,
-        release_notes: state.remote_versions.latest_commit_msg.clone(),
+fn check_updater_status(state: State<'_, AppState>) -> self_updater::LauncherUpdateInfo {
+    state.updater_status.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn trigger_launcher_update_check(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<self_updater::LauncherUpdateInfo, String> {
+    let repo_dir = state.repo_dir.clone();
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        run_background_updater_task(app_handle, repo_dir);
+    });
+    Ok(state.updater_status.lock().unwrap().clone())
+}
+
+#[tauri::command]
+fn restart_and_apply_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let repo_dir = state.repo_dir.clone();
+    if let Some(pending) = self_updater::read_pending_update() {
+        let _ = fs::remove_file(&state.ipc_socket_path);
+        if let Some(updater_bin) = self_updater::find_updater_binary(&repo_dir) {
+            let _ = Command::new(updater_bin)
+                .args(["--apply-staged", "--auto"])
+                .spawn();
+            app.exit(0);
+            return Ok(());
+        }
+        self_updater::apply_staged_update(&pending)?;
+        let _ = Command::new(&pending.target_binary_path).spawn();
+        app.exit(0);
+        return Ok(());
     }
+    Err("No pending update ready to install".into())
 }
 
 #[tauri::command]
@@ -310,6 +339,113 @@ fn launch_updater(state: State<'_, AppState>) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+}
+
+/// Background worker checking and downloading launcher updates without blocking the UI.
+fn run_background_updater_task(app_handle: AppHandle, repo_dir: PathBuf) {
+    let current_ver = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let mut update_info = self_updater::check_for_launcher_update(&current_ver);
+
+    // Update AppState
+    if let Some(state) = app_handle.try_state::<AppState>() {
+        *state.updater_status.lock().unwrap() = update_info.clone();
+    }
+    let _ = app_handle.emit("launcher_update_status", &update_info);
+
+    // If an update is available and not yet staged, begin non-blocking background download
+    if update_info.update_available && !update_info.is_ready_to_install {
+        let target_bin = self_updater::determine_target_launcher_path(&repo_dir);
+
+        let api_url = std::env::var("TELOS_UPDATE_URL").unwrap_or_else(|_| {
+            "https://api.github.com/repos/larvance/telos/releases/latest".into()
+        });
+
+        let mut download_url = None;
+        if let Ok(output) = Command::new("curl")
+            .args([
+                "-s",
+                "--connect-timeout",
+                "4",
+                "-H",
+                "User-Agent: Telos-Launcher",
+                &api_url,
+            ])
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                    if let Some(assets) = val.get("assets").and_then(|a| a.as_array()) {
+                        for asset in assets {
+                            if let Some(name) = asset.get("name").and_then(|n| n.as_str()) {
+                                if name.contains("telos-launcher")
+                                    && (name.contains("linux")
+                                        || name.contains("x86_64")
+                                        || !name.contains('.'))
+                                {
+                                    if let Some(url) =
+                                        asset.get("browser_download_url").and_then(|u| u.as_str())
+                                    {
+                                        download_url = Some(url.to_string());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(url) = download_url {
+            update_info.is_downloading = true;
+            update_info.download_progress = 10;
+            if let Some(state) = app_handle.try_state::<AppState>() {
+                *state.updater_status.lock().unwrap() = update_info.clone();
+            }
+            let _ = app_handle.emit("launcher_update_status", &update_info);
+
+            let app_progress = app_handle.clone();
+            let res = self_updater::download_and_stage_update(
+                &url,
+                &update_info.latest_version,
+                &update_info.release_name,
+                &target_bin,
+                move |pct| {
+                    if let Some(state) = app_progress.try_state::<AppState>() {
+                        let mut st = state.updater_status.lock().unwrap();
+                        st.download_progress = pct;
+                        let _ = app_progress.emit("launcher_update_status", &*st);
+                    }
+                },
+            );
+
+            match res {
+                Ok(staged) => {
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        let mut st = state.updater_status.lock().unwrap();
+                        st.is_downloading = false;
+                        st.is_ready_to_install = true;
+                        st.download_progress = 100;
+                        st.release_notes = format!(
+                            "Update {} downloaded! It will install seamlessly on next launch.",
+                            staged.version
+                        );
+                        let _ = app_handle.emit("launcher_update_status", &*st);
+                        let _ = app_handle.emit("launcher_update_ready", &staged);
+                    }
+                }
+                Err(e) => {
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        let mut st = state.updater_status.lock().unwrap();
+                        st.is_downloading = false;
+                        st.download_progress = 0;
+                        st.release_notes = format!("Background update download failed: {e}");
+                        let _ = app_handle.emit("launcher_update_status", &*st);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -924,22 +1060,56 @@ fn main() {
     let _ = fs::remove_file(&sock_path);
 
     let repo_dir = resolve_repo_dir();
-    sync_desktop_integration(&repo_dir);
 
+    // 2. CHECK FOR PENDING STAGED UPDATE IMMEDIATELY
+    // When a background update was downloaded previously, start updating immediately upon entering the launcher!
+    if let Some(pending) = self_updater::read_pending_update() {
+        println!(
+            "Staged launcher update {} found. Starting update immediately...",
+            pending.version
+        );
+        let _ = fs::remove_file(&sock_path);
+
+        if let Some(updater_bin) = self_updater::find_updater_binary(&repo_dir) {
+            let mut cmd = Command::new(&updater_bin);
+            cmd.args(["--apply-staged", "--auto"]);
+            if cmd.spawn().is_ok() {
+                std::process::exit(0);
+            }
+        }
+
+        // Direct in-place fallback if telos-updater is not available
+        if self_updater::apply_staged_update(&pending).is_ok() {
+            let _ = Command::new(&pending.target_binary_path)
+                .args(std::env::args().skip(1))
+                .spawn();
+            std::process::exit(0);
+        }
+    }
+
+    // 3. FAST-PATH STARTUP (Window opens immediately with zero blocking network lag)
     let profile = load_profile();
-    let remote_versions = fetch_remote_versions(&repo_dir);
+    let remote_versions = get_cached_remote_versions(&repo_dir);
     let installations = load_or_init_installations(&repo_dir, &remote_versions);
     let servers = load_servers();
+
+    let current_ver = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let initial_updater_status = if self_updater::has_pending_update() {
+        self_updater::check_for_launcher_update(&current_ver)
+    } else {
+        self_updater::LauncherUpdateInfo::default()
+    };
 
     let running_instances = Arc::new(AtomicUsize::new(0));
     let is_window_open = Arc::new(AtomicBool::new(true));
 
     let app_state = AppState {
-        repo_dir,
+        repo_dir: repo_dir.clone(),
         profile: Mutex::new(profile),
         servers: Mutex::new(servers),
         installations: Mutex::new(installations),
-        remote_versions,
+        remote_versions: Mutex::new(remote_versions),
+        updater_status: Mutex::new(initial_updater_status),
         is_building: Arc::new(AtomicBool::new(false)),
         running_instances: running_instances.clone(),
         is_window_open: is_window_open.clone(),
@@ -951,6 +1121,7 @@ fn main() {
     let is_window_open_close = is_window_open.clone();
     let ipc_socket_path_close = sock_path.clone();
     let is_window_open_ipc = is_window_open.clone();
+    let repo_dir_for_bg = repo_dir.clone();
 
     tauri::Builder::default()
         .setup(move |app| {
@@ -984,6 +1155,18 @@ fn main() {
                 });
             }
 
+            // Spawn background workers for non-blocking desktop integration and background updates
+            let app_handle_for_bg = app.handle().clone();
+            std::thread::spawn(move || {
+                sync_desktop_integration(&repo_dir_for_bg);
+                let remote = fetch_remote_versions(&repo_dir_for_bg);
+                if let Some(state) = app_handle_for_bg.try_state::<AppState>() {
+                    *state.remote_versions.lock().unwrap() = remote.clone();
+                    let _ = app_handle_for_bg.emit("remote_versions_updated", &remote);
+                }
+                run_background_updater_task(app_handle_for_bg, repo_dir_for_bg);
+            });
+
             Ok(())
         })
         .on_window_event(move |window, event| {
@@ -1011,6 +1194,8 @@ fn main() {
             get_servers,
             save_servers,
             check_updater_status,
+            trigger_launcher_update_check,
+            restart_and_apply_update,
             launch_updater,
             trigger_launch,
             window_minimize,

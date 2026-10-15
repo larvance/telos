@@ -2001,36 +2001,68 @@
   const elUpdaterModal = document.getElementById('updater-modal');
   const elCloseUpdater = document.getElementById('btn-close-updater');
   const elCancelUpdater = document.getElementById('btn-cancel-updater');
+  const elApplyUpdater = document.getElementById('btn-apply-updater');
   const elUpdaterMessage = document.getElementById('updater-message');
   const elUpdaterProgress = document.getElementById('updater-progress-fill');
   const elUpdaterStep = document.getElementById('updater-step-text');
   const elUpdaterPercent = document.getElementById('updater-percent-text');
+
+  function updateUpdaterUI(info) {
+    if (!info) return;
+
+    if (info.is_ready_to_install) {
+      elUpdaterProgress.style.width = '100%';
+      elUpdaterPercent.textContent = '100%';
+      elUpdaterStep.textContent = 'Update downloaded and ready to install!';
+      elUpdaterMessage.textContent = `A new version (${info.latest_version}) has been downloaded in the background. It will automatically install the next time you enter the launcher, or you can restart now.`;
+      if (elApplyUpdater) elApplyUpdater.classList.remove('hidden');
+    } else if (info.is_downloading) {
+      const pct = Math.max(10, Math.min(95, info.download_progress || 45));
+      elUpdaterProgress.style.width = `${pct}%`;
+      elUpdaterPercent.textContent = `${pct}%`;
+      elUpdaterStep.textContent = `Downloading update in background... (${pct}%)`;
+      elUpdaterMessage.textContent = `Downloading ${info.latest_version} in the background. You can continue using Telos.`;
+      if (elApplyUpdater) elApplyUpdater.classList.add('hidden');
+    } else if (info.update_available) {
+      elUpdaterProgress.style.width = '35%';
+      elUpdaterPercent.textContent = '35%';
+      elUpdaterStep.textContent = `New update available (${info.latest_version}) - downloading in background...`;
+      elUpdaterMessage.textContent = info.release_notes || 'A new update is available and is downloading in the background.';
+      if (elApplyUpdater) elApplyUpdater.classList.add('hidden');
+    } else {
+      elUpdaterProgress.style.width = '100%';
+      elUpdaterPercent.textContent = '100%';
+      elUpdaterStep.textContent = 'Telos Launcher is up to date!';
+      elUpdaterMessage.textContent = info.release_notes || `All launcher components are up to date (${info.current_version}).`;
+      if (elApplyUpdater) elApplyUpdater.classList.add('hidden');
+    }
+  }
 
   elBtnCheckUpdates.addEventListener('click', async () => {
     elUpdaterModal.classList.add('active');
     elUpdaterProgress.style.width = '20%';
     elUpdaterPercent.textContent = '20%';
     elUpdaterStep.textContent = 'Checking repository release tags...';
+    if (elApplyUpdater) elApplyUpdater.classList.add('hidden');
 
     try {
       const info = await invoke('check_updater_status');
-      setTimeout(() => {
-        elUpdaterProgress.style.width = '75%';
-        elUpdaterPercent.textContent = '75%';
-        elUpdaterStep.textContent = 'Validating local commit against origin...';
-      }, 700);
-
-      setTimeout(() => {
-        elUpdaterProgress.style.width = '100%';
-        elUpdaterPercent.textContent = '100%';
-        elUpdaterStep.textContent = 'All components are up to date!';
-        elUpdaterMessage.textContent =
-          info && info.release_notes ? info.release_notes : 'Telos Launcher is running the latest build.';
-      }, 1500);
+      updateUpdaterUI(info);
+      await invoke('trigger_launcher_update_check');
     } catch (err) {
       elUpdaterStep.textContent = 'Update check complete.';
     }
   });
+
+  if (elApplyUpdater) {
+    elApplyUpdater.addEventListener('click', async () => {
+      try {
+        await invoke('restart_and_apply_update');
+      } catch (err) {
+        console.error('Failed to restart and apply update:', err);
+      }
+    });
+  }
 
   const closeUpdaterModal = () => elUpdaterModal.classList.remove('active');
   elCloseUpdater.addEventListener('click', closeUpdaterModal);
@@ -2399,10 +2431,32 @@
     }
   }
 
+  async function listenLauncherUpdateEvents() {
+    if (isTauri && window.__TAURI__.event && window.__TAURI__.event.listen) {
+      await window.__TAURI__.event.listen('launcher_update_status', (event) => {
+        if (event.payload) {
+          updateUpdaterUI(event.payload);
+        }
+      });
+      await window.__TAURI__.event.listen('launcher_update_ready', (event) => {
+        if (event.payload) {
+          updateUpdaterUI({
+            is_ready_to_install: true,
+            is_downloading: false,
+            download_progress: 100,
+            latest_version: event.payload.version,
+            release_notes: 'Update downloaded. Will install seamlessly on next launch.',
+          });
+        }
+      });
+    }
+  }
+
   // --- Initial Boot Sequence ---
   async function init() {
     try {
       listenGameLifecycleEvents();
+      listenLauncherUpdateEvents();
       CustomDropdown.initAll();
       appProfile = await invoke('get_profile');
       appInstallations = await invoke('get_installations');
