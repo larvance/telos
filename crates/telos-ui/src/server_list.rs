@@ -571,7 +571,8 @@ impl ServerListScreen {
                                 }
                                 let group = self.add_group_input.text.trim().to_string();
 
-                                if !group.is_empty() && !self.groups.iter().any(|g| g.name == group) {
+                                if !group.is_empty() && !self.groups.iter().any(|g| g.name == group)
+                                {
                                     self.groups.push(ServerGroup::new(&group, false));
                                 }
 

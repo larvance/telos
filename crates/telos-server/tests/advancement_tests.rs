@@ -162,16 +162,16 @@ fn test_advancements_persistence_across_sessions() {
     // Force server save and flush
     let _ = server.save_and_flush();
 
-    // Verify advancement JSON file was persisted to disk
-    let adv_file = save_dir.join("advancements").join("PersistentPlayer.json");
+    // Verify advancement TOML file was persisted to disk
+    let adv_file = save_dir.join("advancements").join("PersistentPlayer.toml");
     assert!(
         adv_file.exists(),
-        "Expected PersistentPlayer.json to exist on disk"
+        "Expected PersistentPlayer.toml to exist on disk"
     );
-    let content = fs::read_to_string(&adv_file).expect("read advancement json");
+    let content = fs::read_to_string(&adv_file).expect("read advancement toml");
     assert!(
         content.contains("telos:story/mine_wood"),
-        "JSON should contain unlocked advancement"
+        "TOML should contain unlocked advancement"
     );
 
     // Drop first server

@@ -236,7 +236,12 @@ impl ForceProviderStandard {
 }
 
 impl ForceProvider for ForceProviderStandard {
-    fn update(&self, body_state: &PhysicsBodyState, accumulator: &mut ForceAccumulator, on_ground: bool) {
+    fn update(
+        &self,
+        body_state: &PhysicsBodyState,
+        accumulator: &mut ForceAccumulator,
+        on_ground: bool,
+    ) {
         let ext_force = self.state.external_force;
         let ext_force_y = ext_force.y;
 
@@ -496,7 +501,8 @@ mod tests {
 
     #[test]
     fn test_physics_body_state_initialization() {
-        let mut state = PhysicsBodyState::new(DVec3::new(10.0, 64.0, 20.0), DVec3::new(3.0, 4.0, 0.0));
+        let mut state =
+            PhysicsBodyState::new(DVec3::new(10.0, 64.0, 20.0), DVec3::new(3.0, 4.0, 0.0));
         assert!((state.speed() - 5.0).abs() < 1e-6);
 
         state.set_zero();
@@ -549,7 +555,8 @@ mod tests {
         let area_z = PhysicsMath::compute_projected_area(DVec3::new(0.0, 0.0, 5.0), 0.6, 1.8, 0.6);
         assert!((area_z - (0.6 * 1.8)).abs() < 1e-4);
 
-        let area_y = PhysicsMath::compute_projected_area(DVec3::new(0.0, -10.0, 0.0), 0.6, 1.8, 0.6);
+        let area_y =
+            PhysicsMath::compute_projected_area(DVec3::new(0.0, -10.0, 0.0), 0.6, 1.8, 0.6);
         assert!((area_y - (0.6 * 0.6)).abs() < 1e-4);
     }
 

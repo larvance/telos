@@ -33,7 +33,7 @@ pub struct SaveIdEntry {
     pub status: SaveIdStatus,
 }
 
-/// World-local registry mapping table persisted on disk (e.g. `world/registry.json`).
+/// World-local registry mapping table persisted on disk (e.g. `world/registry.toml`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct WorldRegistryMap {
     /// Sequential list of save ID entries (index == `save_id`).
@@ -52,19 +52,34 @@ impl WorldRegistryMap {
 
     /// Loads or initializes a `WorldRegistryMap` for a given world save directory.
     pub fn open_or_create(world_dir: &Path, registries: &FrozenRegistries) -> Result<Self> {
-        let registry_file = world_dir.join("registry.json");
-        let mut map = if registry_file.is_file() {
-            let content =
-                std::fs::read_to_string(&registry_file).map_err(|e| ContentError::Io {
-                    path: registry_file.clone(),
-                    source: e,
+        let toml_file = world_dir.join("registry.toml");
+        let json_file = world_dir.join("registry.json");
+        let mut map = if toml_file.is_file() {
+            let content = std::fs::read_to_string(&toml_file).map_err(|e| ContentError::Io {
+                path: toml_file.clone(),
+                source: e,
+            })?;
+            let mut parsed: Self =
+                toml::from_str(&content).map_err(|e| ContentError::DataParse {
+                    path: toml_file.clone(),
+                    reason: format!("TOML error: {e}"),
                 })?;
+            parsed.rebuild_index();
+            parsed
+        } else if json_file.is_file() {
+            let content = std::fs::read_to_string(&json_file).map_err(|e| ContentError::Io {
+                path: json_file.clone(),
+                source: e,
+            })?;
             let mut parsed: Self =
                 serde_json::from_str(&content).map_err(|e| ContentError::DataParse {
-                    path: registry_file.clone(),
+                    path: json_file.clone(),
                     reason: format!("JSON error: {e}"),
                 })?;
             parsed.rebuild_index();
+            // Automatically migrate to TOML and clean up legacy JSON
+            let _ = parsed.save_to_disk(&toml_file);
+            let _ = std::fs::remove_file(&json_file);
             parsed
         } else {
             Self::new()
@@ -101,8 +116,8 @@ impl WorldRegistryMap {
             }
         }
 
-        if added_new || !registry_file.is_file() {
-            map.save_to_disk(&registry_file)?;
+        if added_new || !toml_file.is_file() {
+            map.save_to_disk(&toml_file)?;
         }
 
         Ok(map)
@@ -117,7 +132,7 @@ impl WorldRegistryMap {
         }
     }
 
-    /// Saves the registry mapping table to disk as JSON.
+    /// Saves the registry mapping table to disk as TOML.
     pub fn save_to_disk(&self, path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| ContentError::Io {
@@ -126,12 +141,12 @@ impl WorldRegistryMap {
             })?;
         }
 
-        let json = serde_json::to_string_pretty(self).map_err(|e| ContentError::DataParse {
+        let toml_str = toml::to_string_pretty(self).map_err(|e| ContentError::DataParse {
             path: path.to_path_buf(),
-            reason: format!("JSON serialization error: {e}"),
+            reason: format!("TOML serialization error: {e}"),
         })?;
 
-        std::fs::write(path, json).map_err(|e| ContentError::Io {
+        std::fs::write(path, toml_str).map_err(|e| ContentError::Io {
             path: path.to_path_buf(),
             source: e,
         })?;

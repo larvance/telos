@@ -23,7 +23,6 @@ pub use mcmeta::{
 };
 pub use pack::ResourcePackStack;
 pub use skin::{
-    SkinFormat, default_classic_explorer_skin, default_hd_adventurer_skin,
-    default_slim_scout_skin, detect_skin_format, load_skin_image_from_png,
-    upgrade_legacy_skin_64x32_to_64x64,
+    SkinFormat, default_classic_explorer_skin, default_hd_adventurer_skin, default_slim_scout_skin,
+    detect_skin_format, load_skin_image_from_png, upgrade_legacy_skin_64x32_to_64x64,
 };

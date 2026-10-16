@@ -114,7 +114,9 @@ pub fn start_build_worker(
             };
 
             let mode = if is_debug { "debug" } else { "release" };
-            let hash_file = repo_dir.join("target").join(format!(".telos-app-{mode}.codehash"));
+            let hash_file = repo_dir
+                .join("target")
+                .join(format!(".telos-app-{mode}.codehash"));
             let current_hash = compute_app_code_hash(&repo_dir);
 
             // Fast path: if target binary already exists, verify if the code hash is unchanged.
@@ -189,15 +191,16 @@ pub fn start_build_worker(
                     }
                 }
                 if !fresh_or_matching {
-                    fresh_or_matching = target_bin
-                        .metadata()
-                        .and_then(|m| m.modified())
-                        .map_or(false, |mtime| {
-                            mtime
-                                >= start_time
-                                    .checked_sub(Duration::from_secs(5))
-                                    .unwrap_or(start_time)
-                        });
+                    fresh_or_matching =
+                        target_bin
+                            .metadata()
+                            .and_then(|m| m.modified())
+                            .map_or(false, |mtime| {
+                                mtime
+                                    >= start_time
+                                        .checked_sub(Duration::from_secs(5))
+                                        .unwrap_or(start_time)
+                            });
                 }
 
                 if fresh_or_matching {

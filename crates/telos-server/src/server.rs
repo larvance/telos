@@ -415,7 +415,7 @@ impl Server {
         }
 
         let usercache = if let Some(ref save_dir) = config.save_directory {
-            UserCache::load_from_path(&save_dir.join("usercache.json")).unwrap_or_default()
+            UserCache::load_from_path(&save_dir.join("usercache.toml")).unwrap_or_default()
         } else {
             UserCache::new()
         };
@@ -6061,7 +6061,9 @@ impl Server {
                         }
 
                         if let Some(surf_y) = landed_surface {
-                            if session.move_state.pos.y <= surf_y + 0.25 && session.move_state.vel.y <= 0.0 {
+                            if session.move_state.pos.y <= surf_y + 0.25
+                                && session.move_state.vel.y <= 0.0
+                            {
                                 session.move_state.pos.y = surf_y;
                                 session.move_state.vel.y = 0.0;
                                 session.move_state.on_ground = true;
@@ -6073,11 +6075,22 @@ impl Server {
                             let mut step_surface = None;
                             for bx in min_x..=max_x {
                                 for bz in min_z..=max_z {
-                                    let foot_state = world.get_loaded_block(BlockPos::new(bx, foot_by, bz));
+                                    let foot_state =
+                                        world.get_loaded_block(BlockPos::new(bx, foot_by, bz));
                                     if telos_sim::is_solid_ground(foot_state, reg) {
-                                        let head1 = world.get_loaded_block(BlockPos::new(bx, foot_by + 1, bz));
-                                        let head2 = world.get_loaded_block(BlockPos::new(bx, foot_by + 2, bz));
-                                        if !telos_sim::is_solid_ground(head1, reg) && !telos_sim::is_solid_ground(head2, reg) {
+                                        let head1 = world.get_loaded_block(BlockPos::new(
+                                            bx,
+                                            foot_by + 1,
+                                            bz,
+                                        ));
+                                        let head2 = world.get_loaded_block(BlockPos::new(
+                                            bx,
+                                            foot_by + 2,
+                                            bz,
+                                        ));
+                                        if !telos_sim::is_solid_ground(head1, reg)
+                                            && !telos_sim::is_solid_ground(head2, reg)
+                                        {
                                             step_surface = Some(f64::from(foot_by + 1));
                                             break;
                                         }
@@ -6205,11 +6218,7 @@ impl Server {
                                 .and_then(|eff| eff.amplifier(StatusEffectKind::Resistance))
                                 .map_or(0, |amp| amp + 1);
 
-                            let raw_dmg = if is_fire || is_on_magma {
-                                1.0
-                            } else {
-                                4.0
-                            };
+                            let raw_dmg = if is_fire || is_on_magma { 1.0 } else { 4.0 };
                             let mut query =
                                 self.ecs_world.query::<(&mut Health, &mut CombatTracker)>();
                             if let Ok((mut health, mut combat)) =
@@ -6713,9 +6722,13 @@ impl Server {
         {
             let mut candidates = Vec::new();
             {
-                let mut mob_attack_query = self
-                    .ecs_world
-                    .query::<(bevy_ecs::entity::Entity, &NetEntity, &Position, &Mob, &AttackCooldown)>();
+                let mut mob_attack_query = self.ecs_world.query::<(
+                    bevy_ecs::entity::Entity,
+                    &NetEntity,
+                    &Position,
+                    &Mob,
+                    &AttackCooldown,
+                )>();
 
                 for (mob_ent, net, pos, mob, cooldown) in mob_attack_query.iter(&self.ecs_world) {
                     if mob.kind != telos_sim::MobKind::Hostile || !cooldown.can_attack() {
@@ -6764,11 +6777,8 @@ impl Server {
                 candidates
             {
                 #[allow(clippy::cast_possible_truncation)]
-                let mob_eye = glam::Vec3::new(
-                    mob_pos.x as f32,
-                    (mob_pos.y + 1.5) as f32,
-                    mob_pos.z as f32,
-                );
+                let mob_eye =
+                    glam::Vec3::new(mob_pos.x as f32, (mob_pos.y + 1.5) as f32, mob_pos.z as f32);
                 #[allow(clippy::cast_possible_truncation)]
                 let player_eye = glam::Vec3::new(
                     player_pos.x as f32,
@@ -6787,17 +6797,10 @@ impl Server {
                 });
 
                 if has_los {
-                    if let Some(mut cooldown) =
-                        self.ecs_world.get_mut::<AttackCooldown>(mob_ent)
-                    {
+                    if let Some(mut cooldown) = self.ecs_world.get_mut::<AttackCooldown>(mob_ent) {
                         cooldown.reset();
                     }
-                    attacks_to_resolve.push((
-                        mob_net_id,
-                        session_id,
-                        mob_pos,
-                        mob_damage,
-                    ));
+                    attacks_to_resolve.push((mob_net_id, session_id, mob_pos, mob_damage));
                 }
             }
         }
@@ -7457,7 +7460,7 @@ impl Server {
     /// - Dispatches toast notifications (`S2cAdvancementToast`) to the player.
     /// - Dispatches progress update (`S2cAdvancementUpdate`).
     /// - Broadcasts celebratory announcement chat message if `advancement.announce_chat`.
-    /// - Persists updated progress to `<world_dir>/advancements/<player_id>.json`.
+    /// - Persists updated progress to `<world_dir>/advancements/<player_id>.toml`.
     pub fn evaluate_player_advancements(
         &mut self,
         session_id: u64,
@@ -7569,7 +7572,7 @@ impl Server {
         if let Some(save_dir) = &self.config.save_directory {
             let _ = self
                 .usercache
-                .save_to_path(&save_dir.join("usercache.json"));
+                .save_to_path(&save_dir.join("usercache.toml"));
             for session in self.sessions.values() {
                 let _ = telos_storage::save_player_advancements(
                     save_dir,
@@ -7587,7 +7590,7 @@ impl Drop for Server {
         if let Some(save_dir) = &self.config.save_directory {
             let _ = self
                 .usercache
-                .save_to_path(&save_dir.join("usercache.json"));
+                .save_to_path(&save_dir.join("usercache.toml"));
             for session in self.sessions.values() {
                 let _ = telos_storage::save_player_advancements(
                     save_dir,

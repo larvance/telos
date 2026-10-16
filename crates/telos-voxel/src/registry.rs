@@ -922,7 +922,8 @@ impl BlockRegistry {
     #[inline]
     #[must_use]
     pub fn is_fire(&self, id: BlockStateId) -> bool {
-        self.identifier(id).is_some_and(|ident| ident.path() == "fire")
+        self.identifier(id)
+            .is_some_and(|ident| ident.path() == "fire")
     }
 
     /// Returns `true` if the given block state represents a lava fluid block (still, flowing, or falling).

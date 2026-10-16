@@ -427,9 +427,15 @@ fn test_default_empty_server_list_and_groupless_servers() {
     // 1. By default, groups is completely empty and servers is empty
     let screen = ServerListScreen::new();
     assert!(screen.groups.is_empty(), "Groups must be empty by default");
-    assert!(screen.servers.is_empty(), "Servers must be empty by default");
+    assert!(
+        screen.servers.is_empty(),
+        "Servers must be empty by default"
+    );
     let layout = screen.compute_list_layout(32.0);
-    assert!(layout.is_empty(), "Layout must be empty when no servers exist");
+    assert!(
+        layout.is_empty(),
+        "Layout must be empty when no servers exist"
+    );
 
     // 2. Add first server with no group -> groupless
     let mut screen = ServerListScreen::new();
@@ -466,7 +472,10 @@ fn test_default_empty_server_list_and_groupless_servers() {
     // [1] GroupHeader ("LAN Servers")
     // [2] ServerCard (LAN)
     assert_eq!(layout2.len(), 3);
-    assert!(matches!(layout2[0], ServerListItem::ServerCard { server_idx: 0, .. }));
+    assert!(matches!(
+        layout2[0],
+        ServerListItem::ServerCard { server_idx: 0, .. }
+    ));
     match &layout2[1] {
         ServerListItem::GroupHeader { name, count, .. } => {
             assert_eq!(name, "LAN Servers");
@@ -474,6 +483,8 @@ fn test_default_empty_server_list_and_groupless_servers() {
         }
         _ => panic!("Expected LAN Servers GroupHeader at index 1"),
     }
-    assert!(matches!(layout2[2], ServerListItem::ServerCard { server_idx: 1, .. }));
+    assert!(matches!(
+        layout2[2],
+        ServerListItem::ServerCard { server_idx: 1, .. }
+    ));
 }
-

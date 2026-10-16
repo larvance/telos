@@ -625,11 +625,7 @@ impl MenuTextInput {
 
     /// Selects all text in the input box.
     pub fn select_all(&mut self) {
-        text_input::select_all(
-            &self.text,
-            &mut self.cursor_pos,
-            &mut self.selection_anchor,
-        );
+        text_input::select_all(&self.text, &mut self.cursor_pos, &mut self.selection_anchor);
     }
 
     /// Clears any active selection without moving the cursor.
@@ -705,7 +701,9 @@ impl MenuTextInput {
             );
         } else {
             // Render selection highlight box behind text if active
-            if self.focused && let Some(range) = self.selection_range() {
+            if self.focused
+                && let Some(range) = self.selection_range()
+            {
                 let (prefix_w, _) = font.measure_text(&self.text[..range.start]);
                 let (sel_w, _) = font.measure_text(&self.text[range.start..range.end]);
                 let sel_x = text_x + prefix_w;

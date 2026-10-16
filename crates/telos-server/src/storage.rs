@@ -39,14 +39,16 @@ impl WorldStorage {
     ) -> std::io::Result<Self> {
         let regions_dir = root_dir.as_ref().join("regions");
         create_dir_all(&regions_dir)?;
-        Ok(Self {
+        let mut storage = Self {
             regions_dir,
             regions: HashMap::new(),
             save_map: None,
             remap: None,
             compression_enabled,
             compression_level,
-        })
+        };
+        let _ = storage.prune_empty_regions();
+        Ok(storage)
     }
 
     /// Initializes `WorldStorage` at root directory with full save-ID mapping and palette remapping.
@@ -72,14 +74,16 @@ impl WorldStorage {
             .map_err(|e| std::io::Error::other(e.to_string()))?;
         let remap = save_map.build_remap(registries);
 
-        Ok(Self {
+        let mut storage = Self {
             regions_dir,
             regions: HashMap::new(),
             save_map: Some(save_map),
             remap: Some(remap),
             compression_enabled,
             compression_level,
-        })
+        };
+        let _ = storage.prune_empty_regions();
+        Ok(storage)
     }
 
     /// Sets the compression configuration for newly opened or committed region files.
@@ -109,18 +113,31 @@ impl WorldStorage {
         self.save_map.as_ref()
     }
 
-    /// Retrieves an open region file or opens/creates it.
+    /// Retrieves an open region file, or opens it if it exists.
+    /// If `create` is true, creates a new region file on disk if it does not already exist.
     fn get_or_open_region(
         &mut self,
         rpos: RegionPos,
-    ) -> Result<&mut RegionFile<FileRegionIo>, telos_storage::StorageError> {
+        create: bool,
+    ) -> Result<Option<&mut RegionFile<FileRegionIo>>, telos_storage::StorageError> {
         if !self.regions.contains_key(&rpos) {
             let filename = rpos.filename();
             let path = self.regions_dir.join(filename);
+            if !create {
+                if !path.is_file() {
+                    return Ok(None);
+                }
+                if let Ok(metadata) = std::fs::metadata(&path)
+                    && (metadata.len() == 0 || metadata.len() == 40960)
+                {
+                    // Empty region file on disk with 0 saved chunks
+                    return Ok(None);
+                }
+            }
             let file = OpenOptions::new()
                 .read(true)
                 .write(true)
-                .create(true)
+                .create(create)
                 .truncate(false)
                 .open(&path)
                 .map_err(telos_storage::StorageError::Io)?;
@@ -135,7 +152,57 @@ impl WorldStorage {
             )?;
             self.regions.insert(rpos, region);
         }
-        Ok(self.regions.get_mut(&rpos).unwrap())
+        Ok(self.regions.get_mut(&rpos))
+    }
+
+    /// Prunes any 0-byte or empty region files (containing 0 stored chunks) from disk.
+    ///
+    /// Returns the number of pruned empty region files.
+    pub fn prune_empty_regions(&mut self) -> Result<usize, telos_storage::StorageError> {
+        let mut pruned = 0;
+        let read_dir = match std::fs::read_dir(&self.regions_dir) {
+            Ok(rd) => rd,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => return Err(telos_storage::StorageError::Io(e)),
+        };
+
+        // First, drop any cached regions that are empty so file locks/handles are closed.
+        let mut empty_cached = Vec::new();
+        for (rpos, region) in &self.regions {
+            if region.is_empty() {
+                empty_cached.push(*rpos);
+            }
+        }
+        for rpos in empty_cached {
+            self.regions.remove(&rpos);
+        }
+
+        for entry in read_dir {
+            let entry = entry.map_err(telos_storage::StorageError::Io)?;
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("tlr") {
+                let Ok(metadata) = entry.metadata() else {
+                    continue;
+                };
+                let len = metadata.len();
+                if len == 0 || len == 40960 {
+                    let _ = std::fs::remove_file(&path);
+                    pruned += 1;
+                    continue;
+                }
+                if let Ok(file) = OpenOptions::new().read(true).write(true).open(&path) {
+                    let io = FileRegionIo::new(file);
+                    if let Ok(region) = RegionFile::open(io, 0, 0, 0)
+                        && region.is_empty()
+                    {
+                        drop(region);
+                        let _ = std::fs::remove_file(&path);
+                        pruned += 1;
+                    }
+                }
+            }
+        }
+        Ok(pruned)
     }
 
     /// Attempts to load a chunk from disk.
@@ -146,7 +213,9 @@ impl WorldStorage {
         registry: &BlockRegistry,
     ) -> Result<Option<Chunk>, telos_storage::StorageError> {
         let rpos = RegionPos::from_chunk(pos);
-        let region = self.get_or_open_region(rpos)?;
+        let Some(region) = self.get_or_open_region(rpos, false)? else {
+            return Ok(None);
+        };
         let maybe_payload = region.read_chunk(pos)?;
         let Some(payload) = maybe_payload else {
             return Ok(None);
@@ -197,7 +266,9 @@ impl WorldStorage {
         }
 
         for (rpos, chunk_list) in grouped {
-            let region = self.get_or_open_region(rpos)?;
+            let Some(region) = self.get_or_open_region(rpos, true)? else {
+                continue;
+            };
             region.commit_chunks(&chunk_list, CodecId::Zstd, timestamp)?;
             debug!("Committed {} chunks to region {:?}", chunk_list.len(), rpos);
         }
@@ -214,5 +285,59 @@ impl WorldStorage {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lazy_storage_does_not_create_empty_region_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let mut storage = WorldStorage::new(temp.path()).expect("WorldStorage::new");
+        let reg = BlockRegistry::new();
+
+        // Querying non-existent chunks across different regions must NOT create region files
+        for rx in -2..=2 {
+            for rz in -2..=2 {
+                let pos = ChunkPos::new(rx * 8, 0, rz * 8);
+                let loaded = storage.load_chunk(pos, &reg).expect("load_chunk");
+                assert!(loaded.is_none());
+            }
+        }
+
+        // Verify regions directory has zero files
+        let count = std::fs::read_dir(temp.path().join("regions"))
+            .expect("read_dir")
+            .count();
+        assert_eq!(count, 0, "No region files should be created by load_chunk");
+    }
+
+    #[test]
+    fn test_prune_empty_regions() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let regions_dir = temp.path().join("regions");
+        std::fs::create_dir_all(&regions_dir).expect("create_dir_all");
+
+        // Create an empty dummy 40KiB file (mimicking unallocated region container)
+        let dummy_40k = regions_dir.join("r.0.0.0.tlr");
+        std::fs::write(&dummy_40k, vec![0u8; 40960]).expect("write dummy");
+        assert!(dummy_40k.is_file());
+
+        let mut storage = WorldStorage::new(temp.path()).expect("new");
+        // Storage::new already prunes, let's verify dummy is gone
+        assert!(
+            !dummy_40k.exists(),
+            "Dummy 40KiB region file should have been pruned on new"
+        );
+
+        // Write a 0-byte file and check explicit prune
+        let dummy_0 = regions_dir.join("r.1.1.1.tlr");
+        std::fs::write(&dummy_0, b"").expect("write 0-byte");
+        assert!(dummy_0.is_file());
+        let pruned = storage.prune_empty_regions().expect("prune");
+        assert_eq!(pruned, 1);
+        assert!(!dummy_0.exists());
     }
 }

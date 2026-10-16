@@ -412,10 +412,18 @@ pub struct FuelDef {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RecipeDef {
     /// Shaped crafting recipe.
-    #[serde(alias = "telos:crafting_shaped", alias = "crafting_shaped", alias = "shaped")]
+    #[serde(
+        alias = "telos:crafting_shaped",
+        alias = "crafting_shaped",
+        alias = "shaped"
+    )]
     Shaped(ShapedRecipeDef),
     /// Shapeless crafting recipe.
-    #[serde(alias = "telos:crafting_shapeless", alias = "crafting_shapeless", alias = "shapeless")]
+    #[serde(
+        alias = "telos:crafting_shapeless",
+        alias = "crafting_shapeless",
+        alias = "shapeless"
+    )]
     Shapeless(ShapelessRecipeDef),
     /// Smelting furnace recipe.
     #[serde(alias = "telos:smelting", alias = "smelting")]

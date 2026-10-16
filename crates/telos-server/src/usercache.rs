@@ -57,31 +57,61 @@ impl UserCache {
         }
     }
 
-    /// Loads the user cache from a `usercache.json` file.
+    /// Loads the user cache from a `usercache.toml` file (with automatic fallback to `usercache.json`).
     ///
     /// # Errors
     /// Returns `std::io::Error` on read or parse failure.
     pub fn load_from_path(path: &Path) -> Result<Self, std::io::Error> {
-        if !path.exists() {
-            return Ok(Self::new());
+        let toml_path = if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            path.with_extension("toml")
+        } else {
+            path.to_path_buf()
+        };
+
+        if toml_path.exists() {
+            let content = std::fs::read_to_string(&toml_path)?;
+            let cache: Self = toml::from_str(&content)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            return Ok(cache);
         }
-        let content = std::fs::read_to_string(path)?;
-        let cache: Self = serde_json::from_str(&content)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        Ok(cache)
+
+        let json_path = toml_path.with_extension("json");
+        if json_path.exists() {
+            let content = std::fs::read_to_string(&json_path)?;
+            let cache: Self = serde_json::from_str(&content)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let _ = cache.save_to_path(&toml_path);
+            let _ = std::fs::remove_file(&json_path);
+            return Ok(cache);
+        }
+
+        Ok(Self::new())
     }
 
-    /// Saves the user cache to a `usercache.json` file.
+    /// Saves the user cache to a `usercache.toml` file.
     ///
     /// # Errors
     /// Returns `std::io::Error` on write or serialization failure.
     pub fn save_to_path(&self, path: &Path) -> Result<(), std::io::Error> {
-        if let Some(parent) = path.parent() {
+        let toml_path = if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            path.with_extension("toml")
+        } else {
+            path.to_path_buf()
+        };
+
+        if let Some(parent) = toml_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_string_pretty(self)
+        let toml_str = toml::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(path, json)
+        std::fs::write(&toml_path, toml_str)?;
+
+        let legacy_json = toml_path.with_extension("json");
+        if legacy_json.exists() {
+            let _ = std::fs::remove_file(&legacy_json);
+        }
+
+        Ok(())
     }
 
     /// Looks up a player record by case-insensitive username.

@@ -108,8 +108,7 @@ impl eframe::App for DevApp {
                     self.success_time = Some(Instant::now());
                     self.should_launch.store(true, Ordering::SeqCst);
                     if already_built {
-                        self.status_text =
-                            "Code unchanged! Launching Telos...".to_string();
+                        self.status_text = "Code unchanged! Launching Telos...".to_string();
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     } else {
                         self.status_text = "Build successful! Launching Telos...".to_string();

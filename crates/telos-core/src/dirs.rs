@@ -188,9 +188,8 @@ impl AppDirs {
     /// Seamlessly migrates legacy world saves found in `~/.local/share/telos/worlds`
     /// or local working directory `./worlds` into the target saves directory (e.g. `~/.telos/worlds`).
     pub fn migrate_legacy_worlds(target_saves_dir: &Path) {
-        let home = match dirs::home_dir() {
-            Some(h) => h,
-            None => return,
+        let Some(home) = dirs::home_dir() else {
+            return;
         };
 
         let mut legacy_candidates = vec![
@@ -200,7 +199,7 @@ impl AppDirs {
 
         if let Ok(cwd) = std::env::current_dir() {
             let cwd_worlds = cwd.join("worlds");
-            if cwd_worlds.is_dir() && &cwd_worlds != target_saves_dir {
+            if cwd_worlds.is_dir() && cwd_worlds != target_saves_dir {
                 legacy_candidates.push(cwd_worlds);
             }
         }
@@ -210,9 +209,8 @@ impl AppDirs {
                 continue;
             }
 
-            let entries = match std::fs::read_dir(legacy_dir) {
-                Ok(entries) => entries,
-                Err(_) => continue,
+            let Ok(entries) = std::fs::read_dir(legacy_dir) else {
+                continue;
             };
 
             for entry in entries.flatten() {
@@ -223,15 +221,15 @@ impl AppDirs {
                 let file_name = entry.file_name();
                 let dest_path = target_saves_dir.join(&file_name);
 
-                let should_migrate = if !dest_path.exists() {
-                    true
-                } else {
+                let should_migrate = if dest_path.exists() {
                     let src_time = path.metadata().and_then(|m| m.modified()).ok();
                     let dst_time = dest_path.metadata().and_then(|m| m.modified()).ok();
                     match (src_time, dst_time) {
                         (Some(st), Some(dt)) => st > dt,
                         _ => false,
                     }
+                } else {
+                    true
                 };
 
                 if should_migrate {
@@ -239,19 +237,19 @@ impl AppDirs {
                     if dest_path.exists() {
                         let _ = std::fs::remove_dir_all(&dest_path);
                     }
-                    if std::fs::rename(&path, &dest_path).is_err() {
-                        if let Ok(()) = copy_dir_recursive(&path, &dest_path) {
-                            let _ = std::fs::remove_dir_all(&path);
-                        }
+                    if std::fs::rename(&path, &dest_path).is_err()
+                        && let Ok(()) = copy_dir_recursive(&path, &dest_path)
+                    {
+                        let _ = std::fs::remove_dir_all(&path);
                     }
                 }
             }
 
             // If legacy directory is now empty, clean it up
-            if let Ok(mut remaining) = std::fs::read_dir(legacy_dir) {
-                if remaining.next().is_none() {
-                    let _ = std::fs::remove_dir(legacy_dir);
-                }
+            if let Ok(mut remaining) = std::fs::read_dir(legacy_dir)
+                && remaining.next().is_none()
+            {
+                let _ = std::fs::remove_dir(legacy_dir);
             }
         }
     }
@@ -369,8 +367,7 @@ fn resolve_standard_dirs() -> AppDirs {
         let telos_home = std::env::var_os("TELOS_HOME")
             .or_else(|| std::env::var_os("TELOS_DIR"))
             .filter(|v| !v.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join(".telos"));
+            .map_or_else(|| home.join(".telos"), PathBuf::from);
 
         let data_dir = telos_home.clone();
 

@@ -163,7 +163,10 @@ fn test_compute_code_hashes_determinism() {
         Some(64),
         "SHA-256 hash must be 64 characters"
     );
-    assert_eq!(app_hash_1, app_hash_2, "App code hash must be deterministic");
+    assert_eq!(
+        app_hash_1, app_hash_2,
+        "App code hash must be deterministic"
+    );
 
     let launcher_hash_1 = build_coordinator::compute_launcher_code_hash(&repo_dir);
     let launcher_hash_2 = build_coordinator::compute_launcher_code_hash(&repo_dir);

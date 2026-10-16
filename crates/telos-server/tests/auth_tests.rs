@@ -487,8 +487,8 @@ fn test_usercache_file_persistence_across_restart() {
         server.save_and_flush().expect("flush");
     }
 
-    // Verify usercache.json exists on disk
-    let usercache_file = save_dir.join("usercache.json");
+    // Verify usercache.toml exists on disk
+    let usercache_file = save_dir.join("usercache.toml");
     assert!(usercache_file.exists());
 
     // 2. Restart new server instance using same save_directory

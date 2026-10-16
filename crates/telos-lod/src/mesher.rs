@@ -123,9 +123,7 @@ pub fn mesh_lod_node<S: LodVoxelSource>(
                             let mut n_coords = coords;
                             n_coords[axis_d] = 0;
                             match neighbor {
-                                Some(nb) => {
-                                    !nb.is_solid(n_coords[0], n_coords[1], n_coords[2])
-                                }
+                                Some(nb) => !nb.is_solid(n_coords[0], n_coords[1], n_coords[2]),
                                 None => face == Face::Up,
                             }
                         }

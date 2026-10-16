@@ -45,9 +45,9 @@ use telos_protocol::messages::{
     AuthMode, BlockActionKind, C2sBlockAction, C2sChatMessage, C2sClientSettings,
     C2sCloseContainer, C2sCommandSuggest, C2sConfigAck, C2sHello, C2sInteractEntity,
     C2sInventoryClick, C2sLoginProof, C2sLoginStart, C2sMessage, C2sModalFormResponse,
-    C2sPlayerCommand, C2sPlayerInput, C2sPlayerPosition, C2sTeleportAck, C2sVoiceData, ChunkPayload, ConnectionPhase,
-    InputFrame, NetworkEffect, ParticleEffectKind, PlayerCommandKind, S2cMessage, S2cParticleEvent,
-    S2cPlayerMovementAck, input_buttons,
+    C2sPlayerCommand, C2sPlayerInput, C2sPlayerPosition, C2sTeleportAck, C2sVoiceData,
+    ChunkPayload, ConnectionPhase, InputFrame, NetworkEffect, ParticleEffectKind,
+    PlayerCommandKind, S2cMessage, S2cParticleEvent, S2cPlayerMovementAck, input_buttons,
 };
 use telos_sim::particle::{ParticleGpu, ParticleSystem};
 use telos_sim::{
@@ -63,12 +63,12 @@ use telos_ui::settings::GameSettings;
 use telos_ui::{
     BitmapFont, ChatHudState, DUAL_ANVIL_SLOT_COUNT, DUAL_CONTAINER_SLOT_COUNT,
     DUAL_CRAFTING_TABLE_SLOT_COUNT, DUAL_FURNACE_SLOT_COUNT, GuiStyleSheet, HudState,
-    ServerListAction, ServerListScreen, ToastState, UiLayers, UiQuad, UiSlotItem,
-    anvil_slot_at_pos_styled, chest_slot_at_pos_styled, compute_gui_scale,
+    ServerListAction, ServerListScreen, TextInputAction, TextInputResult, ToastState, UiLayers,
+    UiQuad, UiSlotItem, anvil_slot_at_pos_styled, chest_slot_at_pos_styled, compute_gui_scale,
     crafting_table_slot_at_pos_styled, furnace_slot_at_pos_styled, inventory_slot_at_pos_styled,
     render_anvil_container_styled, render_chat_hud, render_chest_container_styled,
     render_crafting_table_container_styled, render_furnace_container_styled, render_hud_styled,
-    render_inventory_screen_styled, snap_to_physical, TextInputAction, TextInputResult,
+    render_inventory_screen_styled, snap_to_physical,
 };
 use telos_ui::{InputKey, KeyAction};
 use touch_controls::TouchControls;
@@ -114,7 +114,7 @@ pub struct ClientContainerState {
     pub properties: [i16; 4],
 }
 
-/// Persistent LAN configuration stored inside a world directory (`lan_config.json`).
+/// Persistent LAN configuration stored inside a world directory (`lan_config.toml`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WorldLanConfig {
     /// Port number (1024 - 65535).
@@ -1773,7 +1773,6 @@ fn key_to_text_input_action(
 }
 
 impl App {
-
     #[allow(clippy::too_many_lines)]
     fn new(args: Args) -> Self {
         let spawn_pos = if let Some(ref pos_str) = args.pos {
@@ -1859,9 +1858,10 @@ impl App {
 
         let view_distance = args.view_distance;
         let vertical_view_distance = args.vertical_view_distance;
-        let default_save_dir = args.world_dir.clone().unwrap_or_else(|| {
-            app_dirs.world_save_dir("default")
-        });
+        let default_save_dir = args
+            .world_dir
+            .clone()
+            .unwrap_or_else(|| app_dirs.world_save_dir("default"));
         let seed = args.seed;
         let simulation_distance = game_settings.video.simulation_distance;
 
@@ -2397,24 +2397,39 @@ impl App {
         let server_conn: Box<dyn Connection<S2cMessage, C2sMessage>> = Box::new(server_conn);
         self.client_conn = Box::new(client_conn);
 
-        let cfg_path = world_dir.join("lan_config.json");
-        let lan_config: WorldLanConfig = if cfg_path.is_file() {
-            std::fs::read_to_string(&cfg_path)
+        let toml_path = world_dir.join("lan_config.toml");
+        let json_path = world_dir.join("lan_config.json");
+        let lan_config: WorldLanConfig = if toml_path.is_file() {
+            std::fs::read_to_string(&toml_path)
+                .ok()
+                .and_then(|s| toml::from_str(&s).ok())
+                .unwrap_or_else(|| WorldLanConfig {
+                    port: 25565,
+                    password: generate_random_lan_password(),
+                    auto_open: false,
+                })
+        } else if json_path.is_file() {
+            let cfg = std::fs::read_to_string(&json_path)
                 .ok()
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_else(|| WorldLanConfig {
                     port: 25565,
                     password: generate_random_lan_password(),
                     auto_open: false,
-                })
+                });
+            if let Ok(toml_str) = toml::to_string_pretty(&cfg) {
+                let _ = std::fs::write(&toml_path, toml_str);
+                let _ = std::fs::remove_file(&json_path);
+            }
+            cfg
         } else {
             let cfg = WorldLanConfig {
                 port: 25565,
                 password: generate_random_lan_password(),
                 auto_open: false,
             };
-            if let Ok(json) = serde_json::to_string_pretty(&cfg) {
-                let _ = std::fs::write(&cfg_path, json);
+            if let Ok(toml_str) = toml::to_string_pretty(&cfg) {
+                let _ = std::fs::write(&toml_path, toml_str);
             }
             cfg
         };
@@ -2456,7 +2471,11 @@ impl App {
                             server.lan_emitter =
                                 telos_net::LanBeaconEmitter::spawn(beacon, port).ok();
                             server.listener = Some(cmd.listener);
-                            info!(port, has_password = cmd.has_password, "Server opened to LAN & P2P with active QUIC listener");
+                            info!(
+                                port,
+                                has_password = cmd.has_password,
+                                "Server opened to LAN & P2P with active QUIC listener"
+                            );
                         }
                         timestep.advance(|_| {
                             server.tick();
@@ -2625,9 +2644,13 @@ impl App {
             auto_open,
         };
         if let Some(world_dir) = &self.current_world_dir {
-            let cfg_path = world_dir.join("lan_config.json");
-            if let Ok(json) = serde_json::to_string_pretty(&lan_cfg) {
-                let _ = std::fs::write(cfg_path, json);
+            let cfg_path = world_dir.join("lan_config.toml");
+            if let Ok(toml_str) = toml::to_string_pretty(&lan_cfg) {
+                let _ = std::fs::write(&cfg_path, toml_str);
+            }
+            let legacy_json = world_dir.join("lan_config.json");
+            if legacy_json.is_file() {
+                let _ = std::fs::remove_file(legacy_json);
             }
         }
         self.world_lan_config = Some(lan_cfg);
@@ -2710,7 +2733,10 @@ impl App {
 
         copy_to_system_clipboard(&link);
 
-        info!(bound_port, "Opened game session to LAN and copied invite link to clipboard");
+        info!(
+            bound_port,
+            "Opened game session to LAN and copied invite link to clipboard"
+        );
         let toast = ToastState {
             id: "lan".to_string(),
             title: format!("Opened on Port {bound_port}! Link copied to clipboard"),
@@ -4611,9 +4637,7 @@ impl App {
             pitch: self.camera.pitch.to_degrees(),
             on_ground: self.physics.on_ground,
         });
-        let _ = self
-            .client_conn
-            .send(Lane::Control, Payload::Msg(pos_msg));
+        let _ = self.client_conn.send(Lane::Control, Payload::Msg(pos_msg));
 
         if let Some(vehicle_id) = self.riding_vehicle_id {
             if let Some(boat_ent) = self.entity_store.get(vehicle_id) {
@@ -5405,7 +5429,8 @@ impl App {
                         let mut min_dist = 4.0f32;
                         for off in offsets {
                             let origin = player_eye + off;
-                            if let Some(hit) = raycast_voxels(origin, ray_dir, 4.0, is_solid_block) {
+                            if let Some(hit) = raycast_voxels(origin, ray_dir, 4.0, is_solid_block)
+                            {
                                 let safe_dist = (hit.distance - 0.15).max(0.0);
                                 if safe_dist < min_dist {
                                     min_dist = safe_dist;
@@ -5701,8 +5726,8 @@ impl App {
                 } else {
                     0.0
                 };
-                let is_moving = self.physics.on_ground
-                    && (self.physics.vel.x.hypot(self.physics.vel.z) > 0.05);
+                let is_moving =
+                    self.physics.on_ground && (self.physics.vel.x.hypot(self.physics.vel.z) > 0.05);
                 let (walk_bob_x, walk_bob_y) = if is_moving {
                     (
                         (self.local_walk_time * 0.5).sin() * 0.02,
@@ -8802,11 +8827,9 @@ impl App {
                 }
             };
 
-            let (cam_pos, _) = self.camera.perspective_view_matrix(
-                self.perspective,
-                player_eye,
-                obstacle_dist,
-            );
+            let (cam_pos, _) =
+                self.camera
+                    .perspective_view_matrix(self.perspective, player_eye, obstacle_dist);
             self.camera.position = cam_pos;
             self.perspective_obstacle_dist = obstacle_dist;
 
@@ -11279,7 +11302,9 @@ impl ApplicationHandler for App {
                                                 password,
                                                 auto_open,
                                             } => {
-                                                self.open_singleplayer_to_lan(port, password, auto_open);
+                                                self.open_singleplayer_to_lan(
+                                                    port, password, auto_open,
+                                                );
                                                 self.open_to_lan_screen = None;
                                             }
                                         }
@@ -11313,12 +11338,14 @@ impl ApplicationHandler for App {
                                             };
                                         }
                                         PauseMenuAction::OpenToLan => {
-                                            let (port, password, auto_open) = if let Some(cfg) = &self.world_lan_config {
-                                                (cfg.port, cfg.password.clone(), cfg.auto_open)
-                                            } else {
-                                                (25565, generate_random_lan_password(), false)
-                                            };
-                                            let mut lan_screen = OpenToLanScreen::new(port, &password, auto_open);
+                                            let (port, password, auto_open) =
+                                                if let Some(cfg) = &self.world_lan_config {
+                                                    (cfg.port, cfg.password.clone(), cfg.auto_open)
+                                                } else {
+                                                    (25565, generate_random_lan_password(), false)
+                                                };
+                                            let mut lan_screen =
+                                                OpenToLanScreen::new(port, &password, auto_open);
                                             lan_screen.update_layout(width_gui, height_gui);
                                             self.open_to_lan_screen = Some(lan_screen);
                                         }
@@ -11327,7 +11354,8 @@ impl ApplicationHandler for App {
                                                 copy_to_system_clipboard(link);
                                                 let toast = ToastState {
                                                     id: "lan_copy".to_string(),
-                                                    title: "Invite Link Copied to Clipboard!".to_string(),
+                                                    title: "Invite Link Copied to Clipboard!"
+                                                        .to_string(),
                                                     icon_item: 0,
                                                     frame: 1,
                                                     elapsed_secs: 0.0,
@@ -11599,11 +11627,12 @@ impl ApplicationHandler for App {
                         } else {
                             match code {
                                 KeyCode::Escape => {
-                                    let cancel_msg =
-                                        C2sMessage::ModalFormResponse(C2sModalFormResponse::cancelled(
+                                    let cancel_msg = C2sMessage::ModalFormResponse(
+                                        C2sModalFormResponse::cancelled(
                                             form.form_id,
                                             telos_core::form::FormCancelReason::UserClosed,
-                                        ));
+                                        ),
+                                    );
                                     let _ = self
                                         .client_conn
                                         .send(Lane::Control, Payload::Msg(cancel_msg));
@@ -11620,7 +11649,9 @@ impl ApplicationHandler for App {
                                     }
                                 }
                                 _ => {
-                                    if !self.ctrl_held && let Some(txt) = text {
+                                    if !self.ctrl_held
+                                        && let Some(txt) = text
+                                    {
                                         for ch in txt.chars() {
                                             if !ch.is_control() {
                                                 form.handle_char(ch);
@@ -11691,7 +11722,9 @@ impl ApplicationHandler for App {
                                         }
                                     }
                                     _ => {
-                                        if !self.ctrl_held && let Some(txt) = text {
+                                        if !self.ctrl_held
+                                            && let Some(txt) = text
+                                        {
                                             for ch in txt.chars() {
                                                 if !ch.is_control() {
                                                     self.server_list.handle_char(ch);
@@ -11712,8 +11745,9 @@ impl ApplicationHandler for App {
                                 } else {
                                     None
                                 };
-                                if let TextInputResult::Copied(copied) =
-                                    self.world_create.handle_text_action(action, clip.as_deref())
+                                if let TextInputResult::Copied(copied) = self
+                                    .world_create
+                                    .handle_text_action(action, clip.as_deref())
                                 {
                                     copy_to_system_clipboard(&copied);
                                 }
@@ -11727,7 +11761,9 @@ impl ApplicationHandler for App {
                                         self.world_create.handle_tab();
                                     }
                                     _ => {
-                                        if !self.ctrl_held && let Some(txt) = text {
+                                        if !self.ctrl_held
+                                            && let Some(txt) = text
+                                        {
                                             for ch in txt.chars() {
                                                 if !ch.is_control() {
                                                     self.world_create.handle_char(ch);
@@ -11880,12 +11916,16 @@ impl ApplicationHandler for App {
                                             auto_open,
                                         }) = lan_screen.handle_enter()
                                         {
-                                            self.open_singleplayer_to_lan(port, password, auto_open);
+                                            self.open_singleplayer_to_lan(
+                                                port, password, auto_open,
+                                            );
                                             self.open_to_lan_screen = None;
                                         }
                                     }
                                     _ => {
-                                        if !self.ctrl_held && let Some(txt) = text {
+                                        if !self.ctrl_held
+                                            && let Some(txt) = text
+                                        {
                                             for ch in txt.chars() {
                                                 if !ch.is_control() {
                                                     lan_screen.handle_char(ch);
@@ -11964,7 +12004,9 @@ impl ApplicationHandler for App {
                                     }
                                 }
                                 _ => {
-                                    if !self.ctrl_held && let Some(txt) = text {
+                                    if !self.ctrl_held
+                                        && let Some(txt) = text
+                                    {
                                         for c in txt.chars() {
                                             if !c.is_control() {
                                                 self.chat_state.handle_char(c);
@@ -15132,7 +15174,8 @@ mod tests {
     fn test_world_lan_config_serde_and_file_persistence() {
         use super::WorldLanConfig;
         let tmp = tempfile::tempdir().expect("Failed to create tempdir");
-        let cfg_path = tmp.path().join("lan_config.json");
+        let toml_path = tmp.path().join("lan_config.toml");
+        let json_path = tmp.path().join("lan_config.json");
 
         let cfg = WorldLanConfig {
             port: 45678,
@@ -15140,15 +15183,31 @@ mod tests {
             auto_open: true,
         };
 
-        let json = serde_json::to_string_pretty(&cfg).expect("Serialize config");
-        std::fs::write(&cfg_path, &json).expect("Write config");
+        // 1. Verify TOML write & read
+        let toml_str = toml::to_string_pretty(&cfg).expect("Serialize toml config");
+        std::fs::write(&toml_path, &toml_str).expect("Write toml config");
 
-        let loaded_str = std::fs::read_to_string(&cfg_path).expect("Read config");
-        let loaded: WorldLanConfig = serde_json::from_str(&loaded_str).expect("Deserialize config");
+        let loaded_str = std::fs::read_to_string(&toml_path).expect("Read toml config");
+        let loaded: WorldLanConfig = toml::from_str(&loaded_str).expect("Deserialize toml config");
 
         assert_eq!(loaded.port, 45678);
         assert_eq!(loaded.password, "SecureLanPassword123");
         assert!(loaded.auto_open);
+
+        // 2. Verify legacy JSON migration
+        std::fs::remove_file(&toml_path).expect("remove toml");
+        let json_str = serde_json::to_string_pretty(&cfg).expect("Serialize json config");
+        std::fs::write(&json_path, &json_str).expect("Write json config");
+        assert!(json_path.exists());
+
+        // Simulate migration logic
+        let migrated_cfg: WorldLanConfig =
+            serde_json::from_str(&std::fs::read_to_string(&json_path).unwrap()).unwrap();
+        let migrated_toml = toml::to_string_pretty(&migrated_cfg).unwrap();
+        std::fs::write(&toml_path, migrated_toml).unwrap();
+        let _ = std::fs::remove_file(&json_path);
+
+        assert!(toml_path.exists());
+        assert!(!json_path.exists());
     }
 }
-

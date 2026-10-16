@@ -206,14 +206,22 @@ pub fn default_classic_explorer_skin() -> RgbaImage {
     // Base skin tone
     for y in 0..16 {
         for x in 0..32 {
-            let shade = if (x + y) % 3 == 0 { skin_shadow } else { skin_base };
+            let shade = if (x + y) % 3 == 0 {
+                skin_shadow
+            } else {
+                skin_base
+            };
             skin.set_pixel(x, y, shade);
         }
     }
     // Hair on top (4..12, 0..8) & sides
     for y in 0..8 {
         for x in 0..32 {
-            let h_shade = if (x + y) % 2 == 0 { hair_highlight } else { hair_color };
+            let h_shade = if (x + y) % 2 == 0 {
+                hair_highlight
+            } else {
+                hair_color
+            };
             skin.set_pixel(x, y, h_shade);
         }
     }
@@ -327,7 +335,11 @@ pub fn default_slim_scout_skin() -> RgbaImage {
     // Head
     for y in 0..16 {
         for x in 0..32 {
-            let shade = if (x + y) % 2 == 0 { hair_highlight } else { hair_auburn };
+            let shade = if (x + y) % 2 == 0 {
+                hair_highlight
+            } else {
+                hair_auburn
+            };
             skin.set_pixel(x, y, shade);
         }
     }
@@ -421,7 +433,11 @@ pub fn default_hd_adventurer_skin() -> RgbaImage {
     // 1. Head (0..64, 0..32 in 128-space)
     for y in 0..32 {
         for x in 0..64 {
-            let c = if (x + y) % 3 == 0 { skin_soft_shadow } else { skin_tone };
+            let c = if (x + y) % 3 == 0 {
+                skin_soft_shadow
+            } else {
+                skin_tone
+            };
             skin.set_pixel(x, y, c);
         }
     }
@@ -539,7 +555,11 @@ pub fn default_hd_adventurer_skin() -> RgbaImage {
     for y in 0..32 {
         for x in 64..128 {
             if y < 16 || (y >= 26 && ((x / 2) % 2 == 0)) {
-                let fur = if (x + y) % 3 == 0 { fur_shadow } else { fur_cowl };
+                let fur = if (x + y) % 3 == 0 {
+                    fur_shadow
+                } else {
+                    fur_cowl
+                };
                 skin.set_pixel(x, y, fur);
             }
         }
@@ -628,4 +648,3 @@ mod tests {
         assert_eq!(hd.height, 128);
     }
 }
-

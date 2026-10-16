@@ -6305,6 +6305,7 @@ dependencies = [
  "telos-voxel",
  "telos-worldgen",
  "tempfile",
+ "toml 0.8.23",
  "tracing",
  "winit",
 ]
@@ -6580,6 +6581,7 @@ dependencies = [
  "telos-worldgen",
  "tempfile",
  "thiserror 2.0.21",
+ "toml 0.8.23",
  "tracing",
  "xxhash-rust",
  "zstd",

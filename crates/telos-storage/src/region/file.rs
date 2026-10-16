@@ -63,6 +63,22 @@ impl<I: RegionIo> RegionFile<I> {
         }
     }
 
+    /// Returns the number of chunks currently stored in this container.
+    #[must_use]
+    pub fn chunk_count(&self) -> usize {
+        self.active_slot
+            .entries
+            .iter()
+            .filter(|e| e.flags.contains(EntryFlags::PRESENT))
+            .count()
+    }
+
+    /// Returns `true` if this container contains zero saved chunks.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.chunk_count() == 0
+    }
+
     /// Opens an existing region file or initializes a new one with explicit compression settings.
     #[allow(clippy::similar_names)]
     pub fn open_with_compression(

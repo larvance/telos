@@ -1352,8 +1352,7 @@ impl SettingsScreen {
                             !self.settings.controls.invert_mouse_y;
                     }
                     216 => {
-                        self.settings.controls.left_handed =
-                            !self.settings.controls.left_handed;
+                        self.settings.controls.left_handed = !self.settings.controls.left_handed;
                     }
                     205 => {
                         self.settings.video.post_processing = !self.settings.video.post_processing;

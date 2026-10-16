@@ -882,12 +882,24 @@ impl ServerWorld {
         }
 
         let node = self.ensure_lod_node(key);
-        let nb_x_pos = self.pyramid.get(&LodNodeKey::new(key.level, key.x + 1, key.y, key.z));
-        let nb_x_neg = self.pyramid.get(&LodNodeKey::new(key.level, key.x - 1, key.y, key.z));
-        let nb_y_pos = self.pyramid.get(&LodNodeKey::new(key.level, key.x, key.y + 1, key.z));
-        let nb_y_neg = self.pyramid.get(&LodNodeKey::new(key.level, key.x, key.y - 1, key.z));
-        let nb_z_pos = self.pyramid.get(&LodNodeKey::new(key.level, key.x, key.y, key.z + 1));
-        let nb_z_neg = self.pyramid.get(&LodNodeKey::new(key.level, key.x, key.y, key.z - 1));
+        let nb_x_pos = self
+            .pyramid
+            .get(&LodNodeKey::new(key.level, key.x + 1, key.y, key.z));
+        let nb_x_neg = self
+            .pyramid
+            .get(&LodNodeKey::new(key.level, key.x - 1, key.y, key.z));
+        let nb_y_pos = self
+            .pyramid
+            .get(&LodNodeKey::new(key.level, key.x, key.y + 1, key.z));
+        let nb_y_neg = self
+            .pyramid
+            .get(&LodNodeKey::new(key.level, key.x, key.y - 1, key.z));
+        let nb_z_pos = self
+            .pyramid
+            .get(&LodNodeKey::new(key.level, key.x, key.y, key.z + 1));
+        let nb_z_neg = self
+            .pyramid
+            .get(&LodNodeKey::new(key.level, key.x, key.y, key.z - 1));
 
         let neighbors: [Option<&LodNode>; 6] = [
             nb_x_pos.as_deref(),
@@ -994,12 +1006,16 @@ impl ServerWorld {
                         let below_block = self.get_block(BlockPos::new(x, wy - 1, z));
                         let below_flags = self.registry.flags(below_block);
                         let below_solid = below_flags.contains(StateFlags::OPAQUE_FULL)
-                            || *self.registry.shape(below_block) == telos_voxel::shape::BlockShape::Cube;
+                            || *self.registry.shape(below_block)
+                                == telos_voxel::shape::BlockShape::Cube;
                         if below_solid && !self.registry.is_magma_block(below_block) {
                             let headroom_2 = self.get_block(BlockPos::new(x, wy + 1, z));
                             let h2_passable = headroom_2.is_air()
                                 || (!self.registry.is_fluid(headroom_2)
-                                    && !self.registry.flags(headroom_2).contains(StateFlags::OPAQUE_FULL));
+                                    && !self
+                                        .registry
+                                        .flags(headroom_2)
+                                        .contains(StateFlags::OPAQUE_FULL));
                             if h2_passable {
                                 let spawn_y = f64::from(wy);
                                 return DVec3::new(f64::from(x) + 0.5, spawn_y, f64::from(z) + 0.5);
@@ -1038,7 +1054,11 @@ impl ServerWorld {
 
         // Fallback for void or empty worlds where search did not find standard terrain
         let fallback_y = self.get_surface_y(target_x, target_z).max(65);
-        DVec3::new(f64::from(target_x) + 0.5, f64::from(fallback_y) + 1.0, f64::from(target_z) + 0.5)
+        DVec3::new(
+            f64::from(target_x) + 0.5,
+            f64::from(fallback_y) + 1.0,
+            f64::from(target_z) + 0.5,
+        )
     }
 
     /// Returns (`sky_light`, `block_light`) at pos.

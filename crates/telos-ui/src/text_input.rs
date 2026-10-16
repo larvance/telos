@@ -207,11 +207,7 @@ impl TextInputBuffer {
 
     /// Selects all text in the buffer.
     pub fn select_all(&mut self) {
-        select_all(
-            &self.text,
-            &mut self.cursor_pos,
-            &mut self.selection_anchor,
-        );
+        select_all(&self.text, &mut self.cursor_pos, &mut self.selection_anchor);
     }
 
     /// Clears any active selection without moving the cursor.
@@ -577,11 +573,7 @@ pub fn move_end(
 }
 
 /// Selects all text.
-pub fn select_all(
-    text: &str,
-    cursor_pos: &mut usize,
-    selection_anchor: &mut Option<usize>,
-) {
+pub fn select_all(text: &str, cursor_pos: &mut usize, selection_anchor: &mut Option<usize>) {
     *selection_anchor = Some(0);
     *cursor_pos = text.len();
 }

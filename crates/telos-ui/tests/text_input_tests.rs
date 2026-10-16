@@ -3,8 +3,8 @@
 use telos_ui::chat::ChatHudState;
 use telos_ui::menu::widgets::MenuTextInput;
 use telos_ui::text_input::{
-    TextInputAction, TextInputBuffer, TextInputResult,
-    next_char_boundary, next_word_boundary, prev_char_boundary, prev_word_boundary,
+    TextInputAction, TextInputBuffer, TextInputResult, next_char_boundary, next_word_boundary,
+    prev_char_boundary, prev_word_boundary,
 };
 
 #[test]

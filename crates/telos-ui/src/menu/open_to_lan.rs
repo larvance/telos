@@ -197,7 +197,10 @@ impl OpenToLanScreen {
             if ch.is_ascii_digit() && self.port_input.text.len() < 5 {
                 self.port_input.insert_char(ch);
             }
-        } else if self.password_input.focused && !ch.is_control() && self.password_input.text.len() < 64 {
+        } else if self.password_input.focused
+            && !ch.is_control()
+            && self.password_input.text.len() < 64
+        {
             self.password_input.insert_char(ch);
         }
     }
