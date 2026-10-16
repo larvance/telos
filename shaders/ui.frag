@@ -64,6 +64,9 @@ void main() {
         }
         case 1u: { // Sprite
             vec4 tex = texture(u_ui_textures, vec3(v_uv, float(v_layer)));
+            if (tex.a < 0.02) {
+                discard;
+            }
             out_color = tex * v_color;
             break;
         }

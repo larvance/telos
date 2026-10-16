@@ -430,13 +430,6 @@ impl PlayerPhysicsController {
             if input.jump && self.on_ground {
                 self.vel.y = JUMP_VELOCITY + self.jump_boost;
                 self.on_ground = false;
-
-                // Forward leap impulse on jump adds forward momentum when jumping while moving
-                if wish_dir != Vec3::ZERO {
-                    let boost = if input.sprint { 4.0 } else { 1.5 };
-                    self.vel.x += wish_dir.x * boost;
-                    self.vel.z += wish_dir.z * boost;
-                }
             }
 
             let wish_disp = self.vel.as_dvec3() * f64::from(dt);

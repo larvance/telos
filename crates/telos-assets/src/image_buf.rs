@@ -232,25 +232,60 @@ impl RgbaImage {
                 let p01 = self.get_pixel(x0, y1);
                 let p11 = self.get_pixel(x1, y1);
 
-                let mut out_pixel = [0u8; 4];
-                for c in 0..4 {
+                let w00 = (1.0 - fx) * (1.0 - fy);
+                let w10 = fx * (1.0 - fy);
+                let w01 = (1.0 - fx) * fy;
+                let w11 = fx * fy;
+
+                let a00 = f32::from(p00[3]) / 255.0;
+                let a10 = f32::from(p10[3]) / 255.0;
+                let a01 = f32::from(p01[3]) / 255.0;
+                let a11 = f32::from(p11[3]) / 255.0;
+
+                let out_a = w00 * a00 + w10 * a10 + w01 * a01 + w11 * a11;
+
+                if out_a <= 0.001 {
+                    output.set_pixel(dx, dy, [0, 0, 0, 0]);
+                } else {
+                    let mut out_pixel = [0u8; 4];
+                    for c in 0..3 {
+                        #[allow(
+                            clippy::cast_precision_loss,
+                            clippy::cast_possible_truncation,
+                            clippy::cast_sign_loss
+                        )]
+                        let weighted_c = w00 * a00 * f32::from(p00[c])
+                            + w10 * a10 * f32::from(p10[c])
+                            + w01 * a01 * f32::from(p01[c])
+                            + w11 * a11 * f32::from(p11[c]);
+                        let val = weighted_c / out_a;
+                        out_pixel[c] = val.round().clamp(0.0, 255.0) as u8;
+                    }
                     #[allow(
                         clippy::cast_precision_loss,
                         clippy::cast_possible_truncation,
                         clippy::cast_sign_loss
                     )]
-                    let val = (1.0 - fx) * (1.0 - fy) * f32::from(p00[c])
-                        + fx * (1.0 - fy) * f32::from(p10[c])
-                        + (1.0 - fx) * fy * f32::from(p01[c])
-                        + fx * fy * f32::from(p11[c]);
-                    out_pixel[c] = val.round().clamp(0.0, 255.0) as u8;
+                    {
+                        out_pixel[3] = (out_a * 255.0).round().clamp(0.0, 255.0) as u8;
+                    }
+                    output.set_pixel(dx, dy, out_pixel);
                 }
-
-                output.set_pixel(dx, dy, out_pixel);
             }
         }
 
         output
+    }
+
+    /// Zeros RGB color components for all pixels where alpha is 0 to avoid color bleeding during filtering.
+    pub fn zero_transparent_rgb(&mut self) {
+        for chunk in self.data.chunks_exact_mut(4) {
+            if chunk[3] == 0 {
+                chunk[0] = 0;
+                chunk[1] = 0;
+                chunk[2] = 0;
+            }
+        }
     }
 
     /// Generates a full mipmap chain from level 0 (the image itself) down to $1\times 1$.
@@ -334,8 +369,10 @@ impl RgbaImage {
         mips
     }
 
+    /// Retrieves the RGBA pixel value at coordinates `(x, y)`.
     #[inline]
-    fn get_pixel(&self, x: u32, y: u32) -> [u8; 4] {
+    #[must_use]
+    pub fn get_pixel(&self, x: u32, y: u32) -> [u8; 4] {
         let idx = ((y * self.width + x) * 4) as usize;
         [
             self.data[idx],
@@ -345,8 +382,9 @@ impl RgbaImage {
         ]
     }
 
+    /// Stores the RGBA pixel value at coordinates `(x, y)`.
     #[inline]
-    fn set_pixel(&mut self, x: u32, y: u32, pixel: [u8; 4]) {
+    pub fn set_pixel(&mut self, x: u32, y: u32, pixel: [u8; 4]) {
         let idx = ((y * self.width + x) * 4) as usize;
         self.data[idx..idx + 4].copy_from_slice(&pixel);
     }

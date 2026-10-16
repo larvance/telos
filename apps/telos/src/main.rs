@@ -2497,7 +2497,7 @@ impl App {
             "survival" => GameMode::Survival,
             _ => GameMode::Creative,
         };
-        self.physics = PlayerPhysicsController::new(DVec3::new(128.0, 45.0, 160.0), initial_mode);
+        self.physics = PlayerPhysicsController::new(DVec3::new(128.0, 80.0, 160.0), initial_mode);
         self.camera.position = self.physics.eye_pos();
         self.client_phase = ConnectionPhase::Hello;
         self.is_paused = false;
@@ -13089,11 +13089,13 @@ fn bake_ui_textures() -> (Vec<u8>, Vec<TextureMipRegion>, BitmapFont) {
 
     let ensure_size =
         |img: telos_assets::RgbaImage, target_w: u32, target_h: u32| -> telos_assets::RgbaImage {
-            if img.width != target_w || img.height != target_h {
+            let mut result = if img.width != target_w || img.height != target_h {
                 img.rescale(target_w, target_h)
             } else {
                 img
-            }
+            };
+            result.zero_transparent_rgb();
+            result
         };
 
     // Layer 0: Hotbar (182x22)
@@ -14281,22 +14283,20 @@ fn load_and_upload_weather_textures(gpu_context: &GpuContext) -> Result<GpuTextu
     clippy::cast_precision_loss
 )]
 fn load_and_upload_entity_textures(gpu_context: &GpuContext) -> Result<GpuTextureArray> {
-    const ENTITY_RES: u32 = 64;
-    const LAYER_COUNT: u32 = 8;
+    const ENTITY_RES: u32 = 128;
+    const LAYER_COUNT: u32 = 12;
 
     let mut pixel_data = vec![0u8; (ENTITY_RES * ENTITY_RES * 4 * LAYER_COUNT) as usize];
 
     let copy_to_layer = |dest: &mut [u8], layer: usize, img: &telos_assets::RgbaImage| {
+        let rescaled = if img.width != ENTITY_RES || img.height != ENTITY_RES {
+            img.rescale(ENTITY_RES, ENTITY_RES)
+        } else {
+            img.clone()
+        };
         let layer_offset = layer * (ENTITY_RES * ENTITY_RES * 4) as usize;
-        let w = img.width.min(ENTITY_RES);
-        let h = img.height.min(ENTITY_RES);
-        for y in 0..h {
-            let src_start = ((y * img.width) * 4) as usize;
-            let src_end = src_start + (w * 4) as usize;
-            let dst_start = layer_offset + ((y * ENTITY_RES) * 4) as usize;
-            dest[dst_start..dst_start + (w * 4) as usize]
-                .copy_from_slice(&img.data[src_start..src_end]);
-        }
+        let byte_len = (ENTITY_RES * ENTITY_RES * 4) as usize;
+        dest[layer_offset..layer_offset + byte_len].copy_from_slice(&rescaled.data);
     };
 
     let mut stack = ResourcePackStack::new();
@@ -14561,6 +14561,37 @@ fn load_and_upload_entity_textures(gpu_context: &GpuContext) -> Result<GpuTextur
     };
     copy_to_layer(&mut pixel_data, 7, &minecart_img);
 
+    // Layer 8: Default Player Classic Skin (Explorer Classic 64x64)
+    let classic_skin = telos_assets::default_classic_explorer_skin();
+    copy_to_layer(&mut pixel_data, 8, &classic_skin);
+
+    // Layer 9: Default Player Slim Skin (Scout Slim 64x64)
+    let slim_skin = telos_assets::default_slim_scout_skin();
+    copy_to_layer(&mut pixel_data, 9, &slim_skin);
+
+    // Layer 10: Hytale Adventurer HD Skin (128x128 HD)
+    let hytale_skin = telos_assets::default_hytale_adventurer_skin();
+    copy_to_layer(&mut pixel_data, 10, &hytale_skin);
+
+    // Layer 11: Active Player Skin (Custom skin file if provided on disk or pack, fallback to classic)
+    let custom_skin_path = if std::path::Path::new("assets/skin.png").exists() {
+        Some(std::path::PathBuf::from("assets/skin.png"))
+    } else if std::path::Path::new("skins/player.png").exists() {
+        Some(std::path::PathBuf::from("skins/player.png"))
+    } else {
+        stack.find_texture("textures/entity/player/skin.png")
+    };
+
+    let active_skin = if let Some(skin_path) = custom_skin_path
+        && let Ok(bytes) = std::fs::read(&skin_path)
+        && let Ok((loaded, _)) = telos_assets::load_skin_image_from_png(&bytes, None)
+    {
+        loaded
+    } else {
+        telos_assets::default_classic_explorer_skin()
+    };
+    copy_to_layer(&mut pixel_data, 11, &active_skin);
+
     let regions: Vec<TextureMipRegion> = (0..LAYER_COUNT)
         .map(|layer| TextureMipRegion {
             buffer_offset: u64::from(layer * ENTITY_RES * ENTITY_RES * 4),
@@ -14575,7 +14606,7 @@ fn load_and_upload_entity_textures(gpu_context: &GpuContext) -> Result<GpuTextur
         gpu_context.create_texture_array(ENTITY_RES, LAYER_COUNT, 1, &pixel_data, &regions)?;
 
     info!(
-        "Entity texture array loaded (8 layers: Zombie, Pig, Cow, Squid, Fish, Boat, FishingBobber, Minecart, 64x64)"
+        "Entity texture array loaded (12 layers: Zombie, Pig, Cow, Squid, Fish, Boat, FishingBobber, Minecart, ClassicSkin, SlimSkin, HytaleHDSkin, ActivePlayerSkin, 128x128)"
     );
 
     Ok(texture_array)

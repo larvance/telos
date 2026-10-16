@@ -3576,8 +3576,6 @@ impl Server {
                             }
                         }
                         C2sMessage::PlayerPosition(pos) => {
-                            let old_y = session.position.y;
-                            let was_ground = session.on_ground;
                             session.update_position(
                                 DVec3::new(pos.x, pos.y, pos.z),
                                 pos.yaw,
@@ -3588,37 +3586,6 @@ impl Server {
                                 && let Some(mut p) = self.ecs_world.get_mut::<Position>(entity)
                             {
                                 p.0 = session.position;
-                            }
-                            if session.capabilities.invincible
-                                || session.move_mode == MoveMode::NoClipFly
-                                || session.move_state.flying
-                            {
-                                session.fall_distance = 0.0;
-                            } else if pos.on_ground {
-                                if !was_ground && session.fall_distance > 3.0 {
-                                    let fall_dmg = session.fall_distance - 3.0;
-                                    if let Some(entity) = session.ecs_entity {
-                                        let mut query =
-                                            self.ecs_world
-                                                .query::<(&mut Health, &mut CombatTracker)>();
-                                        if let Ok((mut health, mut combat)) =
-                                            query.get_mut(&mut self.ecs_world, entity)
-                                        {
-                                            telos_sim::apply_damage(
-                                                &mut health,
-                                                &mut combat,
-                                                fall_dmg,
-                                                DamageType::Fall,
-                                            );
-                                        }
-                                    }
-                                }
-                                session.fall_distance = 0.0;
-                            } else if pos.y < old_y {
-                                #[allow(clippy::cast_possible_truncation)]
-                                {
-                                    session.fall_distance += (old_y - pos.y) as f32;
-                                }
                             }
                         }
                         C2sMessage::BlockAction(action) => {
@@ -6153,9 +6120,24 @@ impl Server {
                     p.0 = session.position;
                 }
 
+                #[allow(clippy::cast_possible_truncation)]
+                let block_pos = BlockPos::new(
+                    session.position.x.floor() as i32,
+                    session.position.y.floor() as i32,
+                    session.position.z.floor() as i32,
+                );
+                let block_state = self
+                    .worlds
+                    .get_or_default_mut(&session.world_name)
+                    .get_block(block_pos);
+                let reg = self.registries.block_registry();
+                let in_water = reg.is_water(block_state);
+
                 if session.capabilities.invincible
                     || session.move_mode == MoveMode::NoClipFly
                     || session.move_state.flying
+                    || in_water
+                    || session.move_state.vel.y >= 0.0
                 {
                     session.fall_distance = 0.0;
                 } else if session.on_ground {
@@ -6177,7 +6159,7 @@ impl Server {
                         }
                     }
                     session.fall_distance = 0.0;
-                } else if session.position.y < old_y {
+                } else if session.position.y < old_y && session.move_state.vel.y < 0.0 {
                     #[allow(clippy::cast_possible_truncation)]
                     {
                         session.fall_distance += (old_y - session.position.y) as f32;
@@ -6190,31 +6172,20 @@ impl Server {
                     && self.tick_count.is_multiple_of(10)
                 {
                     #[allow(clippy::cast_possible_truncation)]
-                    let block_pos = BlockPos::new(
-                        session.position.x.floor() as i32,
-                        session.position.y.floor() as i32,
-                        session.position.z.floor() as i32,
-                    );
-                    let block_id = self
-                        .worlds
-                        .get_or_default_mut(&session.world_name)
-                        .get_block(block_pos)
-                        .0;
-
-                    #[allow(clippy::cast_possible_truncation)]
                     let block_below_pos = BlockPos::new(
                         session.position.x.floor() as i32,
                         (session.position.y - 0.2).floor() as i32,
                         session.position.z.floor() as i32,
                     );
-                    let block_below_id = self
+                    let block_below_state = self
                         .worlds
                         .get_or_default_mut(&session.world_name)
-                        .get_block(block_below_pos)
-                        .0;
+                        .get_block(block_below_pos);
 
-                    let is_in_fire_or_lava = block_id == 31 || block_id == 32 || block_id == 33;
-                    let is_on_magma = block_below_id == 88;
+                    let is_fire = reg.is_fire(block_state);
+                    let is_lava = reg.is_lava(block_state);
+                    let is_in_fire_or_lava = is_fire || is_lava;
+                    let is_on_magma = reg.is_magma_block(block_below_state);
 
                     if (is_in_fire_or_lava || is_on_magma)
                         && let Some(entity) = session.ecs_entity
@@ -6234,7 +6205,7 @@ impl Server {
                                 .and_then(|eff| eff.amplifier(StatusEffectKind::Resistance))
                                 .map_or(0, |amp| amp + 1);
 
-                            let raw_dmg = if block_id == 33 || is_on_magma {
+                            let raw_dmg = if is_fire || is_on_magma {
                                 1.0
                             } else {
                                 4.0

@@ -19,5 +19,8 @@ void main() {
 
     // Mode 1: Font glyph or sprite from texture array
     vec4 tex = texture(u_ui_textures, vec3(v_uv, v_layer));
+    if (tex.a < 0.02) {
+        discard;
+    }
     frag_color = tex * v_color;
 }

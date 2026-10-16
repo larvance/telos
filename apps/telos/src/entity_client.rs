@@ -500,7 +500,7 @@ impl ClientEntityStore {
                 0.0
             };
             let layer = match entity.entity_type {
-                EntityType::Zombie | EntityType::Player | EntityType::Item | EntityType::Arrow => 0,
+                EntityType::Zombie | EntityType::Item | EntityType::Arrow => 0,
                 EntityType::Pig => 1,
                 EntityType::Cow => 2,
                 EntityType::Squid => 3,
@@ -508,6 +508,7 @@ impl ClientEntityStore {
                 EntityType::Boat => 5,
                 EntityType::FishingBobber => 6,
                 EntityType::Minecart => 7,
+                EntityType::Player => 11,
             };
 
             match entity.entity_type {
@@ -852,6 +853,8 @@ fn build_humanoid_mesh(
     let death_lift = (body_roll / 90.0) * 0.25;
     let walk_anim = (entity.walk_time * 6.0).sin();
 
+    let is_player = entity.entity_type == EntityType::Player;
+
     // 1. Head: 8x8x8 centered at y=24..32, pivot at (0, 24, 0)
     let head_rot_yaw = entity.head_yaw - entity.yaw;
     let head_pitch = entity.pitch;
@@ -871,6 +874,25 @@ fn build_humanoid_mesh(
         out,
     );
 
+    // Head 2nd layer overlay (Hat / Hair volume: UV 32, 0)
+    if is_player {
+        emit_cuboid(
+            entity.pos,
+            body_quat,
+            death_lift,
+            Vec3::new(0.0, 24.0 * S, 0.0),
+            Vec3::new(head_pitch, head_rot_yaw, 0.0),
+            Vec3::new(-4.5 * S, 23.5 * S, -4.5 * S),
+            Vec3::new(4.5 * S, 32.5 * S, 4.5 * S),
+            (32.0, 0.0, 8.0, 8.0, 8.0),
+            sky,
+            block,
+            layer,
+            hurt_tint,
+            out,
+        );
+    }
+
     // 2. Body: 8x12x4 at y=12..24, pivot at (0, 24, 0)
     emit_cuboid(
         entity.pos,
@@ -888,6 +910,25 @@ fn build_humanoid_mesh(
         out,
     );
 
+    // Body 2nd layer overlay (Jacket / Armor: UV 16, 32)
+    if is_player {
+        emit_cuboid(
+            entity.pos,
+            body_quat,
+            death_lift,
+            Vec3::new(0.0, 24.0 * S, 0.0),
+            Vec3::ZERO,
+            Vec3::new(-4.25 * S, 11.75 * S, -2.25 * S),
+            Vec3::new(4.25 * S, 24.25 * S, 2.25 * S),
+            (16.0, 32.0, 8.0, 12.0, 4.0),
+            sky,
+            block,
+            layer,
+            hurt_tint,
+            out,
+        );
+    }
+
     let swing_offset = if entity.attack_swing_timer > 0.0 {
         let progress = (1.0 - entity.attack_swing_timer / 0.3).clamp(0.0, 1.0);
         (progress * std::f32::consts::PI).sin() * 40.0
@@ -895,8 +936,13 @@ fn build_humanoid_mesh(
         0.0
     };
 
-    // 3. Right Arm: 4x12x4, pivot at (-5, 22, 0), outstretched forward (-90 deg pitch)
-    let r_arm_pitch = -90.0 + walk_anim * 8.0 - swing_offset;
+    // 3. Right Arm: 4x12x4, pivot at (-5, 22, 0)
+    // Players swing arms naturally along sides; zombies reach forward at -90 deg
+    let r_arm_pitch = if is_player {
+        -walk_anim * 28.0 - swing_offset
+    } else {
+        -90.0 + walk_anim * 8.0 - swing_offset
+    };
     emit_cuboid(
         entity.pos,
         body_quat,
@@ -913,8 +959,36 @@ fn build_humanoid_mesh(
         out,
     );
 
-    // 4. Left Arm: 4x12x4, pivot at (5, 22, 0), outstretched forward (-90 deg pitch)
-    let l_arm_pitch = -90.0 - walk_anim * 8.0 - swing_offset;
+    // Right Arm 2nd layer overlay (Sleeve: UV 40, 32)
+    if is_player {
+        emit_cuboid(
+            entity.pos,
+            body_quat,
+            death_lift,
+            Vec3::new(-5.0 * S, 22.0 * S, 0.0),
+            Vec3::new(r_arm_pitch, 0.0, 0.0),
+            Vec3::new(-7.25 * S, 9.75 * S, -2.25 * S),
+            Vec3::new(-2.75 * S, 22.25 * S, 2.25 * S),
+            (40.0, 32.0, 4.0, 12.0, 4.0),
+            sky,
+            block,
+            layer,
+            hurt_tint,
+            out,
+        );
+    }
+
+    // 4. Left Arm: 4x12x4, pivot at (5, 22, 0)
+    let l_arm_pitch = if is_player {
+        walk_anim * 28.0
+    } else {
+        -90.0 - walk_anim * 8.0 - swing_offset
+    };
+    let l_arm_uv = if is_player {
+        (32.0, 48.0, 4.0, 12.0, 4.0)
+    } else {
+        (40.0, 16.0, 4.0, 12.0, 4.0)
+    };
     emit_cuboid(
         entity.pos,
         body_quat,
@@ -923,13 +997,32 @@ fn build_humanoid_mesh(
         Vec3::new(l_arm_pitch, 0.0, 0.0),
         Vec3::new(3.0 * S, 10.0 * S, -2.0 * S),
         Vec3::new(7.0 * S, 22.0 * S, 2.0 * S),
-        (40.0, 16.0, 4.0, 12.0, 4.0),
+        l_arm_uv,
         sky,
         block,
         layer,
         hurt_tint,
         out,
     );
+
+    // Left Arm 2nd layer overlay (Sleeve: UV 48, 48)
+    if is_player {
+        emit_cuboid(
+            entity.pos,
+            body_quat,
+            death_lift,
+            Vec3::new(5.0 * S, 22.0 * S, 0.0),
+            Vec3::new(l_arm_pitch, 0.0, 0.0),
+            Vec3::new(2.75 * S, 9.75 * S, -2.25 * S),
+            Vec3::new(7.25 * S, 22.25 * S, 2.25 * S),
+            (48.0, 48.0, 4.0, 12.0, 4.0),
+            sky,
+            block,
+            layer,
+            hurt_tint,
+            out,
+        );
+    }
 
     // 5. Right Leg: 4x12x4, pivot at (-2, 12, 0)
     let r_leg_pitch = walk_anim * 28.0;
@@ -949,8 +1042,32 @@ fn build_humanoid_mesh(
         out,
     );
 
+    // Right Leg 2nd layer overlay (Pant leg: UV 0, 32)
+    if is_player {
+        emit_cuboid(
+            entity.pos,
+            body_quat,
+            death_lift,
+            Vec3::new(-1.9 * S, 12.0 * S, 0.0),
+            Vec3::new(r_leg_pitch, 0.0, 0.0),
+            Vec3::new(-4.15 * S, -0.25 * S, -2.25 * S),
+            Vec3::new(0.15 * S, 12.25 * S, 2.25 * S),
+            (0.0, 32.0, 4.0, 12.0, 4.0),
+            sky,
+            block,
+            layer,
+            hurt_tint,
+            out,
+        );
+    }
+
     // 6. Left Leg: 4x12x4, pivot at (2, 12, 0)
     let l_leg_pitch = -walk_anim * 28.0;
+    let l_leg_uv = if is_player {
+        (16.0, 48.0, 4.0, 12.0, 4.0)
+    } else {
+        (0.0, 16.0, 4.0, 12.0, 4.0)
+    };
     emit_cuboid(
         entity.pos,
         body_quat,
@@ -959,13 +1076,32 @@ fn build_humanoid_mesh(
         Vec3::new(l_leg_pitch, 0.0, 0.0),
         Vec3::new(0.1 * S, 0.0, -2.0 * S),
         Vec3::new(3.9 * S, 12.0 * S, 2.0 * S),
-        (0.0, 16.0, 4.0, 12.0, 4.0),
+        l_leg_uv,
         sky,
         block,
         layer,
         hurt_tint,
         out,
     );
+
+    // Left Leg 2nd layer overlay (Pant leg: UV 0, 48)
+    if is_player {
+        emit_cuboid(
+            entity.pos,
+            body_quat,
+            death_lift,
+            Vec3::new(1.9 * S, 12.0 * S, 0.0),
+            Vec3::new(l_leg_pitch, 0.0, 0.0),
+            Vec3::new(-0.15 * S, -0.25 * S, -2.25 * S),
+            Vec3::new(4.15 * S, 12.25 * S, 2.25 * S),
+            (0.0, 48.0, 4.0, 12.0, 4.0),
+            sky,
+            block,
+            layer,
+            hurt_tint,
+            out,
+        );
+    }
 }
 
 #[allow(clippy::too_many_lines)]

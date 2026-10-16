@@ -11,6 +11,7 @@ pub mod image_buf;
 pub mod material;
 pub mod mcmeta;
 pub mod pack;
+pub mod skin;
 
 pub use builder::{AnimatedTextureInfo, BakedTextureArray, MipCopyRegion, TextureArrayBuilder};
 pub use error::AssetError;
@@ -21,3 +22,8 @@ pub use mcmeta::{
     AnimationDef, AnimationFrameDef, GuiMetaDef, GuiScaling, NineSliceBorder, TextureMetaDef,
 };
 pub use pack::ResourcePackStack;
+pub use skin::{
+    SkinFormat, default_classic_explorer_skin, default_hytale_adventurer_skin,
+    default_slim_scout_skin, detect_skin_format, load_skin_image_from_png,
+    upgrade_legacy_skin_64x32_to_64x64,
+};

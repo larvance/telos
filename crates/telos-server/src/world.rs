@@ -898,28 +898,25 @@ impl ServerWorld {
     /// with at least 2 blocks of clear headroom above it.
     #[allow(clippy::cast_possible_wrap, clippy::cast_precision_loss)]
     pub fn find_safe_spawn(&mut self, target_x: i32, target_z: i32) -> DVec3 {
-        // Spiral offsets around target_x, target_z (center first, then expanding outward)
-        let search_offsets: [(i32, i32); 17] = [
-            (0, 0),
-            (0, 4),
-            (4, 0),
-            (0, -4),
-            (-4, 0),
-            (4, 4),
-            (-4, 4),
-            (4, -4),
-            (-4, -4),
-            (0, 8),
-            (8, 0),
-            (0, -8),
-            (-8, 0),
-            (8, 8),
-            (-8, 8),
-            (8, -8),
-            (-8, -8),
-        ];
+        // Spiral offsets around target_x, target_z (center first, then expanding outward up to 64 blocks)
+        let mut search_offsets = Vec::with_capacity(128);
+        search_offsets.push((0, 0));
+        for r in (4..=64).step_by(8) {
+            search_offsets.push((0, r));
+            search_offsets.push((r, 0));
+            search_offsets.push((0, -r));
+            search_offsets.push((-r, 0));
+            search_offsets.push((r, r));
+            search_offsets.push((-r, r));
+            search_offsets.push((r, -r));
+            search_offsets.push((-r, -r));
+            search_offsets.push((r / 2, r));
+            search_offsets.push((r, r / 2));
+            search_offsets.push((-r / 2, -r));
+            search_offsets.push((-r, -r / 2));
+        }
 
-        for (dx, dz) in search_offsets {
+        'column_search: for (dx, dz) in search_offsets {
             let x = target_x + dx;
             let z = target_z + dz;
             let cx = x.div_euclid(32);
@@ -941,21 +938,46 @@ impl ServerWorld {
                         continue;
                     }
 
-                    // If fluid (water or lava) is encountered at the top of the column, this column isn't dry land
-                    if self.registry.is_fluid(block) {
-                        break;
+                    // If fluid (water or lava) or hazard is encountered at the top of the column, this column isn't dry land
+                    if self.registry.is_fluid(block)
+                        || self.registry.is_lava(block)
+                        || self.registry.is_fire(block)
+                    {
+                        continue 'column_search;
                     }
+
+                    let wy = cy * 32 + ly as i32;
 
                     // Must be a solid block (e.g. grass, dirt, stone, sand)
                     let flags = self.registry.flags(block);
                     let is_solid = flags.contains(StateFlags::OPAQUE_FULL)
                         || *self.registry.shape(block) == telos_voxel::shape::BlockShape::Cube;
+                    let is_hazardous = self.registry.is_magma_block(block)
+                        || self.registry.is_fire(block)
+                        || self.registry.is_lava(block);
 
-                    if !is_solid {
-                        continue;
+                    if is_hazardous {
+                        continue 'column_search;
                     }
 
-                    let wy = cy * 32 + ly as i32;
+                    if !is_solid {
+                        // Passable block on surface (e.g. snow layer, tall grass, poppy)
+                        let below_block = self.get_block(BlockPos::new(x, wy - 1, z));
+                        let below_flags = self.registry.flags(below_block);
+                        let below_solid = below_flags.contains(StateFlags::OPAQUE_FULL)
+                            || *self.registry.shape(below_block) == telos_voxel::shape::BlockShape::Cube;
+                        if below_solid && !self.registry.is_magma_block(below_block) {
+                            let headroom_2 = self.get_block(BlockPos::new(x, wy + 1, z));
+                            let h2_passable = headroom_2.is_air()
+                                || (!self.registry.is_fluid(headroom_2)
+                                    && !self.registry.flags(headroom_2).contains(StateFlags::OPAQUE_FULL));
+                            if h2_passable {
+                                let spawn_y = f64::from(wy);
+                                return DVec3::new(f64::from(x) + 0.5, spawn_y, f64::from(z) + 0.5);
+                            }
+                        }
+                        continue 'column_search;
+                    }
 
                     // Verify 2 blocks of clear headroom above (wy + 1, wy + 2)
                     let headroom_1 = self.get_block(BlockPos::new(x, wy + 1, z));
@@ -978,12 +1000,16 @@ impl ServerWorld {
                         let spawn_y = f64::from(wy) + 1.0;
                         return DVec3::new(f64::from(x) + 0.5, spawn_y, f64::from(z) + 0.5);
                     }
+
+                    // Top-most solid block lacked safe headroom; do not descend into caves
+                    continue 'column_search;
                 }
             }
         }
 
         // Fallback for void or empty worlds where search did not find standard terrain
-        DVec3::new(f64::from(target_x) + 0.5, 65.0, f64::from(target_z) + 0.5)
+        let fallback_y = self.get_surface_y(target_x, target_z).max(65);
+        DVec3::new(f64::from(target_x) + 0.5, f64::from(fallback_y) + 1.0, f64::from(target_z) + 0.5)
     }
 
     /// Returns (`sky_light`, `block_light`) at pos.

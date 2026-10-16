@@ -918,6 +918,27 @@ impl BlockRegistry {
         }
     }
 
+    /// Returns `true` if the given block state represents a fire block.
+    #[inline]
+    #[must_use]
+    pub fn is_fire(&self, id: BlockStateId) -> bool {
+        self.identifier(id).is_some_and(|ident| ident.path() == "fire")
+    }
+
+    /// Returns `true` if the given block state represents a lava fluid block (still, flowing, or falling).
+    #[inline]
+    #[must_use]
+    pub fn is_lava(&self, id: BlockStateId) -> bool {
+        if let Some(state) = self.fluid_state(id) {
+            state.kind == crate::fluid::FluidKind::Lava
+        } else {
+            self.identifier(id).is_some_and(|ident| {
+                let p = ident.path();
+                p == "lava" || p.starts_with("flowing_lava") || p == "falling_lava"
+            })
+        }
+    }
+
     /// Returns `true` if the given block state represents a monster spawner.
     #[inline]
     #[must_use]
