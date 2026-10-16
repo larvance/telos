@@ -1848,21 +1848,13 @@ impl App {
             .unwrap_or_else(|_| PlayerCredentials::new("Player").expect("Player credentials"));
         let player_uuid = credentials.uuid().to_bytes();
 
-        let worlds_dir = if std::path::Path::new("worlds").is_dir() {
-            PathBuf::from("worlds")
-        } else {
-            app_dirs.data_dir().join("worlds")
-        };
+        let worlds_dir = app_dirs.saves_dir();
         let _ = std::fs::create_dir_all(&worlds_dir);
 
         let view_distance = args.view_distance;
         let vertical_view_distance = args.vertical_view_distance;
         let default_save_dir = args.world_dir.clone().unwrap_or_else(|| {
-            if std::path::Path::new("worlds").is_dir() {
-                PathBuf::from("worlds/default")
-            } else {
-                app_dirs.world_save_dir("default")
-            }
+            app_dirs.world_save_dir("default")
         });
         let seed = args.seed;
         let simulation_distance = game_settings.video.simulation_distance;
@@ -12631,6 +12623,7 @@ fn mount_asset_roots(stack: &mut ResourcePackStack) {
     stack.add_root("/usr/local/share/telos/assets");
     stack.add_root("/usr/local/share/voxel/assets");
     if let Ok(home) = std::env::var("HOME") {
+        stack.add_root(format!("{home}/.telos/assets"));
         stack.add_root(format!("{home}/.local/share/telos/assets"));
         stack.add_root(format!("{home}/.local/share/voxel/assets"));
         stack.add_root(format!(

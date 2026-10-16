@@ -509,8 +509,8 @@ impl WorldSelectScreen {
         self.hovered_card_index = None;
         if !worlds_dir.exists() {
             let _ = fs::create_dir_all(worlds_dir);
-            return;
         }
+        telos_core::dirs::AppDirs::migrate_legacy_worlds(worlds_dir);
 
         if let Ok(entries) = fs::read_dir(worlds_dir) {
             for entry in entries.flatten() {

@@ -12,13 +12,14 @@ fn test_standard_dirs_resolution() {
     assert!(!dirs.cache_dir().as_os_str().is_empty());
     assert!(!dirs.logs_dir().as_os_str().is_empty());
 
-    // On Linux/Unix, paths should end in 'telos'
+    // On Linux/Unix, paths should end in '.telos' or 'telos'
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        assert!(dirs.data_dir().ends_with("telos"));
-        assert!(dirs.config_dir().ends_with("telos"));
-        assert!(dirs.cache_dir().ends_with("telos"));
+        assert!(dirs.data_dir().ends_with(".telos") || dirs.data_dir().ends_with("telos"));
+        assert!(dirs.config_dir().ends_with("telos") || dirs.config_dir().ends_with(".telos"));
+        assert!(dirs.cache_dir().ends_with("telos") || dirs.cache_dir().ends_with(".telos"));
         assert!(dirs.logs_dir().ends_with("logs"));
+        assert_eq!(dirs.saves_dir(), dirs.data_dir().join("worlds"));
     }
 }
 
@@ -109,4 +110,39 @@ fn test_ensure_dirs_exist() {
     assert!(dirs.cache_dir().is_dir());
     assert!(dirs.logs_dir().is_dir());
     assert!(dirs.saves_dir().is_dir());
+}
+
+#[test]
+fn test_migrate_legacy_worlds_simulation() {
+    let tmp = tempdir().unwrap();
+    let target = tmp.path().join(".telos").join("worlds");
+    let legacy = tmp
+        .path()
+        .join(".local")
+        .join("share")
+        .join("telos")
+        .join("worlds");
+    std::fs::create_dir_all(legacy.join("OldWorld")).unwrap();
+    std::fs::write(
+        legacy.join("OldWorld").join("world.toml"),
+        "name = \"OldWorld\"\n",
+    )
+    .unwrap();
+
+    let old_home = std::env::var_os("HOME");
+    unsafe {
+        std::env::set_var("HOME", tmp.path());
+    }
+
+    AppDirs::migrate_legacy_worlds(&target);
+
+    unsafe {
+        if let Some(h) = old_home {
+            std::env::set_var("HOME", h);
+        } else {
+            std::env::remove_var("HOME");
+        }
+    }
+
+    assert!(target.join("OldWorld").join("world.toml").is_file());
 }

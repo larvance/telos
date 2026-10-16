@@ -30,15 +30,15 @@ impl AppDirs {
         resolve_standard_dirs()
     }
 
-    /// Resolves directories checking for local development working directory fallback first.
+    /// Resolves directories checking for local server configuration fallback first.
     ///
-    /// If `./worlds` or `./server.toml` exists in the current working directory,
+    /// If `./server.toml` exists in the current working directory,
     /// returns an instance rooted at the current directory. Otherwise resolves
     /// standard platform directories.
     #[must_use]
     pub fn standard_with_local_fallback() -> Self {
         if let Ok(cwd) = std::env::current_dir()
-            && (cwd.join("worlds").is_dir() || cwd.join("server.toml").is_file())
+            && cwd.join("server.toml").is_file()
         {
             return Self {
                 data_dir: cwd.clone(),
@@ -139,6 +139,7 @@ impl AppDirs {
     }
 
     /// Returns the directory where persistent world saves live: `<data_dir>/worlds`.
+    /// On standard Linux/Unix installations, this defaults to `~/.telos/worlds`.
     #[must_use]
     pub fn saves_dir(&self) -> PathBuf {
         self.data_dir.join("worlds")
@@ -184,8 +185,81 @@ impl AppDirs {
         self.data_dir.join("mods")
     }
 
+    /// Seamlessly migrates legacy world saves found in `~/.local/share/telos/worlds`
+    /// or local working directory `./worlds` into the target saves directory (e.g. `~/.telos/worlds`).
+    pub fn migrate_legacy_worlds(target_saves_dir: &Path) {
+        let home = match dirs::home_dir() {
+            Some(h) => h,
+            None => return,
+        };
+
+        let mut legacy_candidates = vec![
+            home.join(".local/share").join(APP_NAME).join("worlds"),
+            home.join(".local/share").join("voxel").join("worlds"),
+        ];
+
+        if let Ok(cwd) = std::env::current_dir() {
+            let cwd_worlds = cwd.join("worlds");
+            if cwd_worlds.is_dir() && &cwd_worlds != target_saves_dir {
+                legacy_candidates.push(cwd_worlds);
+            }
+        }
+
+        for legacy_dir in &legacy_candidates {
+            if !legacy_dir.is_dir() || legacy_dir == target_saves_dir {
+                continue;
+            }
+
+            let entries = match std::fs::read_dir(legacy_dir) {
+                Ok(entries) => entries,
+                Err(_) => continue,
+            };
+
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let file_name = entry.file_name();
+                let dest_path = target_saves_dir.join(&file_name);
+
+                let should_migrate = if !dest_path.exists() {
+                    true
+                } else {
+                    let src_time = path.metadata().and_then(|m| m.modified()).ok();
+                    let dst_time = dest_path.metadata().and_then(|m| m.modified()).ok();
+                    match (src_time, dst_time) {
+                        (Some(st), Some(dt)) => st > dt,
+                        _ => false,
+                    }
+                };
+
+                if should_migrate {
+                    let _ = std::fs::create_dir_all(target_saves_dir);
+                    if dest_path.exists() {
+                        let _ = std::fs::remove_dir_all(&dest_path);
+                    }
+                    if std::fs::rename(&path, &dest_path).is_err() {
+                        if let Ok(()) = copy_dir_recursive(&path, &dest_path) {
+                            let _ = std::fs::remove_dir_all(&path);
+                        }
+                    }
+                }
+            }
+
+            // If legacy directory is now empty, clean it up
+            if let Ok(mut remaining) = std::fs::read_dir(legacy_dir) {
+                if remaining.next().is_none() {
+                    let _ = std::fs::remove_dir(legacy_dir);
+                }
+            }
+        }
+    }
+
     /// Ensures that the primary directories (`data_dir`, `config_dir`, `cache_dir`, `logs_dir`, `saves_dir`)
     /// exist on disk, creating them if necessary.
+    ///
+    /// Also migrates any legacy world saves into `saves_dir`.
     ///
     /// # Errors
     /// Returns an `std::io::Error` if directory creation fails.
@@ -195,34 +269,43 @@ impl AppDirs {
         std::fs::create_dir_all(&self.cache_dir)?;
         std::fs::create_dir_all(&self.logs_dir)?;
         std::fs::create_dir_all(self.saves_dir())?;
+        Self::migrate_legacy_worlds(&self.saves_dir());
         Ok(())
     }
+}
+
+/// Helper to recursively copy directories when cross-device moves fail.
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if ty.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
 }
 
 /// Resolves standard platform directories according to OS conventions.
 fn resolve_standard_dirs() -> AppDirs {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
 
-    // Legacy fallback check: if ~/.telos exists as a directory and ~/.local/share/telos does not
-    let legacy_home = home.join(".telos");
-    if legacy_home.is_dir() {
-        let is_primary_missing = dirs::data_dir().is_none_or(|p| !p.join(APP_NAME).exists());
-        if is_primary_missing {
-            return AppDirs {
-                data_dir: legacy_home.clone(),
-                config_dir: legacy_home.join("config"),
-                cache_dir: legacy_home.join("cache"),
-                logs_dir: legacy_home.join("logs"),
-                is_portable: false,
-            };
-        }
-    }
-
     #[cfg(target_os = "windows")]
     {
-        let data_dir = dirs::data_dir()
-            .map(|p| p.join("Telos"))
-            .unwrap_or_else(|| home.join("AppData").join("Roaming").join("Telos"));
+        let data_dir = std::env::var_os("TELOS_HOME")
+            .or_else(|| std::env::var_os("TELOS_DIR"))
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                dirs::data_dir()
+                    .map(|p| p.join("Telos"))
+                    .unwrap_or_else(|| home.join("AppData").join("Roaming").join("Telos"))
+            });
         let config_dir = data_dir.join("config");
         let cache_dir = dirs::cache_dir()
             .map(|p| p.join("Telos").join("cache"))
@@ -252,9 +335,19 @@ fn resolve_standard_dirs() -> AppDirs {
 
     #[cfg(target_os = "macos")]
     {
-        let data_dir = dirs::data_dir()
-            .map(|p| p.join("Telos"))
-            .unwrap_or_else(|| home.join("Library/Application Support/Telos"));
+        let data_dir = std::env::var_os("TELOS_HOME")
+            .or_else(|| std::env::var_os("TELOS_DIR"))
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                if home.join(".telos").is_dir() {
+                    home.join(".telos")
+                } else {
+                    dirs::data_dir()
+                        .map(|p| p.join("Telos"))
+                        .unwrap_or_else(|| home.join("Library/Application Support/Telos"))
+                }
+            });
         let config_dir = data_dir.join("config");
         let cache_dir = dirs::cache_dir()
             .map(|p| p.join("Telos"))
@@ -272,12 +365,14 @@ fn resolve_standard_dirs() -> AppDirs {
 
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        // Linux / Unix / BSD: adhere to XDG Base Directory Specification
-        let data_dir = std::env::var_os("XDG_DATA_HOME")
+        // Linux / Unix / BSD: game data, worlds, assets, and mods live in ~/.telos
+        let telos_home = std::env::var_os("TELOS_HOME")
+            .or_else(|| std::env::var_os("TELOS_DIR"))
             .filter(|v| !v.is_empty())
-            .map(|v| PathBuf::from(v).join(APP_NAME))
-            .or_else(|| dirs::data_dir().map(|p| p.join(APP_NAME)))
-            .unwrap_or_else(|| home.join(".local/share").join(APP_NAME));
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".telos"));
+
+        let data_dir = telos_home.clone();
 
         let config_dir = std::env::var_os("XDG_CONFIG_HOME")
             .filter(|v| !v.is_empty())
@@ -289,13 +384,9 @@ fn resolve_standard_dirs() -> AppDirs {
             .filter(|v| !v.is_empty())
             .map(|v| PathBuf::from(v).join(APP_NAME))
             .or_else(|| dirs::cache_dir().map(|p| p.join(APP_NAME)))
-            .unwrap_or_else(|| home.join(".cache").join(APP_NAME));
+            .unwrap_or_else(|| telos_home.join("cache"));
 
-        let logs_dir = std::env::var_os("XDG_STATE_HOME")
-            .filter(|v| !v.is_empty())
-            .map(|v| PathBuf::from(v).join(APP_NAME).join("logs"))
-            .or_else(|| dirs::state_dir().map(|p| p.join(APP_NAME).join("logs")))
-            .unwrap_or_else(|| home.join(".local/state").join(APP_NAME).join("logs"));
+        let logs_dir = telos_home.join("logs");
 
         AppDirs {
             data_dir,
