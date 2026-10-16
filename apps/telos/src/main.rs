@@ -1539,6 +1539,8 @@ struct App {
     perspective_obstacle_dist: f32,
     attack_swing_timer: f32,
     local_walk_time: f32,
+    local_walk_amplitude: f32,
+    client_anim_time: f32,
     controller: FlyController,
     last_frame_time: Instant,
     last_fps_time: Instant,
@@ -2146,6 +2148,8 @@ impl App {
             perspective_obstacle_dist: 4.0,
             attack_swing_timer: 0.0,
             local_walk_time: 0.0,
+            local_walk_amplitude: 0.0,
+            client_anim_time: 0.0,
             controller,
             last_frame_time: Instant::now(),
             last_fps_time: Instant::now(),
@@ -5373,8 +5377,9 @@ impl App {
                     let (cpos, lidx) = telos_voxel::coords::split_block_pos(pos);
                     if let Some(snap) = chunks.get(&cpos) {
                         let state = snap.blocks().get(lidx);
-                        !reg.flags(state)
-                            .contains(telos_voxel::state::StateFlags::AIR)
+                        let flags = reg.flags(state);
+                        flags.contains(telos_voxel::state::StateFlags::NON_EMPTY)
+                            && !flags.contains(telos_voxel::state::StateFlags::FLUID)
                     } else {
                         false
                     }
@@ -5382,21 +5387,46 @@ impl App {
 
                 let obstacle_dist = match self.perspective {
                     CameraPerspective::FirstPerson => 4.0,
-                    CameraPerspective::ThirdPersonBack => {
-                        let ray_dir = -self.camera.forward();
-                        if let Some(hit) = raycast_voxels(player_eye, ray_dir, 4.0, is_solid_block) {
-                            (hit.distance - 0.2).max(0.4)
+                    CameraPerspective::ThirdPersonBack | CameraPerspective::ThirdPersonFront => {
+                        let ray_dir = if self.perspective == CameraPerspective::ThirdPersonBack {
+                            -self.camera.forward()
                         } else {
-                            4.0
+                            self.camera.forward()
+                        };
+                        let right = self.camera.right();
+                        let up = self.camera.up();
+                        let offsets = [
+                            Vec3::ZERO,
+                            right * 0.15,
+                            -right * 0.15,
+                            up * 0.15,
+                            -up * 0.15,
+                        ];
+                        let mut min_dist = 4.0f32;
+                        for off in offsets {
+                            let origin = player_eye + off;
+                            if let Some(hit) = raycast_voxels(origin, ray_dir, 4.0, is_solid_block) {
+                                let safe_dist = (hit.distance - 0.15).max(0.0);
+                                if safe_dist < min_dist {
+                                    min_dist = safe_dist;
+                                }
+                            }
                         }
-                    }
-                    CameraPerspective::ThirdPersonFront => {
-                        let ray_dir = self.camera.forward();
-                        if let Some(hit) = raycast_voxels(player_eye, ray_dir, 4.0, is_solid_block) {
-                            (hit.distance - 0.2).max(0.4)
-                        } else {
-                            4.0
+                        // Step camera forward if the sample position is inside any solid block
+                        let mut final_dist = min_dist;
+                        while final_dist > 0.05 {
+                            let test_cam = player_eye + ray_dir * final_dist;
+                            let test_pos = BlockPos::new(
+                                test_cam.x.floor() as i32,
+                                test_cam.y.floor() as i32,
+                                test_cam.z.floor() as i32,
+                            );
+                            if !is_solid_block(test_pos) {
+                                break;
+                            }
+                            final_dist = (final_dist - 0.1).max(0.0);
                         }
+                        final_dist
                     }
                 };
 
@@ -5408,10 +5438,14 @@ impl App {
                 self.camera.position = cam_pos;
                 self.perspective_obstacle_dist = obstacle_dist;
 
-                let is_moving = self.physics.on_ground
-                    && (self.physics.vel.x.hypot(self.physics.vel.z) > 0.05);
+                let horiz_speed = self.physics.vel.x.hypot(self.physics.vel.z);
+                let is_moving = self.physics.on_ground && horiz_speed > 0.05;
                 if is_moving {
-                    self.local_walk_time += dt * 10.0;
+                    let speed_factor = (horiz_speed / 4.3).clamp(0.6, 1.8);
+                    self.local_walk_time += dt * speed_factor * 8.0;
+                    self.local_walk_amplitude = (self.local_walk_amplitude + dt * 8.0).min(1.0);
+                } else {
+                    self.local_walk_amplitude = (self.local_walk_amplitude - dt * 10.0).max(0.0);
                 }
                 if self.attack_swing_timer > 0.0 {
                     self.attack_swing_timer = (self.attack_swing_timer - dt).max(0.0);
@@ -5704,6 +5738,8 @@ impl App {
                     head_yaw: self.camera.yaw.to_degrees(),
                     target_yaw: self.camera.yaw.to_degrees(),
                     walk_time: self.local_walk_time,
+                    walk_amplitude: self.local_walk_amplitude,
+                    crouching: self.physics.movement_states.crouching,
                     hurt_timer: 0.0,
                     attack_swing_timer: self.attack_swing_timer,
                     death_timer: 0.0,
@@ -5763,6 +5799,7 @@ impl App {
 
         self.total_frames += 1;
         self.frame_counter += 1;
+        self.client_anim_time = (self.client_anim_time + dt) % 86400.0;
         self.frame_tick = self.frame_tick.wrapping_add(1);
         if now.duration_since(self.last_fps_time) >= Duration::from_secs(1) {
             let fps = self.frame_counter;
@@ -5996,14 +6033,14 @@ impl App {
         }
 
         let device = gpu_context.device().raw();
-        let is_first_frame = u32::from(self.frame_counter <= 1 || self.args.no_cull);
+        let is_first_frame = u32::from(self.total_frames <= 1 || self.args.no_cull);
         let hiz_extent = hiz_pyramid.extent();
         let hiz_levels = hiz_pyramid.mip_levels();
 
         // SAFETY: Recording barriers, compute culling dispatches, and MDI render passes
         unsafe {
             // First frame: transition Hi-Z image from UNDEFINED to SHADER_READ_ONLY_OPTIMAL
-            if self.frame_counter == 1 {
+            if self.total_frames == 1 {
                 let init_barrier = vk::ImageMemoryBarrier2::default()
                     .src_stage_mask(vk::PipelineStageFlags2::TOP_OF_PIPE)
                     .src_access_mask(vk::AccessFlags2::NONE)
@@ -6050,19 +6087,19 @@ impl App {
                 && let Some(staging_buf) = self.lightmap_staging_buffers.get(staging_idx)
             {
                 let to_transfer = vk::ImageMemoryBarrier2::default()
-                    .src_stage_mask(if self.frame_counter <= 1 {
+                    .src_stage_mask(if self.total_frames <= 1 {
                         vk::PipelineStageFlags2::TOP_OF_PIPE
                     } else {
                         vk::PipelineStageFlags2::FRAGMENT_SHADER
                     })
-                    .src_access_mask(if self.frame_counter <= 1 {
+                    .src_access_mask(if self.total_frames <= 1 {
                         vk::AccessFlags2::NONE
                     } else {
                         vk::AccessFlags2::SHADER_SAMPLED_READ
                     })
                     .dst_stage_mask(vk::PipelineStageFlags2::TRANSFER)
                     .dst_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
-                    .old_layout(if self.frame_counter <= 1 {
+                    .old_layout(if self.total_frames <= 1 {
                         vk::ImageLayout::UNDEFINED
                     } else {
                         vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL
@@ -7578,6 +7615,8 @@ impl App {
                     fog_density: 1.0,
                     flags,
                     screen_size,
+                    anim_time: self.client_anim_time,
+                    _pad: 0.0,
                 };
 
                 let fxaa_pc = if self.game_settings.video.fxaa {
@@ -8711,8 +8750,9 @@ impl App {
                 let (cpos, lidx) = telos_voxel::coords::split_block_pos(pos);
                 if let Some(snap) = chunks.get(&cpos) {
                     let state = snap.blocks().get(lidx);
-                    !reg.flags(state)
-                        .contains(telos_voxel::state::StateFlags::AIR)
+                    let flags = reg.flags(state);
+                    flags.contains(telos_voxel::state::StateFlags::NON_EMPTY)
+                        && !flags.contains(telos_voxel::state::StateFlags::FLUID)
                 } else {
                     false
                 }
@@ -8720,21 +8760,45 @@ impl App {
 
             let obstacle_dist = match self.perspective {
                 CameraPerspective::FirstPerson => 4.0,
-                CameraPerspective::ThirdPersonBack => {
-                    let ray_dir = -self.camera.forward();
-                    if let Some(hit) = raycast_voxels(player_eye, ray_dir, 4.0, is_solid_block) {
-                        (hit.distance - 0.2).max(0.4)
+                CameraPerspective::ThirdPersonBack | CameraPerspective::ThirdPersonFront => {
+                    let ray_dir = if self.perspective == CameraPerspective::ThirdPersonBack {
+                        -self.camera.forward()
                     } else {
-                        4.0
+                        self.camera.forward()
+                    };
+                    let right = self.camera.right();
+                    let up = self.camera.up();
+                    let offsets = [
+                        Vec3::ZERO,
+                        right * 0.15,
+                        -right * 0.15,
+                        up * 0.15,
+                        -up * 0.15,
+                    ];
+                    let mut min_dist = 4.0f32;
+                    for off in offsets {
+                        let origin = player_eye + off;
+                        if let Some(hit) = raycast_voxels(origin, ray_dir, 4.0, is_solid_block) {
+                            let safe_dist = (hit.distance - 0.15).max(0.0);
+                            if safe_dist < min_dist {
+                                min_dist = safe_dist;
+                            }
+                        }
                     }
-                }
-                CameraPerspective::ThirdPersonFront => {
-                    let ray_dir = self.camera.forward();
-                    if let Some(hit) = raycast_voxels(player_eye, ray_dir, 4.0, is_solid_block) {
-                        (hit.distance - 0.2).max(0.4)
-                    } else {
-                        4.0
+                    let mut final_dist = min_dist;
+                    while final_dist > 0.05 {
+                        let test_cam = player_eye + ray_dir * final_dist;
+                        let test_pos = BlockPos::new(
+                            test_cam.x.floor() as i32,
+                            test_cam.y.floor() as i32,
+                            test_cam.z.floor() as i32,
+                        );
+                        if !is_solid_block(test_pos) {
+                            break;
+                        }
+                        final_dist = (final_dist - 0.1).max(0.0);
                     }
+                    final_dist
                 }
             };
 
@@ -8746,10 +8810,14 @@ impl App {
             self.camera.position = cam_pos;
             self.perspective_obstacle_dist = obstacle_dist;
 
-            let is_moving = self.physics.on_ground
-                && (self.physics.vel.x.hypot(self.physics.vel.z) > 0.05);
+            let horiz_speed = self.physics.vel.x.hypot(self.physics.vel.z);
+            let is_moving = self.physics.on_ground && horiz_speed > 0.05;
             if is_moving {
-                self.local_walk_time += dt * 10.0;
+                let speed_factor = (horiz_speed / 4.3).clamp(0.6, 1.8);
+                self.local_walk_time += dt * speed_factor * 8.0;
+                self.local_walk_amplitude = (self.local_walk_amplitude + dt * 8.0).min(1.0);
+            } else {
+                self.local_walk_amplitude = (self.local_walk_amplitude - dt * 10.0).max(0.0);
             }
             if self.attack_swing_timer > 0.0 {
                 self.attack_swing_timer = (self.attack_swing_timer - dt).max(0.0);
@@ -8793,6 +8861,7 @@ impl App {
 
         self.frame_counter += 1;
         self.total_frames += 1;
+        self.client_anim_time = (self.client_anim_time + dt) % 86400.0;
         if self.last_fps_time.elapsed() >= Duration::from_secs(1) {
             let fps = self.frame_counter;
             info!(

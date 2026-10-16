@@ -65,6 +65,13 @@ void main() {
     }
     normal /= normal_len;
 
+    // In reversed-Z, depth = 1.0 is on the near plane towards the camera eye.
+    // Ensure the normal always faces towards the camera (into empty space, not into solid block).
+    vec3 to_camera = get_world_pos(v_uv, 1.0) - origin;
+    if (dot(normal, to_camera) < 0.0) {
+        normal = -normal;
+    }
+
     // Cardinal snap for voxel faces
     vec3 abs_n = abs(normal);
     vec3 cardinal_n;
@@ -74,6 +81,9 @@ void main() {
         cardinal_n = vec3(normal.x >= 0.0 ? 1.0 : -1.0, 0.0, 0.0);
     } else {
         cardinal_n = vec3(0.0, 0.0, normal.z >= 0.0 ? 1.0 : -1.0);
+    }
+    if (dot(cardinal_n, to_camera) < 0.0) {
+        cardinal_n = -cardinal_n;
     }
 
     // World-space tangent and bitangent orthogonal to cardinal face

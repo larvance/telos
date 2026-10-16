@@ -210,12 +210,12 @@ impl Camera {
         match perspective {
             CameraPerspective::FirstPerson => (eye_pos, Mat4::look_to_rh(eye_pos, forward, up)),
             CameraPerspective::ThirdPersonBack => {
-                let dist = obstacle_dist.clamp(0.4, 4.0);
+                let dist = obstacle_dist.clamp(0.0, 4.0);
                 let cam_pos = eye_pos - forward * dist;
                 (cam_pos, Mat4::look_to_rh(cam_pos, forward, up))
             }
             CameraPerspective::ThirdPersonFront => {
-                let dist = obstacle_dist.clamp(0.4, 4.0);
+                let dist = obstacle_dist.clamp(0.0, 4.0);
                 let cam_pos = eye_pos + forward * dist;
                 (cam_pos, Mat4::look_to_rh(cam_pos, -forward, up))
             }
@@ -376,5 +376,25 @@ mod tests {
         let side_box_min = Vec3::new(500.0, -5.0, -25.0);
         let side_box_max = Vec3::new(510.0, 5.0, -15.0);
         assert!(!frustum.intersects_aabb(side_box_min, side_box_max));
+    }
+
+    #[test]
+    fn test_perspective_view_matrix_obstacle_clamping() {
+        let mut camera = Camera::new(Vec3::ZERO);
+        camera.yaw = -std::f32::consts::FRAC_PI_2; // Looking along -Z
+        camera.pitch = 0.0;
+
+        let eye_pos = Vec3::new(10.0, 64.0, 10.0);
+
+        // When obstacle distance is 0.0, camera pulls all the way in to eye position
+        let (cam_pos_zero, _) =
+            camera.perspective_view_matrix(CameraPerspective::ThirdPersonBack, eye_pos, 0.0);
+        assert!((cam_pos_zero - eye_pos).length() < 1e-4);
+
+        // When obstacle distance is normal (4.0), camera sits 4.0 units behind
+        let (cam_pos_normal, _) =
+            camera.perspective_view_matrix(CameraPerspective::ThirdPersonBack, eye_pos, 4.0);
+        let expected_cam = eye_pos - camera.forward() * 4.0;
+        assert!((cam_pos_normal - expected_cam).length() < 1e-4);
     }
 }

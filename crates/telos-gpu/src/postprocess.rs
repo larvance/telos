@@ -81,6 +81,10 @@ pub struct PostCompositePushConstants {
     pub flags: u32,
     /// Screen dimensions (width, height) in pixels.
     pub screen_size: [f32; 2],
+    /// Continuous client animation time in seconds for organic caustics and wave displacement.
+    pub anim_time: f32,
+    /// 16-byte push constant alignment padding.
+    pub _pad: f32,
 }
 
 /// Uniform buffer data for cascaded shadow mapping in the composite pass.

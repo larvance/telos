@@ -58,8 +58,10 @@ void main() {
     float fog_factor = fog_linear * fog_linear; // Smooth extinction curve
     // Sky fog matches ambient sky light color and horizon gradient dynamically
     vec3 sky_day_color = vec3(0.68, 0.82, 0.98);
+    vec3 night_fog = vec3(0.04, 0.05, 0.09);
     vec3 light_intensity = texture(u_lightmap, vec2(0.5 / 16.0, 15.5 / 16.0)).rgb;
-    vec3 sky_fog_color = sky_day_color * light_intensity;
+    float daylight_level = clamp((light_intensity.r + light_intensity.g + light_intensity.b) / 2.5, 0.0, 1.0);
+    vec3 sky_fog_color = mix(night_fog, sky_day_color * light_intensity, daylight_level);
     vec3 final_rgb = mix(lit_color, sky_fog_color, fog_factor);
 
     out_color = vec4(final_rgb, v_color.a);

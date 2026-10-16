@@ -83,6 +83,10 @@ pub struct ClientEntity {
     pub target_yaw: f32,
     /// Continuous walk cycle accumulator for limb animation.
     pub walk_time: f32,
+    /// Walk animation amplitude [0.0..1.0] that smoothly ramps up when moving and decays to 0.0 when stopped.
+    pub walk_amplitude: f32,
+    /// Whether this entity is crouching / sneaking.
+    pub crouching: bool,
     /// Hurt flash timer in seconds (decays to 0.0).
     pub hurt_timer: f32,
     /// Attack swing animation timer in seconds (decays to 0.0).
@@ -128,6 +132,8 @@ impl ClientEntity {
             head_yaw: msg.head_yaw,
             target_yaw: msg.yaw,
             walk_time: 0.0,
+            walk_amplitude: 0.0,
+            crouching: false,
             hurt_timer: 0.0,
             attack_swing_timer: 0.0,
             death_timer: 0.0,
@@ -163,6 +169,8 @@ impl ClientEntity {
             head_yaw: 0.0,
             target_yaw: 0.0,
             walk_time: 0.0,
+            walk_amplitude: 0.0,
+            crouching: false,
             hurt_timer: 0.0,
             attack_swing_timer: 0.0,
             death_timer: 0.0,
@@ -198,6 +206,8 @@ impl ClientEntity {
             head_yaw: msg.yaw,
             target_yaw: msg.yaw,
             walk_time: 0.0,
+            walk_amplitude: 0.0,
+            crouching: false,
             hurt_timer: 0.0,
             attack_swing_timer: 0.0,
             death_timer: 0.0,
@@ -429,11 +439,14 @@ impl ClientEntityStore {
                 entity.target_yaw = entity.yaw;
             } else {
                 let delta = entity.pos - prev_pos;
-                let horiz_dist_sq = delta.x * delta.x + delta.z * delta.z;
-                if horiz_dist_sq > 1e-6 {
-                    entity.walk_time += dt;
+                let horiz_dist = (delta.x * delta.x + delta.z * delta.z).sqrt() as f32;
+                let speed = if dt > 1e-4 { horiz_dist / dt } else { 0.0 };
+                if speed > 0.08 {
+                    let speed_factor = (speed / 4.3).clamp(0.6, 1.8);
+                    entity.walk_time += dt * speed_factor * 8.0;
+                    entity.walk_amplitude = (entity.walk_amplitude + dt * 8.0).min(1.0);
                 } else {
-                    entity.walk_time = (entity.walk_time - dt * 2.0).max(0.0);
+                    entity.walk_amplitude = (entity.walk_amplitude - dt * 10.0).max(0.0);
                 }
             }
         }
@@ -849,24 +862,39 @@ pub fn build_humanoid_mesh(
     body_roll: f32,
     out: &mut Vec<EntityVertexGpu>,
 ) {
-    let body_quat = Quat::from_rotation_y((-entity.yaw).to_radians())
+    let body_quat = Quat::from_rotation_y((90.0 - entity.yaw).to_radians())
         * Quat::from_rotation_z(body_roll.to_radians());
     let death_lift = (body_roll / 90.0) * 0.25;
-    let walk_anim = (entity.walk_time * 6.0).sin();
+    let walk_anim = if entity.walk_amplitude > 1e-4 {
+        entity.walk_time.sin() * entity.walk_amplitude
+    } else {
+        0.0
+    };
 
     let is_player = entity.entity_type == EntityType::Player;
+    let is_crouching = entity.crouching;
+
+    // Crouching kinematics: torso leans forward ~28.6 deg and drops 3.2 units,
+    // head lowers 4.2 units and advances 1.5 units forward, arms pitch forward ~22 deg.
+    let (crouch_torso_rot, crouch_torso_y, crouch_head_y, crouch_head_z, crouch_arm_pitch) =
+        if is_crouching {
+            (28.6f32, -3.2 * S, -4.2 * S, 1.5 * S, 22.0f32)
+        } else {
+            (0.0f32, 0.0, 0.0, 0.0, 0.0f32)
+        };
 
     // 1. Head: 8x8x8 centered at y=24..32, pivot at (0, 24, 0)
-    let head_rot_yaw = entity.head_yaw - entity.yaw;
-    let head_pitch = entity.pitch;
+    let head_rot_yaw = -(entity.head_yaw - entity.yaw);
+    let head_pitch = -entity.pitch;
+    let head_pivot = Vec3::new(0.0, 24.0 * S + crouch_head_y, crouch_head_z);
     emit_cuboid(
         entity.pos,
         body_quat,
         death_lift,
-        Vec3::new(0.0, 24.0 * S, 0.0),
+        head_pivot,
         Vec3::new(head_pitch, head_rot_yaw, 0.0),
-        Vec3::new(-4.0 * S, 24.0 * S, -4.0 * S),
-        Vec3::new(4.0 * S, 32.0 * S, 4.0 * S),
+        Vec3::new(-4.0 * S, 24.0 * S + crouch_head_y, -4.0 * S + crouch_head_z),
+        Vec3::new(4.0 * S, 32.0 * S + crouch_head_y, 4.0 * S + crouch_head_z),
         (0.0, 0.0, 8.0, 8.0, 8.0),
         sky,
         block,
@@ -881,10 +909,10 @@ pub fn build_humanoid_mesh(
             entity.pos,
             body_quat,
             death_lift,
-            Vec3::new(0.0, 24.0 * S, 0.0),
+            head_pivot,
             Vec3::new(head_pitch, head_rot_yaw, 0.0),
-            Vec3::new(-4.5 * S, 23.5 * S, -4.5 * S),
-            Vec3::new(4.5 * S, 32.5 * S, 4.5 * S),
+            Vec3::new(-4.5 * S, 23.5 * S + crouch_head_y, -4.5 * S + crouch_head_z),
+            Vec3::new(4.5 * S, 32.5 * S + crouch_head_y, 4.5 * S + crouch_head_z),
             (32.0, 0.0, 8.0, 8.0, 8.0),
             sky,
             block,
@@ -895,14 +923,15 @@ pub fn build_humanoid_mesh(
     }
 
     // 2. Body: 8x12x4 at y=12..24, pivot at (0, 24, 0)
+    let torso_pivot = Vec3::new(0.0, 24.0 * S + crouch_torso_y, 0.0);
     emit_cuboid(
         entity.pos,
         body_quat,
         death_lift,
-        Vec3::new(0.0, 24.0 * S, 0.0),
-        Vec3::ZERO,
-        Vec3::new(-4.0 * S, 12.0 * S, -2.0 * S),
-        Vec3::new(4.0 * S, 24.0 * S, 2.0 * S),
+        torso_pivot,
+        Vec3::new(crouch_torso_rot, 0.0, 0.0),
+        Vec3::new(-4.0 * S, 12.0 * S + crouch_torso_y, -2.0 * S),
+        Vec3::new(4.0 * S, 24.0 * S + crouch_torso_y, 2.0 * S),
         (16.0, 16.0, 8.0, 12.0, 4.0),
         sky,
         block,
@@ -917,10 +946,10 @@ pub fn build_humanoid_mesh(
             entity.pos,
             body_quat,
             death_lift,
-            Vec3::new(0.0, 24.0 * S, 0.0),
-            Vec3::ZERO,
-            Vec3::new(-4.25 * S, 11.75 * S, -2.25 * S),
-            Vec3::new(4.25 * S, 24.25 * S, 2.25 * S),
+            torso_pivot,
+            Vec3::new(crouch_torso_rot, 0.0, 0.0),
+            Vec3::new(-4.25 * S, 11.75 * S + crouch_torso_y, -2.25 * S),
+            Vec3::new(4.25 * S, 24.25 * S + crouch_torso_y, 2.25 * S),
             (16.0, 32.0, 8.0, 12.0, 4.0),
             sky,
             block,
@@ -940,18 +969,19 @@ pub fn build_humanoid_mesh(
     // 3. Right Arm: 4x12x4, pivot at (-5, 22, 0)
     // Players swing arms naturally along sides; zombies reach forward at -90 deg
     let r_arm_pitch = if is_player {
-        -walk_anim * 28.0 - swing_offset
+        -walk_anim * 28.0 - swing_offset + crouch_arm_pitch
     } else {
-        -90.0 + walk_anim * 8.0 - swing_offset
+        -90.0 + walk_anim * 8.0 - swing_offset + crouch_arm_pitch
     };
+    let r_arm_pivot = Vec3::new(-5.0 * S, 22.0 * S + crouch_torso_y, 0.0);
     emit_cuboid(
         entity.pos,
         body_quat,
         death_lift,
-        Vec3::new(-5.0 * S, 22.0 * S, 0.0),
+        r_arm_pivot,
         Vec3::new(r_arm_pitch, 0.0, 0.0),
-        Vec3::new(-7.0 * S, 10.0 * S, -2.0 * S),
-        Vec3::new(-3.0 * S, 22.0 * S, 2.0 * S),
+        Vec3::new(-7.0 * S, 10.0 * S + crouch_torso_y, -2.0 * S),
+        Vec3::new(-3.0 * S, 22.0 * S + crouch_torso_y, 2.0 * S),
         (40.0, 16.0, 4.0, 12.0, 4.0),
         sky,
         block,
@@ -966,10 +996,10 @@ pub fn build_humanoid_mesh(
             entity.pos,
             body_quat,
             death_lift,
-            Vec3::new(-5.0 * S, 22.0 * S, 0.0),
+            r_arm_pivot,
             Vec3::new(r_arm_pitch, 0.0, 0.0),
-            Vec3::new(-7.25 * S, 9.75 * S, -2.25 * S),
-            Vec3::new(-2.75 * S, 22.25 * S, 2.25 * S),
+            Vec3::new(-7.25 * S, 9.75 * S + crouch_torso_y, -2.25 * S),
+            Vec3::new(-2.75 * S, 22.25 * S + crouch_torso_y, 2.25 * S),
             (40.0, 32.0, 4.0, 12.0, 4.0),
             sky,
             block,
@@ -981,23 +1011,24 @@ pub fn build_humanoid_mesh(
 
     // 4. Left Arm: 4x12x4, pivot at (5, 22, 0)
     let l_arm_pitch = if is_player {
-        walk_anim * 28.0
+        walk_anim * 28.0 + crouch_arm_pitch
     } else {
-        -90.0 - walk_anim * 8.0 - swing_offset
+        -90.0 - walk_anim * 8.0 - swing_offset + crouch_arm_pitch
     };
     let l_arm_uv = if is_player {
         (32.0, 48.0, 4.0, 12.0, 4.0)
     } else {
         (40.0, 16.0, 4.0, 12.0, 4.0)
     };
+    let l_arm_pivot = Vec3::new(5.0 * S, 22.0 * S + crouch_torso_y, 0.0);
     emit_cuboid(
         entity.pos,
         body_quat,
         death_lift,
-        Vec3::new(5.0 * S, 22.0 * S, 0.0),
+        l_arm_pivot,
         Vec3::new(l_arm_pitch, 0.0, 0.0),
-        Vec3::new(3.0 * S, 10.0 * S, -2.0 * S),
-        Vec3::new(7.0 * S, 22.0 * S, 2.0 * S),
+        Vec3::new(3.0 * S, 10.0 * S + crouch_torso_y, -2.0 * S),
+        Vec3::new(7.0 * S, 22.0 * S + crouch_torso_y, 2.0 * S),
         l_arm_uv,
         sky,
         block,
@@ -1012,10 +1043,10 @@ pub fn build_humanoid_mesh(
             entity.pos,
             body_quat,
             death_lift,
-            Vec3::new(5.0 * S, 22.0 * S, 0.0),
+            l_arm_pivot,
             Vec3::new(l_arm_pitch, 0.0, 0.0),
-            Vec3::new(2.75 * S, 9.75 * S, -2.25 * S),
-            Vec3::new(7.25 * S, 22.25 * S, 2.25 * S),
+            Vec3::new(2.75 * S, 9.75 * S + crouch_torso_y, -2.25 * S),
+            Vec3::new(7.25 * S, 22.25 * S + crouch_torso_y, 2.25 * S),
             (48.0, 48.0, 4.0, 12.0, 4.0),
             sky,
             block,
@@ -1115,10 +1146,14 @@ fn build_pig_mesh(
     body_roll: f32,
     out: &mut Vec<EntityVertexGpu>,
 ) {
-    let body_quat = Quat::from_rotation_y((-entity.yaw).to_radians())
+    let body_quat = Quat::from_rotation_y((90.0 - entity.yaw).to_radians())
         * Quat::from_rotation_z(body_roll.to_radians());
     let death_lift = (body_roll / 90.0) * 0.25;
-    let walk_anim = (entity.walk_time * 6.0).sin();
+    let walk_anim = if entity.walk_amplitude > 1e-4 {
+        entity.walk_time.sin() * entity.walk_amplitude
+    } else {
+        0.0
+    };
 
     // 1. Horizontal Body: width 10, length 16, height 8 at y=6..14, z=-8..8
     emit_quadruped_body(
@@ -1136,8 +1171,8 @@ fn build_pig_mesh(
     );
 
     // 2. Head: 8x8x8 at y=8..16, z=6..14, pivot at (0, 12, 6)
-    let head_rot_yaw = entity.head_yaw - entity.yaw;
-    let head_pitch = entity.pitch;
+    let head_rot_yaw = -(entity.head_yaw - entity.yaw);
+    let head_pitch = -entity.pitch;
     emit_cuboid(
         entity.pos,
         body_quat,
@@ -1249,10 +1284,14 @@ fn build_cow_mesh(
     body_roll: f32,
     out: &mut Vec<EntityVertexGpu>,
 ) {
-    let body_quat = Quat::from_rotation_y((-entity.yaw).to_radians())
+    let body_quat = Quat::from_rotation_y((90.0 - entity.yaw).to_radians())
         * Quat::from_rotation_z(body_roll.to_radians());
     let death_lift = (body_roll / 90.0) * 0.25;
-    let walk_anim = (entity.walk_time * 6.0).sin();
+    let walk_anim = if entity.walk_amplitude > 1e-4 {
+        entity.walk_time.sin() * entity.walk_amplitude
+    } else {
+        0.0
+    };
 
     // 1. Horizontal Body: width 12, length 18, height 10 at y=12..22, z=-9..9
     emit_quadruped_body(
@@ -1270,8 +1309,8 @@ fn build_cow_mesh(
     );
 
     // 2. Head: 8x8x6 at y=16..24, z=8..14, pivot at (0, 20, 8)
-    let head_rot_yaw = entity.head_yaw - entity.yaw;
-    let head_pitch = entity.pitch;
+    let head_rot_yaw = -(entity.head_yaw - entity.yaw);
+    let head_pitch = -entity.pitch;
     emit_cuboid(
         entity.pos,
         body_quat,

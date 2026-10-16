@@ -25,6 +25,8 @@ layout(push_constant) uniform PostCompositePushConstants {
     float u_fog_density;
     uint u_flags; // bit 0: ssao, bit 1: volumetric_fog, bit 2: tonemapping, bit 3: vignette, bit 4: shadows, bit 5: underwater, bit 6: ssr
     vec2 u_screen_size;
+    float u_anim_time;
+    float _pad0;
 };
 
 float sample_cascade_pcf(int c_idx, vec3 w_pos, vec3 norm, vec3 light_d) {
@@ -61,11 +63,35 @@ float sample_cascade_pcf(int c_idx, vec3 w_pos, vec3 norm, vec3 light_d) {
     return shadow / 9.0;
 }
 
+// Procedural organic sunlight caustics projected through water
+float evaluate_water_caustic(vec2 pos, float t) {
+    vec2 p = pos * 0.55;
+    vec2 warp1 = vec2(
+        sin(p.y * 1.1 + t * 0.7),
+        cos(p.x * 1.3 - t * 0.6)
+    ) * 0.45;
+    vec2 p1 = p + warp1;
+
+    vec2 warp2 = vec2(
+        cos(p1.y * 1.6 - t * 0.9),
+        sin(p1.x * 1.5 + t * 0.8)
+    ) * 0.35;
+    vec2 p2 = p * 1.7 + warp2;
+
+    float w1 = sin(p1.x * 2.3 + p1.y * 1.8 + t * 1.1);
+    float w2 = cos(p1.x * 1.9 - p1.y * 2.4 - t * 0.95);
+    float w3 = sin(p2.x * 2.8 + p2.y * 2.1 + t * 1.4);
+    float w4 = cos(p2.x * 2.2 - p2.y * 2.7 - t * 1.25);
+
+    float wave = (w1 + w2) * 0.5 + (w3 + w4) * 0.25;
+    return pow(clamp(1.0 - abs(wave), 0.0, 1.0), 3.0);
+}
+
 void main() {
     vec2 sample_uv = v_uv;
     // Bit 5: Underwater screen-space optical refraction & wobble
     if ((u_flags & 32u) != 0u) {
-        float t = u_time_of_day * 0.05;
+        float t = u_anim_time * 0.8;
         vec2 wobble = vec2(
             sin(v_uv.y * 28.0 + t * 0.3) * 0.003 + cos(v_uv.x * 35.0 + t * 0.22) * 0.002,
             cos(v_uv.x * 28.0 + t * 0.28) * 0.003 + sin(v_uv.y * 35.0 + t * 0.18) * 0.002
@@ -102,8 +128,8 @@ void main() {
     }
     float ssao = total_weight > 0.0 ? (total_ssao / total_weight) : 1.0;
 
-    // Bit 0: SSAO enabled (only for geometry, fading out past 24m to eliminate any distant grain)
-    if ((u_flags & 1u) != 0u && !is_sky) {
+    // Bit 0: SSAO enabled (only for opaque geometry, fading out past 24m to eliminate any distant grain)
+    if ((u_flags & 1u) != 0u && !is_sky && scene_sample.a >= 0.95) {
         float ssao_fade = 1.0 - smoothstep(24.0, 48.0, dist);
         color *= mix(1.0, ssao, 0.30 * ssao_fade);
     }
@@ -188,13 +214,15 @@ void main() {
         float NdotL = dot(cardinal_normal, light_dir);
         float grazing_fade = smoothstep(0.0, 0.08, NdotL);
         float effective_shadow = shadow_factor * grazing_fade;
-        float shadow_light = mix(0.50, 1.0, effective_shadow);
+        float shadow_light = (scene_sample.a < 0.95)
+            ? mix(0.80, 1.0, effective_shadow)
+            : mix(0.50, 1.0, effective_shadow);
         color *= shadow_light;
     }
 
-    // Bit 1: Volumetric horizon fog & atmospheric scattering
+    // Bit 1: Volumetric horizon fog & atmospheric scattering (scaled to full LOD view distance)
     if ((u_flags & 2u) != 0u) {
-        float max_dist = u_view_distance * 32.0;
+        float max_dist = u_view_distance * 128.0; // 32 blocks/chunk * 4x LOD distance
         float fog_start = max_dist * 0.65;
         float fog_end = max_dist;
         float dist_fog = clamp((dist - fog_start) / max(fog_end - fog_start, 1.0), 0.0, 1.0);
@@ -243,11 +271,8 @@ void main() {
 
         if (!is_sky) {
             // Screen-space sunlight caustics projected on submerged geometry
-            float caustic_time = u_time_of_day * 0.06;
-            float c1 = sin(world_pos.x * 2.2 + world_pos.z * 1.8 + caustic_time * 1.5);
-            float c2 = cos(world_pos.x * 1.7 - world_pos.z * 2.4 - caustic_time * 1.3);
-            float caustic = max(0.0, c1 + c2 - 0.6) * 0.22;
-            caustic *= exp(-water_dist * 0.09);
+            float caustic = evaluate_water_caustic(world_pos.xz, u_anim_time * 1.2) * 0.30;
+            caustic *= exp(-water_dist * 0.08);
             color += vec3(0.12, 0.32, 0.42) * caustic;
 
             color = color * water_transmittance + underwater_ambient * (vec3(1.0) - water_transmittance);
@@ -265,20 +290,16 @@ void main() {
     if ((u_flags & 32u) == 0u && scene_sample.a < 0.95 && !is_sky) {
         float sun_elev = normalize(u_sun_dir).y;
         if (sun_elev > 0.0) {
-            float caustic_time = u_time_of_day * 0.06;
-            vec2 cp = world_pos.xz;
-            float c1 = sin(cp.x * 2.4 + cp.y * 1.9 + caustic_time * 1.3);
-            float c2 = cos(cp.x * 1.8 - cp.y * 2.3 - caustic_time * 1.1);
-            float c3 = sin((cp.x + cp.y) * 3.1 + caustic_time * 1.7);
-            float caustic = max(0.0, c1 + c2 + c3 - 0.9) * 0.25 * clamp(sun_elev * 2.5, 0.0, 1.0);
-            caustic *= clamp(1.0 - dist / 48.0, 0.0, 1.0);
+            float caustic = evaluate_water_caustic(world_pos.xz, u_anim_time * 1.2)
+                * 0.35 * clamp(sun_elev * 2.5, 0.0, 1.0);
+            caustic *= clamp(1.0 - dist / 64.0, 0.0, 1.0);
             color += vec3(0.18, 0.36, 0.46) * caustic;
         }
     }
 
     // Bit 6: Screen-Space Water Reflections (SSR)
     if ((u_flags & 64u) != 0u && (u_flags & 32u) == 0u && scene_sample.a < 0.95 && !is_sky) {
-        float wave_time = u_time_of_day * 0.05;
+        float wave_time = u_anim_time * 1.2;
         vec2 p = world_pos.xz;
         float dx = cos(p.x * 1.5 + wave_time * 1.2) * 1.5 * cos(p.y * 1.2 + wave_time * 0.9) * 0.035
                  + cos((p.x + p.y) * 2.3 + wave_time * 1.8) * 2.3 * 0.02
