@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 
-use glam::{DVec3, Quat, Vec2, Vec3};
+use glam::{DVec3, Mat3, Mat4, Quat, Vec2, Vec3, Vec4};
 use hashbrown::HashMap;
 use telos_protocol::messages::{S2cEntityMove, S2cSpawnArrow, S2cSpawnEntity, S2cSpawnItem};
 use telos_sim::EntityType;
@@ -838,8 +838,9 @@ fn build_item_mesh(
 
 const S: f32 = 1.0 / 16.0;
 
+/// Builds the 3D mesh for a humanoid entity (player, zombie) including body parts, head rotation, and outer clothing overlays.
 #[allow(clippy::too_many_lines)]
-fn build_humanoid_mesh(
+pub fn build_humanoid_mesh(
     entity: &ClientEntity,
     sky: u8,
     block: u8,
@@ -1119,13 +1120,11 @@ fn build_pig_mesh(
     let death_lift = (body_roll / 90.0) * 0.25;
     let walk_anim = (entity.walk_time * 6.0).sin();
 
-    // 1. Horizontal Body: 10x8x16 at y=6..14, z=-8..8
-    emit_cuboid(
+    // 1. Horizontal Body: width 10, length 16, height 8 at y=6..14, z=-8..8
+    emit_quadruped_body(
         entity.pos,
         body_quat,
         death_lift,
-        Vec3::new(0.0, 10.0 * S, 0.0),
-        Vec3::ZERO,
         Vec3::new(-5.0 * S, 6.0 * S, -8.0 * S),
         Vec3::new(5.0 * S, 14.0 * S, 8.0 * S),
         (28.0, 8.0, 10.0, 16.0, 8.0),
@@ -1255,13 +1254,11 @@ fn build_cow_mesh(
     let death_lift = (body_roll / 90.0) * 0.25;
     let walk_anim = (entity.walk_time * 6.0).sin();
 
-    // 1. Horizontal Body: 12x10x18 at y=12..22, z=-9..9
-    emit_cuboid(
+    // 1. Horizontal Body: width 12, length 18, height 10 at y=12..22, z=-9..9
+    emit_quadruped_body(
         entity.pos,
         body_quat,
         death_lift,
-        Vec3::new(0.0, 17.0 * S, 0.0),
-        Vec3::ZERO,
         Vec3::new(-6.0 * S, 12.0 * S, -9.0 * S),
         Vec3::new(6.0 * S, 22.0 * S, 9.0 * S),
         (18.0, 4.0, 12.0, 18.0, 10.0),
@@ -2037,6 +2034,405 @@ fn emit_cuboid(
             Vec2::new(uv_right[2], uv_right[3]),
             Vec2::new(uv_right[0], uv_right[1]),
             Vec2::new(uv_right[2], uv_right[1]),
+        ],
+        4,
+    );
+}
+
+/// Builds the first-person 3D hand/arm mesh using the active player skin and sleeve layer.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub fn build_first_person_hand_mesh(
+    cam_pos: Vec3,
+    cam_forward: Vec3,
+    cam_right: Vec3,
+    cam_up: Vec3,
+    left_handed: bool,
+    attack_swing_progress: f32,
+    walk_bob: (f32, f32),
+    idle_bob: f32,
+    sky: u8,
+    block: u8,
+    layer: u32,
+    out: &mut Vec<EntityVertexGpu>,
+) {
+    let (bob_x, bob_y) = walk_bob;
+
+    // Local camera coordinate basis:
+    // +X: Camera Right
+    // +Y: Camera Up
+    // +Z: Camera Forward
+    let cam_basis = Mat3::from_cols(cam_right, cam_up, cam_forward);
+
+    // Default resting anchor of arm in camera space
+    let mut hand_x = if left_handed { -0.38 } else { 0.38 };
+    let mut hand_y = -0.32;
+    let mut hand_z = 0.58;
+
+    // Apply viewmodel walk and idle breathing bobbing
+    hand_x += bob_x * if left_handed { -1.0 } else { 1.0 };
+    hand_y += bob_y + idle_bob;
+
+    // Base resting rotations (degrees)
+    let base_pitch = -45.0f32;
+    let base_yaw = if left_handed { 22.0f32 } else { -22.0f32 };
+    let base_roll = if left_handed { -12.0f32 } else { 12.0f32 };
+
+    let mut pitch = base_pitch;
+    let mut yaw = base_yaw;
+    let mut roll = base_roll;
+
+    // Attack swing kinematics
+    if attack_swing_progress > 0.0 {
+        let p = attack_swing_progress.clamp(0.0, 1.0);
+        let swing_sin = (p * std::f32::consts::PI).sin();
+        let swing_sqrt = (p.sqrt() * std::f32::consts::PI).sin();
+
+        // Arm thrusts forward, dips, and sweeps inward
+        let sign = if left_handed { 1.0 } else { -1.0 };
+        hand_x += swing_sin * 0.16 * sign;
+        hand_y += swing_sin * 0.08;
+        hand_z += swing_sin * 0.12;
+
+        pitch -= swing_sin * 68.0;
+        yaw += swing_sqrt * 32.0 * -sign;
+        roll += swing_sqrt * 62.0 * -sign;
+    }
+
+    let arm_rot = Quat::from_euler(
+        glam::EulerRot::YXZ,
+        yaw.to_radians(),
+        pitch.to_radians(),
+        roll.to_radians(),
+    );
+
+    let local_anchor = Vec3::new(hand_x, hand_y, hand_z);
+    let world_anchor = cam_pos + cam_basis * local_anchor;
+
+    let model_matrix = Mat4::from_cols(
+        Vec4::from((cam_basis * (arm_rot * Vec3::X), 0.0)),
+        Vec4::from((cam_basis * (arm_rot * Vec3::Y), 0.0)),
+        Vec4::from((cam_basis * (arm_rot * Vec3::Z), 0.0)),
+        Vec4::from((world_anchor, 1.0)),
+    );
+
+    let (arm_uv, sleeve_uv) = if left_handed {
+        (
+            (32.0, 48.0, 4.0, 12.0, 4.0),
+            (48.0, 48.0, 4.0, 12.0, 4.0),
+        )
+    } else {
+        (
+            (40.0, 16.0, 4.0, 12.0, 4.0),
+            (40.0, 32.0, 4.0, 12.0, 4.0),
+        )
+    };
+
+    // 1. Base 3D Arm Cuboid: 4x12x4, pivot at shoulder/wrist
+    emit_viewmodel_cuboid(
+        model_matrix,
+        Vec3::new(-2.0 * S, -12.0 * S, -2.0 * S),
+        Vec3::new(2.0 * S, 0.0, 2.0 * S),
+        arm_uv,
+        sky,
+        block,
+        layer,
+        out,
+    );
+
+    // 2. Sleeve 2nd Layer Overlay Cuboid: slightly dilated outer volume
+    emit_viewmodel_cuboid(
+        model_matrix,
+        Vec3::new(-2.25 * S, -12.25 * S, -2.25 * S),
+        Vec3::new(2.25 * S, 0.25 * S, 2.25 * S),
+        sleeve_uv,
+        sky,
+        block,
+        layer,
+        out,
+    );
+}
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn emit_viewmodel_cuboid(
+    model_matrix: Mat4,
+    min_pt: Vec3,
+    max_pt: Vec3,
+    uv_spec: (f32, f32, f32, f32, f32), // (u, v, w, h, d)
+    sky: u8,
+    block: u8,
+    layer: u32,
+    out: &mut Vec<EntityVertexGpu>,
+) {
+    let (u0, v0, w, h, d) = uv_spec;
+    let inv = 1.0 / 64.0;
+
+    let uv_right = [
+        (u0) * inv,
+        (v0 + d) * inv,
+        (u0 + d) * inv,
+        (v0 + d + h) * inv,
+    ];
+    let uv_front = [
+        (u0 + d) * inv,
+        (v0 + d) * inv,
+        (u0 + d + w) * inv,
+        (v0 + d + h) * inv,
+    ];
+    let uv_left = [
+        (u0 + d + w) * inv,
+        (v0 + d) * inv,
+        (u0 + 2.0 * d + w) * inv,
+        (v0 + d + h) * inv,
+    ];
+    let uv_back = [
+        (u0 + 2.0 * d + w) * inv,
+        (v0 + d) * inv,
+        (u0 + 2.0 * d + 2.0 * w) * inv,
+        (v0 + d + h) * inv,
+    ];
+    let uv_top = [
+        (u0 + d) * inv,
+        (v0) * inv,
+        (u0 + d + w) * inv,
+        (v0 + d) * inv,
+    ];
+    let uv_bottom = [
+        (u0 + d + w) * inv,
+        (v0) * inv,
+        (u0 + d + 2.0 * w) * inv,
+        (v0 + d) * inv,
+    ];
+
+    let transform_pt = |p: Vec3| -> [f32; 3] {
+        let world = model_matrix.transform_point3(p);
+        [world.x, world.y, world.z]
+    };
+
+    let p000 = min_pt;
+    let p100 = Vec3::new(max_pt.x, min_pt.y, min_pt.z);
+    let p010 = Vec3::new(min_pt.x, max_pt.y, min_pt.z);
+    let p110 = Vec3::new(max_pt.x, max_pt.y, min_pt.z);
+    let p001 = Vec3::new(min_pt.x, min_pt.y, max_pt.z);
+    let p101 = Vec3::new(max_pt.x, min_pt.y, max_pt.z);
+    let p011 = Vec3::new(min_pt.x, max_pt.y, max_pt.z);
+    let p111 = max_pt;
+
+    let mut emit_quad = |pts: [Vec3; 4], uvs: [Vec2; 4], norm_idx: u32| {
+        let light = u32::from(sky & 0xF) | (u32::from(block & 0xF) << 4) | ((norm_idx & 0x7) << 8);
+        let indices = [0, 1, 2, 2, 1, 3];
+        for &idx in &indices {
+            out.push(EntityVertexGpu {
+                pos: transform_pt(pts[idx]),
+                light,
+                uv: [uvs[idx].x, uvs[idx].y],
+                layer,
+                hurt_tint: 0.0,
+            });
+        }
+    };
+
+    // 1. Top face (+Y, norm 1)
+    emit_quad(
+        [p011, p111, p010, p110],
+        [
+            Vec2::new(uv_top[0], uv_top[3]),
+            Vec2::new(uv_top[2], uv_top[3]),
+            Vec2::new(uv_top[0], uv_top[1]),
+            Vec2::new(uv_top[2], uv_top[1]),
+        ],
+        1,
+    );
+
+    // 2. Bottom face (-Y, norm 0)
+    emit_quad(
+        [p000, p100, p001, p101],
+        [
+            Vec2::new(uv_bottom[0], uv_bottom[1]),
+            Vec2::new(uv_bottom[2], uv_bottom[1]),
+            Vec2::new(uv_bottom[0], uv_bottom[3]),
+            Vec2::new(uv_bottom[2], uv_bottom[3]),
+        ],
+        0,
+    );
+
+    // 3. Front face (+Z, norm 3)
+    emit_quad(
+        [p001, p101, p011, p111],
+        [
+            Vec2::new(uv_front[0], uv_front[3]),
+            Vec2::new(uv_front[2], uv_front[3]),
+            Vec2::new(uv_front[0], uv_front[1]),
+            Vec2::new(uv_front[2], uv_front[1]),
+        ],
+        3,
+    );
+
+    // 4. Back face (-Z, norm 2)
+    emit_quad(
+        [p100, p000, p110, p010],
+        [
+            Vec2::new(uv_back[0], uv_back[3]),
+            Vec2::new(uv_back[2], uv_back[3]),
+            Vec2::new(uv_back[0], uv_back[1]),
+            Vec2::new(uv_back[2], uv_back[1]),
+        ],
+        2,
+    );
+
+    // 5. Left face (+X, norm 5)
+    emit_quad(
+        [p101, p100, p111, p110],
+        [
+            Vec2::new(uv_left[0], uv_left[3]),
+            Vec2::new(uv_left[2], uv_left[3]),
+            Vec2::new(uv_left[0], uv_left[1]),
+            Vec2::new(uv_left[2], uv_left[1]),
+        ],
+        5,
+    );
+
+    // 6. Right face (-X, norm 4)
+    emit_quad(
+        [p000, p001, p010, p011],
+        [
+            Vec2::new(uv_right[0], uv_right[3]),
+            Vec2::new(uv_right[2], uv_right[3]),
+            Vec2::new(uv_right[0], uv_right[1]),
+            Vec2::new(uv_right[2], uv_right[1]),
+        ],
+        4,
+    );
+}
+
+/// Emits an authentic horizontal quadruped body (pig, cow, sheep) respecting the classic
+/// 90-degree pitch texture layout where the spine is the front of the model box and the
+/// flanks are oriented horizontally along Z.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn emit_quadruped_body(
+    entity_pos: DVec3,
+    body_quat: Quat,
+    death_lift: f32,
+    min_pt: Vec3,
+    max_pt: Vec3,
+    uv_spec: (f32, f32, f32, f32, f32), // (u0, v0, w, l, h) where w=width, l=length, h=height
+    sky: u8,
+    block: u8,
+    layer: u32,
+    hurt_tint: f32,
+    out: &mut Vec<EntityVertexGpu>,
+) {
+    let (u0, v0, w, l, h) = uv_spec;
+    let inv = 1.0 / 64.0;
+
+    let transform_pt = |p: Vec3| -> [f32; 3] {
+        let rotated_body = body_quat * p;
+        let world = entity_pos.as_vec3() + rotated_body + Vec3::new(0.0, death_lift, 0.0);
+        [world.x, world.y, world.z]
+    };
+
+    let p000 = min_pt;
+    let p100 = Vec3::new(max_pt.x, min_pt.y, min_pt.z);
+    let p010 = Vec3::new(min_pt.x, max_pt.y, min_pt.z);
+    let p110 = Vec3::new(max_pt.x, max_pt.y, min_pt.z);
+    let p001 = Vec3::new(min_pt.x, min_pt.y, max_pt.z);
+    let p101 = Vec3::new(max_pt.x, min_pt.y, max_pt.z);
+    let p011 = Vec3::new(min_pt.x, max_pt.y, max_pt.z);
+    let p111 = max_pt;
+
+    let mut emit_quad = |pts: [Vec3; 4], uvs: [Vec2; 4], norm_idx: u32| {
+        let light = u32::from(sky & 0xF) | (u32::from(block & 0xF) << 4) | ((norm_idx & 0x7) << 8);
+        let indices = [0, 1, 2, 2, 1, 3];
+        for &idx in &indices {
+            out.push(EntityVertexGpu {
+                pos: transform_pt(pts[idx]),
+                light,
+                uv: [uvs[idx].x, uvs[idx].y],
+                layer,
+                hurt_tint,
+            });
+        }
+    };
+
+    // 1. Spine / Top face (+Y, norm 1)
+    // Points: p011 (right front), p111 (left front), p010 (right rear), p110 (left rear)
+    // Texture region: u in [u0 + h, u0 + h + w], v in [v0 + h, v0 + h + l]
+    emit_quad(
+        [p011, p111, p010, p110],
+        [
+            Vec2::new((u0 + h) * inv, (v0 + h + l) * inv),
+            Vec2::new((u0 + h + w) * inv, (v0 + h + l) * inv),
+            Vec2::new((u0 + h) * inv, (v0 + h) * inv),
+            Vec2::new((u0 + h + w) * inv, (v0 + h) * inv),
+        ],
+        1,
+    );
+
+    // 2. Belly / Bottom face (-Y, norm 0)
+    // Points: p000 (right rear), p100 (left rear), p001 (right front), p101 (left front)
+    // Texture region: u in [u0 + 2h + w, u0 + 2h + 2w], v in [v0 + h, v0 + h + l]
+    emit_quad(
+        [p000, p100, p001, p101],
+        [
+            Vec2::new((u0 + 2.0 * h + 2.0 * w) * inv, (v0 + h) * inv),
+            Vec2::new((u0 + 2.0 * h + w) * inv, (v0 + h) * inv),
+            Vec2::new((u0 + 2.0 * h + 2.0 * w) * inv, (v0 + h + l) * inv),
+            Vec2::new((u0 + 2.0 * h + w) * inv, (v0 + h + l) * inv),
+        ],
+        0,
+    );
+
+    // 3. Front / Chest face (+Z, norm 3)
+    // Points: p001 (right belly), p101 (left belly), p011 (right spine), p111 (left spine)
+    // Texture region: u in [u0 + h, u0 + h + w], v in [v0, v0 + h]
+    emit_quad(
+        [p001, p101, p011, p111],
+        [
+            Vec2::new((u0 + h) * inv, (v0 + h) * inv),
+            Vec2::new((u0 + h + w) * inv, (v0 + h) * inv),
+            Vec2::new((u0 + h) * inv, (v0) * inv),
+            Vec2::new((u0 + h + w) * inv, (v0) * inv),
+        ],
+        3,
+    );
+
+    // 4. Rear / Tail face (-Z, norm 2)
+    // Points: p100 (left belly), p000 (right belly), p110 (left spine), p010 (right spine)
+    // Texture region: u in [u0 + h + w, u0 + h + 2w], v in [v0, v0 + h]
+    emit_quad(
+        [p100, p000, p110, p010],
+        [
+            Vec2::new((u0 + h + w) * inv, (v0 + h) * inv),
+            Vec2::new((u0 + h + 2.0 * w) * inv, (v0 + h) * inv),
+            Vec2::new((u0 + h + w) * inv, (v0) * inv),
+            Vec2::new((u0 + h + 2.0 * w) * inv, (v0) * inv),
+        ],
+        2,
+    );
+
+    // 5. Left Flank (+X, norm 5)
+    // Points: p101 (front belly), p100 (rear belly), p111 (front spine), p110 (rear spine)
+    // Texture region: u in [u0 + h + w, u0 + 2h + w], v in [v0 + h, v0 + h + l]
+    emit_quad(
+        [p101, p100, p111, p110],
+        [
+            Vec2::new((u0 + 2.0 * h + w) * inv, (v0 + h + l) * inv),
+            Vec2::new((u0 + 2.0 * h + w) * inv, (v0 + h) * inv),
+            Vec2::new((u0 + h + w) * inv, (v0 + h + l) * inv),
+            Vec2::new((u0 + h + w) * inv, (v0 + h) * inv),
+        ],
+        5,
+    );
+
+    // 6. Right Flank (-X, norm 4)
+    // Points: p000 (rear belly), p001 (front belly), p010 (rear spine), p011 (front spine)
+    // Texture region: u in [u0, u0 + h], v in [v0 + h, v0 + h + l]
+    emit_quad(
+        [p000, p001, p010, p011],
+        [
+            Vec2::new((u0) * inv, (v0 + h) * inv),
+            Vec2::new((u0) * inv, (v0 + h + l) * inv),
+            Vec2::new((u0 + h) * inv, (v0 + h) * inv),
+            Vec2::new((u0 + h) * inv, (v0 + h + l) * inv),
         ],
         4,
     );

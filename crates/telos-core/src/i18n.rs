@@ -1,6 +1,6 @@
 //! High-performance, pure-CPU internationalization (i18n) and translation engine.
 //!
-//! Supports standard Minecraft-style `lang/<locale>.json` flat key-value files,
+//! Supports standard locale-style `lang/<locale>.json` flat key-value files,
 //! parameter formatting (`%s`, `%d`, positional `%1$s`, `%%`), fallback resolution
 //! (`<locale>` -> `en_us` -> raw key), and system locale detection.
 

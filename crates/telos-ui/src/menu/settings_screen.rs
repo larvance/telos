@@ -1,4 +1,4 @@
-//! Modernized Hytale-inspired settings and options screen.
+//! Modernized sleek settings and options screen.
 //!
 //! Features full-width sleek capsule setting rows, a centered golden header,
 //! warm gold tab navigation indicators, right-aligned stepper pills and diamond
@@ -26,7 +26,7 @@ pub enum SettingsTab {
     Language,
 }
 
-/// Category item displayed in the Hytale-inspired settings list.
+/// Category item displayed in the settings list.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettingRowItem {
     /// Section divider header (e.g. "RENDERING", "VOLUME CHANNELS").
@@ -83,7 +83,7 @@ pub struct SettingRow {
     pub item: SettingRowItem,
 }
 
-/// Settings and options screen state with authentic Hytale-inspired layout.
+/// Settings and options screen state with authentic modern layout.
 #[derive(Debug, Clone)]
 pub struct SettingsScreen {
     /// Current editable settings.
@@ -1011,6 +1011,31 @@ impl SettingsScreen {
                 });
                 cur_y += row_step;
 
+                // Toggle 216: Main Hand
+                let b_idx = self.toggle_buttons.len();
+                let hand_val = if self.settings.controls.left_handed {
+                    "Left"
+                } else {
+                    "Right"
+                };
+                self.toggle_buttons.push(MenuButton::new(
+                    216,
+                    pill_x,
+                    cur_y + 3.0,
+                    pill_w,
+                    pill_h,
+                    format!("< {hand_val} >"),
+                ));
+                self.rows.push(SettingRow {
+                    y: cur_y,
+                    height: row_h,
+                    item: SettingRowItem::ToggleRow {
+                        button_idx: b_idx,
+                        label: "Main Hand".to_string(),
+                    },
+                });
+                cur_y += row_step;
+
                 // --- Keybind Sections ---
                 let categories = [
                     (KeyCategory::Movement, "MOVEMENT CONTROLS"),
@@ -1326,6 +1351,10 @@ impl SettingsScreen {
                         self.settings.controls.invert_mouse_y =
                             !self.settings.controls.invert_mouse_y;
                     }
+                    216 => {
+                        self.settings.controls.left_handed =
+                            !self.settings.controls.left_handed;
+                    }
                     205 => {
                         self.settings.video.post_processing = !self.settings.video.post_processing;
                     }
@@ -1431,7 +1460,7 @@ impl SettingsScreen {
         }
     }
 
-    /// Renders the Hytale-inspired settings screen.
+    /// Renders the settings screen.
     #[allow(
         clippy::too_many_lines,
         clippy::cast_possible_wrap,
@@ -1471,7 +1500,7 @@ impl SettingsScreen {
             Vec::new()
         };
 
-        // Render Hytale capsule rows (Content Layer - drawn underneath sticky bars)
+        // Render capsule rows (Content Layer - drawn underneath sticky bars)
         for row in &self.rows {
             if row.y + row.height <= content_top || row.y >= content_bottom {
                 continue;
@@ -2111,7 +2140,7 @@ fn visible_ratio(max_scroll: f32, visible_h: f32) -> f32 {
     }
 }
 
-/// Helper function rendering a sleek Hytale capsule row container.
+/// Helper function rendering a sleek capsule row container.
 #[allow(
     clippy::too_many_arguments,
     clippy::cast_possible_wrap,

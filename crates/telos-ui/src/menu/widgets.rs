@@ -162,7 +162,7 @@ impl MenuButton {
             }
         };
 
-        // Nine-slice scalable button quad matching Minecraft widget buttons (border: 3 GUI px)
+        // Nine-slice scalable button quad matching standard widget buttons (border: 3 GUI px)
         let borders = [
             (3u32 * gui_scale).min(255) as u8,
             (3u32 * gui_scale).min(255) as u8,
@@ -206,7 +206,7 @@ impl MenuButton {
             }
         }
 
-        // Label text styling: classic Minecraft white/yellow hover text with drop shadows
+        // Label text styling: classic white/yellow hover text with drop shadows
         let text_col = if !self.enabled {
             UiQuad::rgba(160, 160, 160, 255)
         } else if self.hovered {

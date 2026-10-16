@@ -455,8 +455,8 @@ pub fn render_chat_hud(
     let scale = gui_scale.max(1);
     let line_height_gui = 9.0;
 
-    // Chat bottom anchor is 40 GUI pixels above the bottom of the screen
-    let chat_bottom_gui = (screen_h as f32 / scale as f32) - 40.0;
+    // Chat bottom anchor is 48 GUI pixels above the bottom of the screen (safely above HUD hotbar & health hearts)
+    let chat_bottom_gui = (screen_h as f32 / scale as f32) - 48.0;
     let chat_x_gui = 4.0;
 
     // 1. Render message history lines
@@ -522,7 +522,7 @@ pub fn render_chat_hud(
 
     // 2. Render input box and cursor when open
     if state.is_open {
-        let input_y_gui = chat_bottom_gui + 4.0;
+        let input_y_gui = (screen_h as f32 / scale as f32) - 14.0;
         let input_w_gui = 320.0f32.min((screen_w as f32 / scale as f32) - 8.0);
         let input_h_gui = 12.0f32;
 
@@ -531,21 +531,11 @@ pub fn render_chat_hud(
         let phys_w = (input_w_gui * scale as f32).round() as u16;
         let phys_h = (input_h_gui * scale as f32).round() as u16;
 
-        // Dark background box with outline border
+        // Dark background box (clean, semi-transparent, no harsh outline borders colliding with HUD)
         out.push(UiQuad::solid(
             [phys_x, phys_y],
             [phys_w, phys_h],
-            UiQuad::rgba(0, 0, 0, 180),
-        ));
-        out.push(UiQuad::solid(
-            [phys_x, phys_y],
-            [phys_w, scale as u16],
-            UiQuad::rgba(160, 160, 160, 255),
-        ));
-        out.push(UiQuad::solid(
-            [phys_x, phys_y + i32::from(phys_h) - scale.cast_signed()],
-            [phys_w, scale as u16],
-            UiQuad::rgba(160, 160, 160, 255),
+            UiQuad::rgba(0, 0, 0, 160),
         ));
 
         // Prompt symbol

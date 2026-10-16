@@ -363,7 +363,7 @@ impl StatusEffectRegistry {
         let clean = name.trim().to_ascii_lowercase();
         let stripped = clean
             .strip_prefix("telos:")
-            .or_else(|| clean.strip_prefix("minecraft:"))
+            .or_else(|| clean.split_once(':').map(|(_ns, id)| id))
             .unwrap_or(&clean);
 
         Self::ALL.iter().find(|d| {
@@ -851,7 +851,7 @@ mod tests {
         let nv = StatusEffectRegistry::get_by_name("telos:night_vision").unwrap();
         assert_eq!(nv.kind, StatusEffectKind::NightVision);
 
-        let mc_blindness = StatusEffectRegistry::get_by_name("minecraft:blindness").unwrap();
-        assert_eq!(mc_blindness.kind, StatusEffectKind::Blindness);
+        let custom_blindness = StatusEffectRegistry::get_by_name("custom:blindness").unwrap();
+        assert_eq!(custom_blindness.kind, StatusEffectKind::Blindness);
     }
 }

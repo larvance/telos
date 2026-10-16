@@ -1,6 +1,6 @@
 //! Modernized singleplayer world selection and world manager screen.
 //!
-//! Features Sodium/Hytale-inspired responsive card layouts, rich world metadata
+//! Features modern responsive card layouts, rich world metadata
 //! (generator mode, last modified date, disk footprint), smooth scrolling, keyboard
 //! navigation, and a modal confirmation prompt that safely moves worlds to the system trash.
 

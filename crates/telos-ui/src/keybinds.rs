@@ -36,9 +36,11 @@ pub enum KeyAction {
     Screenshot,
     /// Toggle F3 performance and debug overlay.
     ToggleF3,
-    /// Toggle or cycle game mode (Survival/Creative/Adventure/Spectator).
+    /// Toggle or cycle game mode (Survival/Creative/Adventure/Spectator) (F4).
     ToggleGameMode,
-    /// Hot-reload SPIR-V / GLSL shaders (F5).
+    /// Toggle camera perspective (1st Person, 3rd Person Back, 3rd Person Front) (F5).
+    TogglePerspective,
+    /// Hot-reload SPIR-V / GLSL shaders (F9).
     ReloadShaders,
     /// Select hotbar slot 1.
     Hotbar1,
@@ -97,7 +99,8 @@ impl KeyAction {
             Self::Screenshot => "Take Screenshot",
             Self::ToggleF3 => "Debug Screen (F3)",
             Self::ToggleGameMode => "Cycle Game Mode (F4)",
-            Self::ReloadShaders => "Reload Shaders (F5)",
+            Self::TogglePerspective => "Change Perspective (F5)",
+            Self::ReloadShaders => "Reload Shaders (F9)",
             Self::Hotbar1 => "Hotbar Slot 1",
             Self::Hotbar2 => "Hotbar Slot 2",
             Self::Hotbar3 => "Hotbar Slot 3",
@@ -135,9 +138,11 @@ impl KeyAction {
             | Self::Hotbar8
             | Self::Hotbar9 => KeyCategory::Hotbar,
             Self::PushToTalk => KeyCategory::Multiplayer,
-            Self::Screenshot | Self::ToggleF3 | Self::ToggleGameMode | Self::ReloadShaders => {
-                KeyCategory::System
-            }
+            Self::Screenshot
+            | Self::ToggleF3
+            | Self::ToggleGameMode
+            | Self::TogglePerspective
+            | Self::ReloadShaders => KeyCategory::System,
         }
     }
 
@@ -170,6 +175,7 @@ impl KeyAction {
             Self::Screenshot,
             Self::ToggleF3,
             Self::ToggleGameMode,
+            Self::TogglePerspective,
             Self::ReloadShaders,
         ]
     }
@@ -350,6 +356,7 @@ pub struct KeybindSettings {
     pub screenshot: InputKey,
     pub toggle_f3: InputKey,
     pub toggle_gamemode: InputKey,
+    pub toggle_perspective: InputKey,
     pub reload_shaders: InputKey,
     pub hotbar_1: InputKey,
     pub hotbar_2: InputKey,
@@ -381,7 +388,8 @@ impl Default for KeybindSettings {
             screenshot: InputKey::F2,
             toggle_f3: InputKey::F3,
             toggle_gamemode: InputKey::F4,
-            reload_shaders: InputKey::F5,
+            toggle_perspective: InputKey::F5,
+            reload_shaders: InputKey::F9,
             hotbar_1: InputKey::Digit1,
             hotbar_2: InputKey::Digit2,
             hotbar_3: InputKey::Digit3,
@@ -416,6 +424,7 @@ impl KeybindSettings {
             KeyAction::Screenshot => self.screenshot,
             KeyAction::ToggleF3 => self.toggle_f3,
             KeyAction::ToggleGameMode => self.toggle_gamemode,
+            KeyAction::TogglePerspective => self.toggle_perspective,
             KeyAction::ReloadShaders => self.reload_shaders,
             KeyAction::Hotbar1 => self.hotbar_1,
             KeyAction::Hotbar2 => self.hotbar_2,
@@ -448,6 +457,7 @@ impl KeybindSettings {
             KeyAction::Screenshot => self.screenshot = key,
             KeyAction::ToggleF3 => self.toggle_f3 = key,
             KeyAction::ToggleGameMode => self.toggle_gamemode = key,
+            KeyAction::TogglePerspective => self.toggle_perspective = key,
             KeyAction::ReloadShaders => self.reload_shaders = key,
             KeyAction::Hotbar1 => self.hotbar_1 = key,
             KeyAction::Hotbar2 => self.hotbar_2 = key,

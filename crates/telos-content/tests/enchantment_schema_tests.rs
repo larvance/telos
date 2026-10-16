@@ -10,25 +10,25 @@ use telos_core::ident::Identifier;
 #[test]
 fn test_enchantment_json_deserialization() {
     let json_str = r#"{
-        "id": "minecraft:sharpness",
+        "id": "telos:sharpness",
         "name": "Sharpness",
         "max_level": 5,
         "weight": 10,
         "rarity": "common",
         "target": "weapon",
-        "conflicts": ["minecraft:smite", "minecraft:bane_of_arthropods"]
+        "conflicts": ["telos:smite", "telos:bane_of_arthropods"]
     }"#;
 
     let def = EnchantmentDef::from_json_str(json_str).expect("Valid JSON enchantment definition");
-    assert_eq!(def.id, "minecraft:sharpness");
+    assert_eq!(def.id, "telos:sharpness");
     assert_eq!(def.name, "Sharpness");
     assert_eq!(def.max_level, 5);
     assert_eq!(def.weight, 10);
     assert_eq!(def.rarity, EnchantmentRarityDef::Common);
     assert_eq!(def.target, EnchantmentTargetDef::Weapon);
     assert_eq!(def.conflicts.len(), 2);
-    assert!(def.conflicts_with("minecraft:smite"));
-    assert!(!def.conflicts_with("minecraft:unbreaking"));
+    assert!(def.conflicts_with("telos:smite"));
+    assert!(!def.conflicts_with("telos:unbreaking"));
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn test_enchantment_ron_deserialization() {
         weight: 2,
         rarity: rare,
         target: boots,
-        conflicts: ["minecraft:depth_strider"],
+        conflicts: ["telos:depth_strider"],
     )"#;
 
     let def = EnchantmentDef::from_ron_str(ron_str).expect("Valid RON enchantment definition");
@@ -50,7 +50,7 @@ fn test_enchantment_ron_deserialization() {
     assert_eq!(def.weight, 2);
     assert_eq!(def.rarity, EnchantmentRarityDef::Rare);
     assert_eq!(def.target, EnchantmentTargetDef::Boots);
-    assert!(def.conflicts_with("minecraft:depth_strider"));
+    assert!(def.conflicts_with("telos:depth_strider"));
 }
 
 #[test]

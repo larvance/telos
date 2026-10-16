@@ -160,6 +160,9 @@ pub struct ControlSettings {
     pub mouse_sensitivity: f32,
     /// Invert pitch look axis.
     pub invert_mouse_y: bool,
+    /// Whether main hand is left-handed (renders 3D hand on left side).
+    #[serde(default)]
+    pub left_handed: bool,
     /// Player keyboard keybind mappings.
     #[serde(default)]
     pub keybinds: KeybindSettings,
@@ -170,6 +173,7 @@ impl Default for ControlSettings {
         Self {
             mouse_sensitivity: 1.0,
             invert_mouse_y: false,
+            left_handed: false,
             keybinds: KeybindSettings::default(),
         }
     }
@@ -303,6 +307,7 @@ mod tests {
             controls: ControlSettings {
                 mouse_sensitivity: 10.0,
                 invert_mouse_y: true,
+                left_handed: false,
                 keybinds: KeybindSettings::default(),
             },
             gameplay: GameplaySettings::default(),

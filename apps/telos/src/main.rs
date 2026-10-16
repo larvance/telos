@@ -19,9 +19,9 @@ use crate::physics::{
     Aabb, GameMode, PlayerCapabilities, PlayerInputState, PlayerPhysicsController,
 };
 use anyhow::Result;
-use camera::{Camera, FlyController};
+use camera::{Camera, CameraPerspective, FlyController};
 use clap::Parser;
-use entity_client::{ClientEntityStore, EntityPushConstants, EntityVertexGpu};
+use entity_client::{ClientEntity, ClientEntityStore, EntityPushConstants, EntityVertexGpu};
 use glam::{DVec3, Vec3};
 use hashbrown::{HashMap, HashSet};
 use mimalloc::MiMalloc;
@@ -1535,6 +1535,10 @@ struct App {
     pending_lod_uploads: HashMap<telos_lod::coords::LodNodeKey, (u32, Vec<u32>)>,
 
     camera: Camera,
+    perspective: CameraPerspective,
+    perspective_obstacle_dist: f32,
+    attack_swing_timer: f32,
+    local_walk_time: f32,
     controller: FlyController,
     last_frame_time: Instant,
     last_fps_time: Instant,
@@ -2138,6 +2142,10 @@ impl App {
             pending_lod_uploads: HashMap::new(),
 
             camera,
+            perspective: CameraPerspective::FirstPerson,
+            perspective_obstacle_dist: 4.0,
+            attack_swing_timer: 0.0,
+            local_walk_time: 0.0,
             controller,
             last_frame_time: Instant::now(),
             last_fps_time: Instant::now(),
@@ -2795,8 +2803,10 @@ impl App {
     }
 
     fn handle_primary_action(&mut self) {
+        self.attack_swing_timer = 0.3;
+
         // Check combat raycast against entities first
-        let origin = self.camera.position;
+        let origin = self.physics.eye_pos();
         let forward = self.camera.forward();
         if let Some((target_net_id, _dist)) = self.entity_store.raycast(
             glam::DVec3::new(
@@ -2882,7 +2892,7 @@ impl App {
 
     fn handle_secondary_action(&mut self) {
         // Check interaction with entities (e.g. boarding boat)
-        let origin = self.camera.position;
+        let origin = self.physics.eye_pos();
         let forward = self.camera.forward();
         if let Some((target_net_id, _dist)) = self.entity_store.raycast(
             glam::DVec3::new(
@@ -5355,7 +5365,58 @@ impl App {
                         },
                     );
                 }
-                self.camera.position = self.physics.eye_pos();
+
+                let player_eye = self.physics.eye_pos();
+                let reg = &self.block_registry;
+                let chunks = &self.chunks;
+                let is_solid_block = |pos: BlockPos| -> bool {
+                    let (cpos, lidx) = telos_voxel::coords::split_block_pos(pos);
+                    if let Some(snap) = chunks.get(&cpos) {
+                        let state = snap.blocks().get(lidx);
+                        !reg.flags(state)
+                            .contains(telos_voxel::state::StateFlags::AIR)
+                    } else {
+                        false
+                    }
+                };
+
+                let obstacle_dist = match self.perspective {
+                    CameraPerspective::FirstPerson => 4.0,
+                    CameraPerspective::ThirdPersonBack => {
+                        let ray_dir = -self.camera.forward();
+                        if let Some(hit) = raycast_voxels(player_eye, ray_dir, 4.0, is_solid_block) {
+                            (hit.distance - 0.2).max(0.4)
+                        } else {
+                            4.0
+                        }
+                    }
+                    CameraPerspective::ThirdPersonFront => {
+                        let ray_dir = self.camera.forward();
+                        if let Some(hit) = raycast_voxels(player_eye, ray_dir, 4.0, is_solid_block) {
+                            (hit.distance - 0.2).max(0.4)
+                        } else {
+                            4.0
+                        }
+                    }
+                };
+
+                let (cam_pos, _) = self.camera.perspective_view_matrix(
+                    self.perspective,
+                    player_eye,
+                    obstacle_dist,
+                );
+                self.camera.position = cam_pos;
+                self.perspective_obstacle_dist = obstacle_dist;
+
+                let is_moving = self.physics.on_ground
+                    && (self.physics.vel.x.hypot(self.physics.vel.z) > 0.05);
+                if is_moving {
+                    self.local_walk_time += dt * 10.0;
+                }
+                if self.attack_swing_timer > 0.0 {
+                    self.attack_swing_timer = (self.attack_swing_timer - dt).max(0.0);
+                }
+
                 let mode_key = self.physics.game_mode.translation_key();
                 self.hud_state.game_mode = self.catalog.translate(mode_key).to_string();
                 self.hud_state.is_flying = self.physics.flying;
@@ -5596,10 +5657,77 @@ impl App {
             };
             self.entity_store
                 .build_mesh_with_line(get_light, rod_tip, &mut entity_vertices);
+
+            // Render player representation: 3D first-person hand or third-person body
+            let (sky, block) = get_light(self.physics.pos);
+            let skin_layer = 11;
+            if self.perspective.is_first_person() {
+                let attack_swing_progress = if self.attack_swing_timer > 0.0 {
+                    (1.0 - (self.attack_swing_timer / 0.3)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let is_moving = self.physics.on_ground
+                    && (self.physics.vel.x.hypot(self.physics.vel.z) > 0.05);
+                let (walk_bob_x, walk_bob_y) = if is_moving {
+                    (
+                        (self.local_walk_time * 0.5).sin() * 0.02,
+                        -(self.local_walk_time).sin().abs() * 0.02,
+                    )
+                } else {
+                    (0.0, 0.0)
+                };
+                let idle_bob = (self.start_time.elapsed().as_secs_f32() * 1.5).sin() * 0.005;
+                let left_handed = self.game_settings.controls.left_handed;
+                entity_client::build_first_person_hand_mesh(
+                    self.camera.position,
+                    self.camera.forward(),
+                    self.camera.right(),
+                    self.camera.up(),
+                    left_handed,
+                    attack_swing_progress,
+                    (walk_bob_x, walk_bob_y),
+                    idle_bob,
+                    sky,
+                    block,
+                    skin_layer,
+                    &mut entity_vertices,
+                );
+            } else {
+                let local_player_entity = ClientEntity {
+                    net_id: 0,
+                    entity_type: telos_sim::EntityType::Player,
+                    pos: self.physics.pos,
+                    target_pos: self.physics.pos,
+                    yaw: self.camera.yaw.to_degrees(),
+                    pitch: self.camera.pitch.to_degrees(),
+                    head_yaw: self.camera.yaw.to_degrees(),
+                    target_yaw: self.camera.yaw.to_degrees(),
+                    walk_time: self.local_walk_time,
+                    hurt_timer: 0.0,
+                    attack_swing_timer: self.attack_swing_timer,
+                    death_timer: 0.0,
+                    health: self.hud_state.health,
+                    max_health: self.hud_state.max_health,
+                    item_id: 0,
+                    item_count: 0,
+                    despawn_pending: false,
+                    snapshots: std::collections::VecDeque::new(),
+                };
+                entity_client::build_humanoid_mesh(
+                    &local_player_entity,
+                    sky,
+                    block,
+                    skin_layer,
+                    0.0,
+                    0.0,
+                    &mut entity_vertices,
+                );
+            }
         }
 
-        if entity_vertices.len() > 16384 {
-            entity_vertices.truncate(16384);
+        if entity_vertices.len() > 65536 {
+            entity_vertices.truncate(65536);
         }
         #[allow(clippy::cast_possible_truncation)]
         {
@@ -5612,7 +5740,7 @@ impl App {
         }
 
         // Voxel DDA Raycast for block aiming & selection
-        let origin = self.camera.position;
+        let origin = self.physics.eye_pos();
         let forward = self.camera.forward();
         let max_reach = self.physics.capabilities.reach_distance;
         let is_solid = |pos: BlockPos| -> bool {
@@ -5847,7 +5975,12 @@ impl App {
 
         #[allow(clippy::cast_precision_loss)]
         let aspect = swapchain_extent.width as f32 / swapchain_extent.height as f32;
-        let view_proj_mat = self.camera.view_proj_matrix(aspect);
+        let (_cam_pos, view_mat) = self.camera.perspective_view_matrix(
+            self.perspective,
+            self.physics.eye_pos(),
+            self.perspective_obstacle_dist,
+        );
+        let view_proj_mat = self.camera.projection_matrix(aspect) * view_mat;
         let view_proj = view_proj_mat.to_cols_array();
         let inv_view_proj = view_proj_mat.inverse().to_cols_array();
         #[allow(clippy::cast_precision_loss)]
@@ -8573,7 +8706,54 @@ impl App {
                 );
             }
 
-            self.camera.position = self.physics.eye_pos();
+            let player_eye = self.physics.eye_pos();
+            let is_solid_block = |pos: BlockPos| -> bool {
+                let (cpos, lidx) = telos_voxel::coords::split_block_pos(pos);
+                if let Some(snap) = chunks.get(&cpos) {
+                    let state = snap.blocks().get(lidx);
+                    !reg.flags(state)
+                        .contains(telos_voxel::state::StateFlags::AIR)
+                } else {
+                    false
+                }
+            };
+
+            let obstacle_dist = match self.perspective {
+                CameraPerspective::FirstPerson => 4.0,
+                CameraPerspective::ThirdPersonBack => {
+                    let ray_dir = -self.camera.forward();
+                    if let Some(hit) = raycast_voxels(player_eye, ray_dir, 4.0, is_solid_block) {
+                        (hit.distance - 0.2).max(0.4)
+                    } else {
+                        4.0
+                    }
+                }
+                CameraPerspective::ThirdPersonFront => {
+                    let ray_dir = self.camera.forward();
+                    if let Some(hit) = raycast_voxels(player_eye, ray_dir, 4.0, is_solid_block) {
+                        (hit.distance - 0.2).max(0.4)
+                    } else {
+                        4.0
+                    }
+                }
+            };
+
+            let (cam_pos, _) = self.camera.perspective_view_matrix(
+                self.perspective,
+                player_eye,
+                obstacle_dist,
+            );
+            self.camera.position = cam_pos;
+            self.perspective_obstacle_dist = obstacle_dist;
+
+            let is_moving = self.physics.on_ground
+                && (self.physics.vel.x.hypot(self.physics.vel.z) > 0.05);
+            if is_moving {
+                self.local_walk_time += dt * 10.0;
+            }
+            if self.attack_swing_timer > 0.0 {
+                self.attack_swing_timer = (self.attack_swing_timer - dt).max(0.0);
+            }
 
             let base_fov = self.game_settings.video.fov.to_radians();
             if self.bow_charging && self.bow_charge_ticks >= telos_sim::BOW_MIN_CHARGE_TICKS {
@@ -8590,7 +8770,7 @@ impl App {
             }
 
             // Raycast targeted block
-            let ray_origin = self.camera.position;
+            let ray_origin = self.physics.eye_pos();
             let ray_dir = self.camera.forward();
             let is_solid = |pos: BlockPos| -> bool {
                 let (chunk_pos, local_idx) = telos_voxel::coords::split_block_pos(pos);
@@ -8632,7 +8812,12 @@ impl App {
             (1280, 720)
         };
         let aspect = width as f32 / height.max(1) as f32;
-        let view_proj_mat = self.camera.view_proj_matrix(aspect);
+        let (_cam_pos, view_mat) = self.camera.perspective_view_matrix(
+            self.perspective,
+            self.physics.eye_pos(),
+            self.perspective_obstacle_dist,
+        );
+        let view_proj_mat = self.camera.projection_matrix(aspect) * view_mat;
         let inv_view_proj = view_proj_mat.inverse();
 
         let day_number = self.client_world_age / telos_core::time::DAY_TICKS;
@@ -10333,7 +10518,7 @@ impl ApplicationHandler for App {
             gpu_context.device().raw(),
             gpu_context.allocator(),
             "entity_vertex_buffer",
-            (16384 * size_of::<EntityVertexGpu>()) as vk::DeviceSize,
+            (65536 * size_of::<EntityVertexGpu>()) as vk::DeviceSize,
             vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
             MemoryLocation::CpuToGpu,
         ) {
@@ -11943,6 +12128,9 @@ impl ApplicationHandler for App {
                         });
                         let _ = self.client_conn.send(Lane::Control, Payload::Msg(cmd));
                         info!(?next_mode, "Toggled game mode (F4)");
+                    } else if kb.matches(KeyAction::TogglePerspective, key) {
+                        self.perspective = self.perspective.cycle();
+                        info!(?self.perspective, "Cycled camera perspective (F5)");
                     } else if kb.matches(KeyAction::ReloadShaders, key) {
                         if let (Some(gpu_context), Some(pp)) =
                             (&self.gpu_context, &mut self.postprocess)
@@ -11958,7 +12146,7 @@ impl ApplicationHandler for App {
                                 match pp.reload_shaders(gpu_context.device().raw(), &shaders_dir) {
                                     Ok(()) => {
                                         info!(
-                                            "Hot-reloaded post-processing shaders successfully (F5)"
+                                            "Hot-reloaded post-processing shaders successfully (F9)"
                                         );
                                     }
                                     Err(err) => {
@@ -14562,9 +14750,9 @@ fn load_and_upload_entity_textures(gpu_context: &GpuContext) -> Result<GpuTextur
     let slim_skin = telos_assets::default_slim_scout_skin();
     copy_to_layer(&mut pixel_data, 9, &slim_skin);
 
-    // Layer 10: Hytale Adventurer HD Skin (128x128 HD)
-    let hytale_skin = telos_assets::default_hytale_adventurer_skin();
-    copy_to_layer(&mut pixel_data, 10, &hytale_skin);
+    // Layer 10: Adventurer HD Skin (128x128 HD)
+    let hd_skin = telos_assets::default_hd_adventurer_skin();
+    copy_to_layer(&mut pixel_data, 10, &hd_skin);
 
     // Layer 11: Active Player Skin (Custom skin file if provided on disk or pack, fallback to classic)
     let custom_skin_path = if std::path::Path::new("assets/skin.png").exists() {
@@ -14599,7 +14787,7 @@ fn load_and_upload_entity_textures(gpu_context: &GpuContext) -> Result<GpuTextur
         gpu_context.create_texture_array(ENTITY_RES, LAYER_COUNT, 1, &pixel_data, &regions)?;
 
     info!(
-        "Entity texture array loaded (12 layers: Zombie, Pig, Cow, Squid, Fish, Boat, FishingBobber, Minecart, ClassicSkin, SlimSkin, HytaleHDSkin, ActivePlayerSkin, 128x128)"
+        "Entity texture array loaded (12 layers: Zombie, Pig, Cow, Squid, Fish, Boat, FishingBobber, Cart, ClassicSkin, SlimSkin, AdventurerHDSkin, ActivePlayerSkin, 128x128)"
     );
 
     Ok(texture_array)

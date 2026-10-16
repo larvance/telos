@@ -38,7 +38,7 @@ pub struct BitmapFont {
     pub texture_layer: u32,
 }
 
-/// Maps a Unicode character to its corresponding CP437 glyph index in Minecraft's `ascii.png` font texture.
+/// Maps a Unicode character to its corresponding CP437 glyph index in the default `ascii.png` font texture.
 #[must_use]
 pub fn unicode_to_cp437(ch: char) -> u8 {
     if ch.is_ascii() {

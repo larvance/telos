@@ -78,32 +78,6 @@ void main() {
     float depth = texture(u_depth, sample_uv).r;
     bool is_sky = (depth <= 0.00001);
 
-    // Bilateral depth-aware 5-tap cross blur on SSAO to soften ambient contact shadows without edge bleeding
-    vec2 texel = 1.0 / u_screen_size;
-    float ssao_center = texture(u_ssao, v_uv).r;
-    float total_ssao = ssao_center;
-    float total_weight = 1.0;
-    vec2 ssao_offsets[4] = vec2[](
-        vec2(-texel.x, 0.0),
-        vec2( texel.x, 0.0),
-        vec2(0.0, -texel.y),
-        vec2(0.0,  texel.y)
-    );
-    for (int i = 0; i < 4; ++i) {
-        vec2 sample_coord = v_uv + ssao_offsets[i];
-        float sample_d = texture(u_depth, sample_coord).r;
-        float d_diff = abs(sample_d - depth);
-        float w = exp(-d_diff * 400.0);
-        total_ssao += texture(u_ssao, sample_coord).r * w;
-        total_weight += w;
-    }
-    float ssao = total_ssao / total_weight;
-
-    // Bit 0: SSAO enabled (only for geometry, not sky)
-    if ((u_flags & 1u) != 0u && !is_sky) {
-        color *= mix(1.0, ssao, 0.35);
-    }
-
     // World position reconstruction from depth
     vec4 clip = vec4(v_uv.x * 2.0 - 1.0, 1.0 - v_uv.y * 2.0, depth, 1.0);
     vec4 world_h = u_inv_view_proj * clip;
@@ -111,6 +85,28 @@ void main() {
     vec3 ray = world_pos - u_cam_pos;
     float dist = length(ray);
     vec3 ray_dir = ray / max(dist, 0.001);
+
+    // Bilateral depth-aware 9-tap filter on SSAO to soften ambient contact shadows without edge bleeding
+    vec2 texel = 1.0 / u_screen_size;
+    float total_ssao = 0.0;
+    float total_weight = 0.0;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            vec2 sample_coord = v_uv + vec2(float(dx) * texel.x, float(dy) * texel.y);
+            float sample_d = texture(u_depth, sample_coord).r;
+            float d_diff = abs(sample_d - depth);
+            float w = exp(-d_diff * 600.0);
+            total_ssao += texture(u_ssao, sample_coord).r * w;
+            total_weight += w;
+        }
+    }
+    float ssao = total_weight > 0.0 ? (total_ssao / total_weight) : 1.0;
+
+    // Bit 0: SSAO enabled (only for geometry, fading out past 24m to eliminate any distant grain)
+    if ((u_flags & 1u) != 0u && !is_sky) {
+        float ssao_fade = 1.0 - smoothstep(24.0, 48.0, dist);
+        color *= mix(1.0, ssao, 0.30 * ssao_fade);
+    }
 
     // Light direction (sun during day, moon during night)
     vec3 light_dir = normalize(u_sun_dir);
@@ -198,10 +194,11 @@ void main() {
 
     // Bit 1: Volumetric horizon fog & atmospheric scattering
     if ((u_flags & 2u) != 0u) {
-        float effective_dist = min(dist, u_view_distance * 32.0);
-        float height_density = exp(-max(0.0, world_pos.y - 48.0) * 0.015);
-        float fog_factor = 1.0 - exp(-effective_dist * (u_fog_density * 0.0016) * (1.0 + height_density * 1.8));
-        fog_factor = clamp(fog_factor, 0.0, 1.0);
+        float max_dist = u_view_distance * 32.0;
+        float fog_start = max_dist * 0.65;
+        float fog_end = max_dist;
+        float dist_fog = clamp((dist - fog_start) / max(fog_end - fog_start, 1.0), 0.0, 1.0);
+        float fog_factor = smoothstep(0.0, 1.0, dist_fog) * clamp(u_fog_density, 0.0, 1.0);
 
         // Dual-scattering Mie forward phase function
         float sun_cos = max(0.0, dot(ray_dir, normalize(u_sun_dir)));

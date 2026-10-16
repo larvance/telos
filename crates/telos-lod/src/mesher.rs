@@ -122,9 +122,12 @@ pub fn mesh_lod_node<S: LodVoxelSource>(
                             // Boundary: check across node boundary
                             let mut n_coords = coords;
                             n_coords[axis_d] = 0;
-                            neighbor.is_none_or(|nb| {
-                                !nb.is_solid(n_coords[0], n_coords[1], n_coords[2])
-                            })
+                            match neighbor {
+                                Some(nb) => {
+                                    !nb.is_solid(n_coords[0], n_coords[1], n_coords[2])
+                                }
+                                None => face == Face::Up,
+                            }
                         }
                     } else if d > 0 {
                         let mut n_coords = coords;
@@ -136,8 +139,10 @@ pub fn mesh_lod_node<S: LodVoxelSource>(
                         // Boundary: check across node boundary
                         let mut n_coords = coords;
                         n_coords[axis_d] = 31;
-                        neighbor
-                            .is_none_or(|nb| !nb.is_solid(n_coords[0], n_coords[1], n_coords[2]))
+                        match neighbor {
+                            Some(nb) => !nb.is_solid(n_coords[0], n_coords[1], n_coords[2]),
+                            None => false,
+                        }
                     };
 
                     if is_face_visible {

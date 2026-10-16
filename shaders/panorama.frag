@@ -15,7 +15,7 @@ void main() {
     vec4 world_h = pc.inv_view_proj * ndc;
     vec3 dir = length(world_h.xyz) > 1e-6 ? normalize(world_h.xyz) : vec3(0.0, 0.0, -1.0);
 
-    // Minecraft Panorama Cubemap mapping:
+    // Standard Panorama Cubemap mapping:
     // Face 0: Back (+Z)
     // Face 1: Left (-X)
     // Face 2: Front (-Z)

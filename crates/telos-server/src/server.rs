@@ -6140,7 +6140,7 @@ impl Server {
                     || session.move_state.vel.y >= 0.0
                 {
                     session.fall_distance = 0.0;
-                } else if session.on_ground {
+                } else if session.on_ground || session.move_state.on_ground {
                     if !was_ground && session.fall_distance > 3.0 {
                         let fall_dmg = session.fall_distance - 3.0;
                         if let Some(entity) = session.ecs_entity {
@@ -6711,47 +6711,93 @@ impl Server {
         // 5a. Authoritative mob melee attacks on survival players
         let mut attacks_to_resolve = Vec::new();
         {
-            let mut mob_attack_query =
-                self.ecs_world
-                    .query::<(&NetEntity, &Position, &Mob, &mut AttackCooldown)>();
+            let mut candidates = Vec::new();
+            {
+                let mut mob_attack_query = self
+                    .ecs_world
+                    .query::<(bevy_ecs::entity::Entity, &NetEntity, &Position, &Mob, &AttackCooldown)>();
 
-            for (net, pos, mob, mut cooldown) in mob_attack_query.iter_mut(&mut self.ecs_world) {
-                if mob.kind != telos_sim::MobKind::Hostile || !cooldown.can_attack() {
-                    continue;
-                }
-
-                let target_player_id = match mob.ai_state {
-                    AiState::Chasing { target_net_id } => Some(target_net_id),
-                    _ => None,
-                };
-
-                let Some(target_id) = target_player_id else {
-                    continue;
-                };
-
-                if let Some(target_session) =
-                    self.sessions.values().find(|s| s.entity_id == target_id)
-                {
-                    if target_session.phase != ConnectionPhase::Play {
+                for (mob_ent, net, pos, mob, cooldown) in mob_attack_query.iter(&self.ecs_world) {
+                    if mob.kind != telos_sim::MobKind::Hostile || !cooldown.can_attack() {
                         continue;
                     }
-                    if target_session.capabilities.invincible
-                        || target_session.game_mode == GameMode::Spectator
-                        || target_session.move_state.flying
+
+                    let target_player_id = match mob.ai_state {
+                        AiState::Chasing { target_net_id } => Some(target_net_id),
+                        _ => None,
+                    };
+
+                    let Some(target_id) = target_player_id else {
+                        continue;
+                    };
+
+                    if let Some(target_session) =
+                        self.sessions.values().find(|s| s.entity_id == target_id)
                     {
-                        continue;
-                    }
+                        if target_session.phase != ConnectionPhase::Play {
+                            continue;
+                        }
+                        if target_session.capabilities.invincible
+                            || target_session.game_mode == GameMode::Spectator
+                            || target_session.move_state.flying
+                        {
+                            continue;
+                        }
 
-                    let dist = target_session.position.distance(pos.0);
-                    if dist <= f64::from(cooldown.reach) {
-                        cooldown.reset();
-                        attacks_to_resolve.push((
-                            net.net_id,
-                            target_session.session_id,
-                            pos.0,
-                            cooldown.damage,
-                        ));
+                        let dist = target_session.position.distance(pos.0);
+                        if dist <= f64::from(cooldown.reach) {
+                            candidates.push((
+                                mob_ent,
+                                net.net_id,
+                                pos.0,
+                                cooldown.damage,
+                                target_session.session_id,
+                                target_session.world_name.clone(),
+                                target_session.position,
+                            ));
+                        }
                     }
+                }
+            }
+
+            for (mob_ent, mob_net_id, mob_pos, mob_damage, session_id, world_name, player_pos) in
+                candidates
+            {
+                #[allow(clippy::cast_possible_truncation)]
+                let mob_eye = glam::Vec3::new(
+                    mob_pos.x as f32,
+                    (mob_pos.y + 1.5) as f32,
+                    mob_pos.z as f32,
+                );
+                #[allow(clippy::cast_possible_truncation)]
+                let player_eye = glam::Vec3::new(
+                    player_pos.x as f32,
+                    (player_pos.y + 1.62) as f32,
+                    player_pos.z as f32,
+                );
+                let world = self.worlds.get_or_default_mut(&world_name);
+                let reg = self.registries.block_registry();
+                let has_los = telos_sim::has_line_of_sight(mob_eye, player_eye, |bp| {
+                    let bs = world.get_block(bp);
+                    if bs.is_air() || reg.is_water(bs) {
+                        false
+                    } else {
+                        telos_sim::is_solid_ground(bs, reg)
+                    }
+                });
+
+                if has_los {
+                    if let Some(mut cooldown) =
+                        self.ecs_world.get_mut::<AttackCooldown>(mob_ent)
+                    {
+                        cooldown.reset();
+                    }
+                    attacks_to_resolve.push((
+                        mob_net_id,
+                        session_id,
+                        mob_pos,
+                        mob_damage,
+                    ));
                 }
             }
         }

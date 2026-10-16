@@ -336,13 +336,13 @@ impl FuelDef {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RecipeDef {
     /// Shaped crafting recipe.
-    #[serde(alias = "minecraft:crafting_shaped", alias = "crafting_shaped")]
+    #[serde(alias = "telos:crafting_shaped", alias = "crafting_shaped", alias = "shaped")]
     Shaped(ShapedRecipeDef),
     /// Shapeless crafting recipe.
-    #[serde(alias = "minecraft:crafting_shapeless", alias = "crafting_shapeless")]
+    #[serde(alias = "telos:crafting_shapeless", alias = "crafting_shapeless", alias = "shapeless")]
     Shapeless(ShapelessRecipeDef),
     /// Smelting furnace recipe.
-    #[serde(alias = "minecraft:smelting")]
+    #[serde(alias = "telos:smelting", alias = "smelting")]
     Smelting(SmeltingRecipeDef),
     /// Combustible fuel item.
     #[serde(alias = "fuel", alias = "furnace_fuel")]

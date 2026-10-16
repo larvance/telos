@@ -177,7 +177,7 @@ impl ContainerLayoutDef {
         self.slots.iter().find(|s| s.index == slot)
     }
 
-    /// Default Minecraft standard survival player inventory layout (176x166, 46 slots).
+    /// Default standard survival player inventory layout (176x166, 46 slots).
     #[must_use]
     #[allow(clippy::cast_possible_wrap)]
     pub fn default_inventory() -> Self {

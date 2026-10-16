@@ -64,6 +64,36 @@ impl Frustum {
     }
 }
 
+/// Camera perspective mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CameraPerspective {
+    /// Normal first-person perspective looking from player's eyes.
+    #[default]
+    FirstPerson,
+    /// Third-person chase camera positioned behind the player looking forward.
+    ThirdPersonBack,
+    /// Third-person selfie camera positioned in front looking back at the player.
+    ThirdPersonFront,
+}
+
+impl CameraPerspective {
+    /// Cycles to the next camera perspective mode.
+    #[must_use]
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::FirstPerson => Self::ThirdPersonBack,
+            Self::ThirdPersonBack => Self::ThirdPersonFront,
+            Self::ThirdPersonFront => Self::FirstPerson,
+        }
+    }
+
+    /// Returns `true` if this is first-person perspective.
+    #[must_use]
+    pub fn is_first_person(self) -> bool {
+        matches!(self, Self::FirstPerson)
+    }
+}
+
 /// 3D perspective camera with yaw and pitch orientation.
 #[derive(Debug, Clone)]
 pub struct Camera {
@@ -156,6 +186,40 @@ impl Camera {
     #[must_use]
     pub fn view_proj_matrix(&self, aspect_ratio: f32) -> Mat4 {
         self.projection_matrix(aspect_ratio) * self.view_matrix()
+    }
+
+    /// Calculates the effective camera world position and view matrix taking perspective mode into account.
+    #[must_use]
+    pub fn perspective_view_matrix(
+        &self,
+        perspective: CameraPerspective,
+        eye_pos: Vec3,
+        obstacle_dist: f32,
+    ) -> (Vec3, Mat4) {
+        let forward = self.forward();
+        let up = if self.roll.abs() > 1e-4 {
+            let cos_r = self.roll.cos();
+            let sin_r = self.roll.sin();
+            let base_right = forward.cross(Vec3::Y).normalize();
+            let base_up = base_right.cross(forward).normalize();
+            (base_up * cos_r + base_right * sin_r).normalize()
+        } else {
+            Vec3::Y
+        };
+
+        match perspective {
+            CameraPerspective::FirstPerson => (eye_pos, Mat4::look_to_rh(eye_pos, forward, up)),
+            CameraPerspective::ThirdPersonBack => {
+                let dist = obstacle_dist.clamp(0.4, 4.0);
+                let cam_pos = eye_pos - forward * dist;
+                (cam_pos, Mat4::look_to_rh(cam_pos, forward, up))
+            }
+            CameraPerspective::ThirdPersonFront => {
+                let dist = obstacle_dist.clamp(0.4, 4.0);
+                let cam_pos = eye_pos + forward * dist;
+                (cam_pos, Mat4::look_to_rh(cam_pos, -forward, up))
+            }
+        }
     }
 }
 

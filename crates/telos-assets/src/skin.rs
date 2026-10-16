@@ -1,4 +1,4 @@
-//! Player skin format handling, legacy 64x32 auto-upgrading, and high-definition Hytale skins.
+//! Player skin format handling, legacy 64x32 auto-upgrading, and high-definition 128x128 skins.
 
 use crate::error::AssetError;
 use crate::image_buf::RgbaImage;
@@ -12,8 +12,8 @@ pub enum SkinFormat {
     StandardSlim,
     /// Legacy 64x32 single-layer humanoid skin with mirrored limbs.
     LegacyClassic,
-    /// High-definition 128x128 Hytale skin.
-    HytaleHd,
+    /// High-definition 128x128 humanoid skin.
+    Hd128,
 }
 
 impl SkinFormat {
@@ -29,7 +29,7 @@ impl SkinFormat {
         match self {
             Self::StandardClassic | Self::StandardSlim => (64, 64),
             Self::LegacyClassic => (64, 32),
-            Self::HytaleHd => (128, 128),
+            Self::Hd128 => (128, 128),
         }
     }
 }
@@ -49,7 +49,7 @@ pub fn detect_skin_format(
                 Ok(SkinFormat::StandardClassic)
             }
         }
-        (128, 128) => Ok(SkinFormat::HytaleHd),
+        (128, 128) => Ok(SkinFormat::Hd128),
         _ => Err(AssetError::InvalidDimensions {
             name: "player_skin".to_string(),
             width,
@@ -396,9 +396,9 @@ pub fn default_slim_scout_skin() -> RgbaImage {
     skin
 }
 
-/// Generates a high-definition 128x128 Hytale Adventurer player skin.
+/// Generates a high-definition 128x128 Adventurer player skin.
 #[must_use]
-pub fn default_hytale_adventurer_skin() -> RgbaImage {
+pub fn default_hd_adventurer_skin() -> RgbaImage {
     let mut skin = RgbaImage::new(128, 128);
 
     let skin_tone = [218, 176, 142, 255];
@@ -586,7 +586,7 @@ mod tests {
         );
         assert_eq!(
             detect_skin_format(128, 128, None).unwrap(),
-            SkinFormat::HytaleHd
+            SkinFormat::Hd128
         );
         assert!(detect_skin_format(32, 32, None).is_err());
     }
@@ -623,9 +623,9 @@ mod tests {
         assert_eq!(slim.width, 64);
         assert_eq!(slim.height, 64);
 
-        let hytale = default_hytale_adventurer_skin();
-        assert_eq!(hytale.width, 128);
-        assert_eq!(hytale.height, 128);
+        let hd = default_hd_adventurer_skin();
+        assert_eq!(hd.width, 128);
+        assert_eq!(hd.height, 128);
     }
 }
 

@@ -321,9 +321,7 @@ impl ServerWorld {
 
         // 5. Publish snapshot and cache
         let snapshot = chunk.publish_snapshot();
-        if self.storage.is_some() {
-            self.dirty_chunks.insert(pos);
-        }
+        // Unmodified chunks are not marked dirty: they will generate identically next time
         self.chunks.insert(
             pos,
             ServerChunk {
@@ -797,6 +795,23 @@ impl ServerWorld {
         self.chunks.contains_key(&pos)
     }
 
+    /// Returns `true` if the chunk at `pos` has been modified since generation and requires saving.
+    #[must_use]
+    pub fn is_chunk_dirty(&self, pos: ChunkPos) -> bool {
+        self.dirty_chunks.contains(&pos)
+    }
+
+    /// Number of currently modified dirty chunks awaiting disk persistence.
+    #[must_use]
+    pub fn dirty_chunk_count(&self) -> usize {
+        self.dirty_chunks.len()
+    }
+
+    /// Manually marks a chunk at `pos` as dirty so it will be saved during the next disk commit.
+    pub fn mark_chunk_dirty(&mut self, pos: ChunkPos) {
+        self.dirty_chunks.insert(pos);
+    }
+
     /// Returns the number of currently cached LOD nodes.
     #[must_use]
     pub fn cached_lod_count(&self) -> usize {
@@ -867,7 +882,21 @@ impl ServerWorld {
         }
 
         let node = self.ensure_lod_node(key);
-        let neighbors: [Option<&LodNode>; 6] = [None; 6];
+        let nb_x_pos = self.pyramid.get(&LodNodeKey::new(key.level, key.x + 1, key.y, key.z));
+        let nb_x_neg = self.pyramid.get(&LodNodeKey::new(key.level, key.x - 1, key.y, key.z));
+        let nb_y_pos = self.pyramid.get(&LodNodeKey::new(key.level, key.x, key.y + 1, key.z));
+        let nb_y_neg = self.pyramid.get(&LodNodeKey::new(key.level, key.x, key.y - 1, key.z));
+        let nb_z_pos = self.pyramid.get(&LodNodeKey::new(key.level, key.x, key.y, key.z + 1));
+        let nb_z_neg = self.pyramid.get(&LodNodeKey::new(key.level, key.x, key.y, key.z - 1));
+
+        let neighbors: [Option<&LodNode>; 6] = [
+            nb_x_pos.as_deref(),
+            nb_x_neg.as_deref(),
+            nb_y_pos.as_deref(),
+            nb_y_neg.as_deref(),
+            nb_z_pos.as_deref(),
+            nb_z_neg.as_deref(),
+        ];
         let mesh = mesh_lod_node(node.as_ref(), &neighbors, &self.lod_color_table);
         let arc = Arc::new(mesh);
         self.lod_meshes.insert(key, arc.clone());

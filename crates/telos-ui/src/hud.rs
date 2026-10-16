@@ -295,7 +295,7 @@ impl Default for HudState {
 
 use crate::style::HudThemeDef;
 
-/// Generates all HUD quads for the active frame using default Minecraft styling.
+/// Generates all HUD quads for the active frame using default voxel styling.
 pub fn render_hud(
     state: &HudState,
     font: &BitmapFont,

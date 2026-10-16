@@ -42,7 +42,7 @@ pub enum EnchantmentTargetDef {
 /// Data definition of an enchantment loaded from a data pack.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnchantmentDef {
-    /// Namespaced enchantment identifier (e.g. `"minecraft:sharpness"`).
+    /// Namespaced enchantment identifier (e.g. `"telos:sharpness"`).
     pub id: String,
     /// User-facing display name (e.g. `"Sharpness"`).
     pub name: String,

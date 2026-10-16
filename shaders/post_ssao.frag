@@ -81,9 +81,16 @@ void main() {
     vec3 tangent = normalize(cross(cardinal_n, helper));
     vec3 bitangent = cross(cardinal_n, tangent);
 
-    // World-space anchored pseudo-random rotation angle (strictly stationary in world space on head rotation)
-    vec3 block_coord = floor(origin * 16.0);
-    float angle = fract(sin(dot(block_coord, vec3(12.9898, 78.233, 45.164))) * 43758.5453) * 6.2831853;
+    // Screen-space 4x4 Bayer dither pattern for low-frequency, smoothly blurrable rotations
+    int bx = int(gl_FragCoord.x) & 3;
+    int by = int(gl_FragCoord.y) & 3;
+    const float bayer4x4[16] = float[16](
+         0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
+        12.0/16.0,  4.0/16.0, 14.0/16.0,  6.0/16.0,
+         3.0/16.0, 11.0/16.0,  1.0/16.0,  9.0/16.0,
+        15.0/16.0,  7.0/16.0, 13.0/16.0,  5.0/16.0
+    );
+    float angle = bayer4x4[by * 4 + bx] * 6.2831853;
     float cos_a = cos(angle);
     float sin_a = sin(angle);
     vec3 rot_tangent = tangent * cos_a + bitangent * sin_a;
@@ -125,7 +132,7 @@ void main() {
     }
 
     if (valid_samples > 0.0) {
-        out_occlusion = clamp(1.0 - (occlusion / valid_samples) * 1.5, 0.0, 1.0);
+        out_occlusion = clamp(1.0 - (occlusion / valid_samples) * 1.1, 0.0, 1.0);
     } else {
         out_occlusion = 1.0;
     }

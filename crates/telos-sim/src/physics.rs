@@ -1,6 +1,6 @@
-//! Hytale-compatible ECS physics system for entities, players, and projectiles.
+//! High-fidelity ECS physics system for entities, players, and projectiles.
 //!
-//! Implements the physics simulation architecture from Hytale ECS:
+//! Implements the physics simulation architecture from modern voxel ECS:
 //! - [`PhysicsConstants`]: Gravitational acceleration (32.0 blocks/s^2), fluid and air densities.
 //! - [`PhysicsValues`]: Component storing mass, drag coefficient, friction, and buoyancy properties.
 //! - [`PhysicsBodyState`]: Kinematic position and velocity container.
