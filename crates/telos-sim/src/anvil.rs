@@ -77,10 +77,16 @@ pub fn combine_anvil_items(left: ItemStack, right: ItemStack) -> Option<AnvilCom
     let mut changed = false;
     let mut cost: u32 = 0;
 
-    // In vanilla, combining two items of the same type has a base repair cost of 1 level
     if is_same_item && !is_left_book {
         cost = 1;
         changed = true;
+        if let Some(max_dur) = crate::inventory::max_durability(left.item) {
+            let left_dur = max_dur.saturating_sub(left.damage);
+            let right_dur = max_dur.saturating_sub(right.damage);
+            let bonus = max_dur * 12 / 100;
+            let combined_dur = (left_dur + right_dur + bonus).min(max_dur);
+            result_item.damage = max_dur.saturating_sub(combined_dur);
+        }
     }
 
     // Merge enchantments from right onto result

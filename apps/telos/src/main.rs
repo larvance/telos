@@ -3894,16 +3894,18 @@ impl App {
                             .sum::<u16>();
                         for (i, slot) in bulk.slots.iter().enumerate() {
                             if i < self.inventory_sim.slots.len() {
-                                self.inventory_sim.slots[i] = telos_sim::ItemStack::new_enchanted(
+                                self.inventory_sim.slots[i] = telos_sim::ItemStack::new_with_damage(
                                     slot.item,
                                     slot.count,
+                                    slot.damage,
                                     telos_sim::CompactEnchantments(slot.enchantments),
                                 );
                             }
                         }
-                        self.inventory_sim.carried = telos_sim::ItemStack::new_enchanted(
+                        self.inventory_sim.carried = telos_sim::ItemStack::new_with_damage(
                             bulk.carried.item,
                             bulk.carried.count,
+                            bulk.carried.damage,
                             telos_sim::CompactEnchantments(bulk.carried.enchantments),
                         );
                         let now_items = self
@@ -3925,9 +3927,10 @@ impl App {
                         if idx < self.inventory_sim.slots.len() {
                             let old_count = self.inventory_sim.slots[idx].count;
                             let old_item = self.inventory_sim.slots[idx].item;
-                            self.inventory_sim.slots[idx] = telos_sim::ItemStack::new_enchanted(
+                            self.inventory_sim.slots[idx] = telos_sim::ItemStack::new_with_damage(
                                 slot_msg.item,
                                 slot_msg.count,
+                                slot_msg.damage,
                                 telos_sim::CompactEnchantments(slot_msg.enchantments),
                             );
                             if (slot_msg.count > old_count

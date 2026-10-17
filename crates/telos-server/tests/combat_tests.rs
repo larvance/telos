@@ -7,7 +7,7 @@ use telos_net::{Connection, Lane, MemoryConnection, Payload};
 use telos_protocol::bounded::BoundedString;
 use telos_protocol::messages::{
     AuthMode, C2sClientSettings, C2sConfigAck, C2sHello, C2sInteractEntity, C2sLoginStart,
-    C2sMessage, C2sPlayerPosition, S2cMessage,
+    C2sMessage, C2sPlayerCommand, C2sPlayerPosition, PlayerCommandKind, S2cMessage,
 };
 use telos_server::{Server, ServerConfig};
 use telos_sim::entity::{EntityType, HurtTime};
@@ -436,3 +436,216 @@ fn test_pig_death_drops_porkchop() {
         "Player inventory should receive porkchop loot drop"
     );
 }
+
+#[test]
+fn test_player_armor_durability_degrades_when_damaged() {
+    let (mut server, client_conn, session_id, surface_y) = setup_server_and_player();
+
+    let sy = surface_y as i32;
+    for x in 126..=130 {
+        for z in 158..=162 {
+            let _ = server
+                .world_mut()
+                .set_block(BlockPos::new(x, sy, z), BlockStateId::new(1));
+            for y in 1..=3 {
+                let _ = server
+                    .world_mut()
+                    .set_block(BlockPos::new(x, sy + y, z), BlockStateId::AIR);
+            }
+        }
+    }
+
+    let player_y = surface_y + 1.0;
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::PlayerPosition(C2sPlayerPosition {
+                x: 128.0,
+                y: player_y,
+                z: 160.0,
+                yaw: 0.0,
+                pitch: 0.0,
+                on_ground: true,
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    let player_ecs = server
+        .get_session(session_id)
+        .and_then(|s| s.ecs_entity)
+        .unwrap();
+
+    let item_reg = server.registries().item_registry();
+    let chest_id = item_reg
+        .get_by_ident(&Identifier::new("telos", "iron_chestplate").unwrap())
+        .expect("iron_chestplate must exist");
+
+    {
+        let mut inv = server
+            .ecs_world_mut()
+            .get_mut::<Inventory>(player_ecs)
+            .unwrap();
+        inv.slots[ARMOR_CHESTPLATE_SLOT] = ItemStack::new(chest_id, 1);
+    }
+
+    // Spawn a zombie to hit the player
+    let _zombie_id = server.spawn_mob(EntityType::Zombie, DVec3::new(128.0, player_y, 161.2));
+    server.tick();
+
+    // Check armor took durability damage
+    let inv = server.ecs_world().get::<Inventory>(player_ecs).unwrap();
+    let chest_stack = inv.slots[ARMOR_CHESTPLATE_SLOT];
+    assert_eq!(chest_stack.item, chest_id);
+    assert!(
+        chest_stack.damage > 0,
+        "Chestplate armor should incur durability degradation when player takes damage"
+    );
+}
+
+#[test]
+fn test_player_drowning_pipeline() {
+    let (mut server, client_conn, session_id, surface_y) = setup_server_and_player();
+
+    // Position player
+    let player_y = surface_y + 1.0;
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::PlayerPosition(C2sPlayerPosition {
+                x: 128.0,
+                y: player_y,
+                z: 160.0,
+                yaw: 0.0,
+                pitch: 0.0,
+                on_ground: true,
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    // Verify initial air supply is 300
+    let session = server.get_session(session_id).unwrap();
+    assert_eq!(session.air_supply, 300);
+
+    // Submerge player's head in water (eye height is y + 1.62, so block at sy + 2 is submerged)
+    let head_pos = BlockPos::new(128, (player_y + 1.62).floor() as i32, 160);
+    let _ = server.world_mut().set_block(head_pos, BlockStateId::new(6)); // Water (state 6)
+
+    // Tick for 50 ticks, air should decrease to 250
+    for _ in 0..50 {
+        server.tick();
+    }
+    let session = server.get_session(session_id).unwrap();
+    assert_eq!(session.air_supply, 250);
+
+    // Fast-forward remaining 250 ticks to reach 0 air
+    for _ in 0..250 {
+        server.tick();
+    }
+    let session = server.get_session(session_id).unwrap();
+    assert_eq!(session.air_supply, 0);
+
+    let player_ecs = session.ecs_entity.unwrap();
+    let health_before = server.ecs_world().get::<Health>(player_ecs).unwrap().cur;
+
+    // Tick for 20 more ticks: should trigger drowning damage (2.0)
+    for _ in 0..20 {
+        server.tick();
+    }
+    let health_after = server.ecs_world().get::<Health>(player_ecs).unwrap().cur;
+    assert!(
+        health_after < health_before,
+        "Player should take drowning damage when out of air underwater"
+    );
+}
+
+#[test]
+fn test_player_death_and_respawn_flow() {
+    let (mut server, client_conn, session_id, surface_y) = setup_server_and_player();
+    let player_y = surface_y + 1.0;
+
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::PlayerPosition(C2sPlayerPosition {
+                x: 128.0,
+                y: player_y,
+                z: 160.0,
+                yaw: 0.0,
+                pitch: 0.0,
+                on_ground: true,
+            })),
+        )
+        .unwrap();
+    server.tick();
+
+    let player_ecs = server
+        .get_session(session_id)
+        .and_then(|s| s.ecs_entity)
+        .unwrap();
+
+    // Put items in inventory
+    {
+        let mut inv = server
+            .ecs_world_mut()
+            .get_mut::<Inventory>(player_ecs)
+            .unwrap();
+        inv.slots[0] = ItemStack::new(1, 32); // 32 stone
+        inv.slots[9] = ItemStack::new(4, 16); // 16 cobblestone
+    }
+
+    // Set player health to 0
+    {
+        let mut health = server
+            .ecs_world_mut()
+            .get_mut::<Health>(player_ecs)
+            .unwrap();
+        health.cur = 0.0;
+    }
+
+    // Tick server to process player death
+    server.tick();
+
+    // Verify player is marked dead in session
+    assert!(
+        server.get_session(session_id).unwrap().is_dead,
+        "Player should be marked as dead"
+    );
+
+    // Verify inventory was cleared
+    {
+        let inv = server.ecs_world().get::<Inventory>(player_ecs).unwrap();
+        assert!(inv.slots[0].is_empty());
+        assert!(inv.slots[9].is_empty());
+    }
+
+    // Verify items were dropped into the world
+    assert!(
+        !server.item_positions.is_empty(),
+        "Player items should drop into the world upon death"
+    );
+
+    // Send respawn command
+    client_conn
+        .send(
+            Lane::Control,
+            Payload::Msg(C2sMessage::PlayerCommand(C2sPlayerCommand {
+                command: PlayerCommandKind::Respawn,
+            })),
+        )
+        .unwrap();
+
+    server.tick();
+
+    // Verify player is no longer dead and health is restored
+    let session = server.get_session(session_id).unwrap();
+    assert!(!session.is_dead, "Player should be alive after respawn");
+
+    let restored_health = server.ecs_world().get::<Health>(player_ecs).unwrap().cur;
+    assert_eq!(
+        restored_health, 20.0,
+        "Player health should be restored to 20.0 on respawn"
+    );
+}
+

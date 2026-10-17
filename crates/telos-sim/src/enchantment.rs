@@ -355,6 +355,19 @@ pub fn should_prevent_durability_loss(enchants: CompactEnchantments, rng_sample:
     rng_sample < ignore_chance
 }
 
+/// Calculates the number of items dropped from an ore block given Fortune enchantment level and RNG sample [0.0, 1.0).
+#[must_use]
+pub fn calculate_fortune_drop_count(base_count: u16, fortune_level: u8, rng: f32) -> u16 {
+    if fortune_level == 0 || base_count == 0 {
+        return base_count;
+    }
+    let max_mult = u32::from(fortune_level) + 2;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let slot = ((rng.clamp(0.0, 0.999_999) * max_mult as f32).floor() as u32).min(max_mult - 1);
+    let multiplier = if slot < 2 { 1 } else { slot };
+    base_count.saturating_mul(multiplier as u16)
+}
+
 /// Calculates bow arrow impact damage scaled with Power enchantment.
 #[must_use]
 pub fn calculate_arrow_damage(base_damage: f32, enchants: CompactEnchantments) -> f32 {

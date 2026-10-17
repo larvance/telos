@@ -121,6 +121,14 @@ pub const ITEM_COOKED_PORKCHOP: u32 = 65;
 pub const ITEM_COOKED_BEEF: u32 = 66;
 /// Charcoal combustible fuel item identifier (67).
 pub const ITEM_CHARCOAL: u32 = 67;
+/// Coal mineral item identifier (54).
+pub const ITEM_COAL: u32 = 54;
+/// Raw iron item identifier (52).
+pub const ITEM_RAW_IRON: u32 = 52;
+/// Raw gold item identifier (53).
+pub const ITEM_RAW_GOLD: u32 = 53;
+/// Diamond gemstone item identifier (20).
+pub const ITEM_DIAMOND: u32 = 20;
 
 /// Wooden pickaxe item identifier (68).
 pub const ITEM_WOODEN_PICKAXE: u32 = 68;
@@ -333,6 +341,120 @@ pub const fn is_potion(item: u32) -> bool {
     item == ITEM_POTION
 }
 
+/// Mining tool tier for breakable blocks and mining level checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ToolTier {
+    /// Wood material tier.
+    Wood = 0,
+    /// Stone material tier.
+    Stone = 1,
+    /// Iron material tier.
+    Iron = 2,
+}
+
+/// Resolves tool tier for a pickaxe item.
+#[must_use]
+pub const fn pickaxe_tier(item: u32) -> Option<ToolTier> {
+    match item {
+        ITEM_WOODEN_PICKAXE => Some(ToolTier::Wood),
+        ITEM_STONE_PICKAXE => Some(ToolTier::Stone),
+        ITEM_IRON_PICKAXE => Some(ToolTier::Iron),
+        _ => None,
+    }
+}
+
+/// Maximum durability for an item, or `None` if the item is not damageable.
+#[must_use]
+pub const fn max_durability(item: u32) -> Option<u16> {
+    match item {
+        // Wooden tools
+        ITEM_WOODEN_PICKAXE
+        | ITEM_WOODEN_AXE
+        | ITEM_WOODEN_SHOVEL
+        | ITEM_WOODEN_SWORD
+        | ITEM_WOODEN_HOE => Some(59),
+        // Stone tools
+        ITEM_STONE_PICKAXE
+        | ITEM_STONE_AXE
+        | ITEM_STONE_SHOVEL
+        | ITEM_STONE_SWORD
+        | ITEM_STONE_HOE => Some(131),
+        // Iron tools
+        ITEM_IRON_PICKAXE
+        | ITEM_IRON_AXE
+        | ITEM_IRON_SHOVEL
+        | ITEM_IRON_SWORD
+        | ITEM_IRON_HOE => Some(250),
+        // Leather armor
+        ITEM_LEATHER_HELMET => Some(55),
+        ITEM_LEATHER_CHESTPLATE => Some(80),
+        ITEM_LEATHER_LEGGINGS => Some(75),
+        ITEM_LEATHER_BOOTS => Some(65),
+        // Golden armor
+        ITEM_GOLDEN_HELMET => Some(77),
+        ITEM_GOLDEN_CHESTPLATE => Some(112),
+        ITEM_GOLDEN_LEGGINGS => Some(105),
+        ITEM_GOLDEN_BOOTS => Some(91),
+        // Iron armor
+        ITEM_IRON_HELMET => Some(165),
+        ITEM_IRON_CHESTPLATE => Some(240),
+        ITEM_IRON_LEGGINGS => Some(225),
+        ITEM_IRON_BOOTS => Some(195),
+        // Weapons and utility tools
+        ITEM_BOW => Some(384),
+        ITEM_FISHING_ROD => Some(64),
+        ITEM_FLINT_AND_STEEL => Some(64),
+        _ => None,
+    }
+}
+
+/// Returns true if the item has durability and can take damage.
+#[must_use]
+pub const fn is_damageable(item: u32) -> bool {
+    max_durability(item).is_some()
+}
+
+/// Applies durability damage to an item stack, respecting the Unbreaking enchantment.
+/// Returns `true` if the item broke (reached or exceeded max durability and was cleared).
+pub fn apply_durability_damage(stack: &mut ItemStack, amount: u16, rng_sample: f32) -> bool {
+    if stack.is_empty() {
+        return false;
+    }
+    let Some(max_dur) = max_durability(stack.item) else {
+        return false;
+    };
+    if crate::enchantment::should_prevent_durability_loss(stack.enchantments, rng_sample) {
+        return false;
+    }
+    stack.damage = stack.damage.saturating_add(amount);
+    if stack.damage >= max_dur {
+        *stack = ItemStack::EMPTY;
+        true
+    } else {
+        false
+    }
+}
+
+/// Returns the base melee attack damage of an item when held in the main hand.
+#[must_use]
+pub const fn weapon_base_damage(item: u32) -> f32 {
+    match item {
+        ITEM_WOODEN_SWORD => 4.0,
+        ITEM_STONE_SWORD => 5.0,
+        ITEM_IRON_SWORD => 6.0,
+        ITEM_WOODEN_AXE => 7.0,
+        ITEM_STONE_AXE => 9.0,
+        ITEM_IRON_AXE => 9.0,
+        ITEM_WOODEN_PICKAXE => 2.0,
+        ITEM_STONE_PICKAXE => 3.0,
+        ITEM_IRON_PICKAXE => 4.0,
+        ITEM_WOODEN_SHOVEL => 2.5,
+        ITEM_STONE_SHOVEL => 3.5,
+        ITEM_IRON_SHOVEL => 4.5,
+        _ => 1.0,
+    }
+}
+
 /// Checks if a slot accepts the specified item.
 #[must_use]
 pub const fn is_slot_valid_for_item(slot: usize, item: u32) -> bool {
@@ -473,6 +595,8 @@ pub struct ItemStack {
     pub item: u32,
     /// Number of items in this stack (0 = Empty).
     pub count: u16,
+    /// Item damage / durability consumed so far (0 = undamaged).
+    pub damage: u16,
     /// Compact bitpacked enchantments (empty if unenchanted).
     pub enchantments: CompactEnchantments,
 }
@@ -482,6 +606,7 @@ impl ItemStack {
     pub const EMPTY: Self = Self {
         item: 0,
         count: 0,
+        damage: 0,
         enchantments: CompactEnchantments::EMPTY,
     };
 
@@ -494,6 +619,7 @@ impl ItemStack {
             Self {
                 item,
                 count,
+                damage: 0,
                 enchantments: CompactEnchantments::EMPTY,
             }
         }
@@ -508,9 +634,37 @@ impl ItemStack {
             Self {
                 item,
                 count,
+                damage: 0,
                 enchantments,
             }
         }
+    }
+
+    /// Creates a new item stack with custom damage and enchantments.
+    #[must_use]
+    pub const fn new_with_damage(
+        item: u32,
+        count: u16,
+        damage: u16,
+        enchantments: CompactEnchantments,
+    ) -> Self {
+        if item == 0 || count == 0 {
+            Self::EMPTY
+        } else {
+            Self {
+                item,
+                count,
+                damage,
+                enchantments,
+            }
+        }
+    }
+
+    /// Builder method to attach a damage value to this item stack.
+    #[must_use]
+    pub const fn with_damage(mut self, damage: u16) -> Self {
+        self.damage = damage;
+        self
     }
 
     /// Whether this item stack is empty.
@@ -524,6 +678,7 @@ impl ItemStack {
         if self.item == 0 || self.count == 0 {
             self.item = 0;
             self.count = 0;
+            self.damage = 0;
             self.enchantments = CompactEnchantments::EMPTY;
         }
     }
@@ -535,6 +690,7 @@ impl ItemStack {
             return false;
         }
         self.item == other.item
+            && self.damage == other.damage
             && self.enchantments == other.enchantments
             && self.count + other.count <= MAX_STACK_SIZE
     }
@@ -1044,6 +1200,157 @@ pub const fn block_to_drop_item(block_id: u32) -> Option<ItemStack> {
         91 => Some(ItemStack::new(ITEM_GOLD_NUGGET, 4)), // Nether Gold Ore -> 4 Gold Nuggets
         other => Some(ItemStack::new(other, 1)),   // Default self-drop
     }
+}
+
+/// Returns the item stack dropped when a block with `block_id` is broken using `held_tool`.
+/// Respects tool tier requirements, Silk Touch, and Fortune.
+#[must_use]
+pub fn block_to_drop_with_tool(
+    block_id: u32,
+    held_tool: ItemStack,
+    rng_sample: f32,
+) -> Option<ItemStack> {
+    let has_silk =
+        held_tool.enchantments.get_level(crate::enchantment::EnchantmentKind::SilkTouch) > 0;
+    let fortune = held_tool.enchantments.get_level(crate::enchantment::EnchantmentKind::Fortune);
+    let p_tier = pickaxe_tier(held_tool.item);
+
+    // If block drops nothing at all (air, fluids, bedrock, leaves, spawner, etc.)
+    match block_id {
+        0 | 6 | 8 | 31..=34 | 37..=50 | 80 => return None,
+        _ => {}
+    }
+
+    // Glass: drops only with Silk Touch
+    if block_id == 9 {
+        return if has_silk {
+            Some(ItemStack::new(9, 1))
+        } else {
+            None
+        };
+    }
+
+    // Grass block: Silk touch drops grass block (3), otherwise dirt (2)
+    if block_id == 3 {
+        return if has_silk {
+            Some(ItemStack::new(3, 1))
+        } else {
+            Some(ItemStack::new(2, 1))
+        };
+    }
+
+    // Stone / Cobblestone / Mossy Cobblestone
+    if block_id == 1 || block_id == 35 || block_id == 79 {
+        let _tier = p_tier?;
+        return if has_silk && block_id == 1 {
+            Some(ItemStack::new(1, 1))
+        } else {
+            Some(ItemStack::new(4, 1))
+        };
+    }
+
+    // Cobblestone block (4)
+    if block_id == 4 {
+        p_tier?;
+        return Some(ItemStack::new(4, 1));
+    }
+
+    // Coal ore (12): Needs any pickaxe
+    if block_id == 12 {
+        p_tier?;
+        return if has_silk {
+            Some(ItemStack::new(12, 1))
+        } else {
+            let count = crate::enchantment::calculate_fortune_drop_count(1, fortune, rng_sample);
+            Some(ItemStack::new(54, count))
+        };
+    }
+
+    // Iron ore (13): Needs Stone or Iron pickaxe
+    if block_id == 13 {
+        let tier = p_tier?;
+        if tier < ToolTier::Stone {
+            return None;
+        }
+        return if has_silk {
+            Some(ItemStack::new(13, 1))
+        } else {
+            Some(ItemStack::new(52, 1))
+        };
+    }
+
+    // Gold ore (14): Needs Iron pickaxe
+    if block_id == 14 {
+        let tier = p_tier?;
+        if tier < ToolTier::Iron {
+            return None;
+        }
+        return if has_silk {
+            Some(ItemStack::new(14, 1))
+        } else {
+            Some(ItemStack::new(53, 1))
+        };
+    }
+
+    // Diamond ore (15): Needs Iron pickaxe
+    if block_id == 15 {
+        let tier = p_tier?;
+        if tier < ToolTier::Iron {
+            return None;
+        }
+        return if has_silk {
+            Some(ItemStack::new(15, 1))
+        } else {
+            let count = crate::enchantment::calculate_fortune_drop_count(1, fortune, rng_sample);
+            Some(ItemStack::new(20, count))
+        };
+    }
+
+    // Obsidian (36): Needs Iron pickaxe
+    if block_id == 36 {
+        let tier = p_tier?;
+        if tier < ToolTier::Iron {
+            return None;
+        }
+        return Some(ItemStack::new(36, 1));
+    }
+
+    // Nether Quartz Ore (90): Needs any pickaxe
+    if block_id == 90 {
+        p_tier?;
+        return if has_silk {
+            Some(ItemStack::new(90, 1))
+        } else {
+            let count = crate::enchantment::calculate_fortune_drop_count(1, fortune, rng_sample);
+            Some(ItemStack::new(ITEM_NETHER_QUARTZ, count))
+        };
+    }
+
+    // Nether Gold Ore (91): Needs any pickaxe
+    if block_id == 91 {
+        p_tier?;
+        return if has_silk {
+            Some(ItemStack::new(91, 1))
+        } else {
+            let count = crate::enchantment::calculate_fortune_drop_count(4, fortune, rng_sample);
+            Some(ItemStack::new(ITEM_GOLD_NUGGET, count))
+        };
+    }
+
+    // Furnace (82, 83)
+    if block_id == 82 || block_id == 83 {
+        p_tier?;
+        return Some(ItemStack::new(ITEM_FURNACE, 1));
+    }
+
+    // Anvil (91)
+    if block_id == 91 {
+        p_tier?;
+        return Some(ItemStack::new(ITEM_ANVIL, 1));
+    }
+
+    // Fallback for non-pickaxe-gated blocks
+    block_to_drop_item(block_id)
 }
 
 /// Number of item slots in a chest container.
@@ -1602,5 +1909,64 @@ mod tests {
 
         assert_eq!(item_name(ITEM_NETHER_QUARTZ), "Nether Quartz");
         assert_eq!(item_name(ITEM_GOLD_NUGGET), "Gold Nugget");
+    }
+
+    #[test]
+    fn test_durability_and_block_drops_with_tools() {
+        // Durability
+        let mut pick = ItemStack::new(ITEM_IRON_PICKAXE, 1);
+        assert_eq!(pick.damage, 0);
+        assert_eq!(max_durability(pick.item), Some(250));
+
+        // Apply 1 damage
+        let broken = apply_durability_damage(&mut pick, 1, 0.0);
+        assert!(!broken);
+        assert_eq!(pick.damage, 1);
+
+        // Broken when reaching max durability
+        let broken = apply_durability_damage(&mut pick, 250, 0.0);
+        assert!(broken);
+        assert!(pick.is_empty());
+
+        // Unbreaking chance
+        let mut pick_unbreaking = ItemStack::new(ITEM_IRON_PICKAXE, 1);
+        assert!(pick_unbreaking.enchantments.set_enchantment(crate::enchantment::EnchantmentKind::Unbreaking, 3));
+        // Level 3 unbreaking: ignore_chance = 3/4 = 0.75.
+        // rng_sample = 0.5 < 0.75 -> ignored!
+        let broken = apply_durability_damage(&mut pick_unbreaking, 1, 0.5);
+        assert!(!broken);
+        assert_eq!(pick_unbreaking.damage, 0);
+
+        // rng_sample = 0.9 >= 0.75 -> applied!
+        let broken = apply_durability_damage(&mut pick_unbreaking, 1, 0.9);
+        assert!(!broken);
+        assert_eq!(pick_unbreaking.damage, 1);
+
+        // Tool tiers on ores:
+        // Stone ore (13 - Iron Ore): needs at least Stone pickaxe
+        let wood_pick = ItemStack::new(ITEM_WOODEN_PICKAXE, 1);
+        let stone_pick = ItemStack::new(ITEM_STONE_PICKAXE, 1);
+        let iron_pick = ItemStack::new(ITEM_IRON_PICKAXE, 1);
+
+        assert_eq!(block_to_drop_with_tool(13, ItemStack::EMPTY, 0.0), None);
+        assert_eq!(block_to_drop_with_tool(13, wood_pick, 0.0), None);
+        assert_eq!(block_to_drop_with_tool(13, stone_pick, 0.0), Some(ItemStack::new(ITEM_RAW_IRON, 1))); // raw iron
+
+        // Diamond Ore (15): needs at least Iron pickaxe
+        assert_eq!(block_to_drop_with_tool(15, stone_pick, 0.0), None);
+        assert_eq!(block_to_drop_with_tool(15, iron_pick, 0.0), Some(ItemStack::new(ITEM_DIAMOND, 1))); // diamond
+
+        // Silk Touch on Diamond Ore
+        let mut silk_pick = ItemStack::new(ITEM_IRON_PICKAXE, 1);
+        assert!(silk_pick.enchantments.set_enchantment(crate::enchantment::EnchantmentKind::SilkTouch, 1));
+        assert_eq!(block_to_drop_with_tool(15, silk_pick, 0.0), Some(ItemStack::new(15, 1))); // diamond ore block
+
+        // Fortune III on Coal Ore (12)
+        let mut fortune_pick = ItemStack::new(ITEM_IRON_PICKAXE, 1);
+        assert!(fortune_pick.enchantments.set_enchantment(crate::enchantment::EnchantmentKind::Fortune, 3));
+        // With rng_sample = 0.9 (selects max multiplier = 4)
+        let drop = block_to_drop_with_tool(12, fortune_pick, 0.9).unwrap();
+        assert_eq!(drop.item, ITEM_COAL); // coal
+        assert_eq!(drop.count, 4);
     }
 }

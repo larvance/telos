@@ -41,17 +41,17 @@ use telos_sim::command::{
 };
 use telos_sim::event::{EventQueue, GameEvent};
 use telos_sim::{
-    ARMOR_SLOTS, ARROW_DESPAWN_FLYING_TICKS, ARROW_DESPAWN_STUCK_TICKS, ARROW_PICKUP_RADIUS,
+    ARMOR_HELMET_SLOT, ARMOR_SLOTS, ARROW_DESPAWN_FLYING_TICKS, ARROW_DESPAWN_STUCK_TICKS, ARROW_PICKUP_RADIUS,
     AiState, AquaticMob, ArrowEntity, ArrowStepOutcome, AttackCooldown, AttributeKind, Attributes,
     BOW_FULL_CHARGE_TICKS, BOW_MAX_RELEASE_SPEED, BOW_MIN_CHARGE_TICKS, BOW_MIN_RELEASE_SPEED,
     BoatEntity, CombatTracker, DamageType, EffectInstance, EnchantmentKind, EntityAabb, EntityType,
     Experience, FishingBobberEntity, GameMode, Health, Hunger, HurtTime, ITEM_ARROW, ITEM_BOW,
     ITEM_DESPAWN_TICKS, ITEM_FISHING_ROD, ITEM_FLINT_AND_STEEL, ITEM_MERGE_RADIUS, ITEM_MINECART,
     ITEM_OAK_BOAT, ITEM_PICKUP_RADIUS, Inventory, ItemEntity, ItemStack, MinecartEntity, Mob,
-    MobBundle, MoveMode, NetEntity, PLAYER_DROP_PICKUP_DELAY, PlayerPositions, Position,
+    MobBundle, MoveMode, NetEntity, PLAYER_DROP_PICKUP_DELAY, PLAYER_INVENTORY_SLOTS, PlayerPositions, Position,
     PotionType, RailKind, Riding, Rotation, SimParams, SimulationFrozen, StatusEffectKind,
     StatusEffectRegistry, StatusEffects, TargetablePlayer, Velocity, WeatherKind, WeatherState,
-    apply_mitigated_damage, block_to_drop_item, build_sim_schedule, calculate_total_epf,
+    apply_damage, apply_mitigated_damage, build_sim_schedule, calculate_total_epf,
     determine_rail_shape, is_boat, is_flint_and_steel, is_minecart, merge_item_stacks,
     roll_fishing_loot, tick_arrow_physics_step, tick_item_physics_step_fluid,
     tick_mob_physics_step,
@@ -77,6 +77,7 @@ const fn stack_to_slot(stack: ItemStack) -> SlotData {
     SlotData {
         item: stack.item,
         count: stack.count,
+        damage: stack.damage,
         enchantments: stack.enchantments.0,
     }
 }
@@ -1812,6 +1813,7 @@ impl Server {
                                             slot: slot_idx as u16,
                                             item: slot.item,
                                             count: slot.count,
+                                            damage: slot.damage,
                                             enchantments: slot.enchantments.0,
                                         })),
                                     );
@@ -3861,14 +3863,17 @@ impl Server {
                             let drop_count = if entire_stack { slot.count } else { 1 };
                             let item_id = slot.item;
                             let enchantments = slot.enchantments;
+                            let damage = slot.damage;
                             slot.count -= drop_count;
                             slot.normalize();
                             Some((
                                 item_id,
                                 drop_count,
                                 enchantments,
+                                damage,
                                 slot.item,
                                 slot.count,
+                                slot.damage,
                                 slot.enchantments,
                             ))
                         } else {
@@ -3882,8 +3887,10 @@ impl Server {
                         drop_item,
                         drop_count,
                         drop_ench,
+                        drop_damage,
                         remaining_item,
                         remaining_count,
+                        remaining_damage,
                         remaining_ench,
                     )) = drop_info
                     {
@@ -3904,7 +3911,12 @@ impl Server {
                             &world_name,
                             drop_pos,
                             vel,
-                            ItemStack::new_enchanted(drop_item, drop_count, drop_ench),
+                            ItemStack::new_with_damage(
+                                drop_item,
+                                drop_count,
+                                drop_damage,
+                                drop_ench,
+                            ),
                             PLAYER_DROP_PICKUP_DELAY,
                         );
 
@@ -3912,6 +3924,7 @@ impl Server {
                             slot: u16::from(selected_slot),
                             item: remaining_item,
                             count: remaining_count,
+                            damage: remaining_damage,
                             enchantments: remaining_ench.0,
                         });
                         if let Some(session) = self.sessions.get_mut(&session_id) {
@@ -3963,15 +3976,15 @@ impl Server {
 
                     // Consume arrow in survival mode
                     if let Some(slot_idx) = arrow_slot_to_consume {
-                        let (rem_item, rem_count, rem_ench) = if let Some(entity) = entity
+                        let (rem_item, rem_count, rem_damage, rem_ench) = if let Some(entity) = entity
                             && let Some(mut inv) = self.ecs_world.get_mut::<Inventory>(entity)
                         {
                             let slot = &mut inv.slots[slot_idx];
                             slot.count = slot.count.saturating_sub(1);
                             slot.normalize();
-                            (slot.item, slot.count, slot.enchantments)
+                            (slot.item, slot.count, slot.damage, slot.enchantments)
                         } else {
-                            (0, 0, telos_sim::CompactEnchantments::EMPTY)
+                            (0, 0, 0, telos_sim::CompactEnchantments::EMPTY)
                         };
 
                         #[allow(clippy::cast_possible_truncation)]
@@ -3979,12 +3992,66 @@ impl Server {
                             slot: slot_idx as u16,
                             item: rem_item,
                             count: rem_count,
+                            damage: rem_damage,
                             enchantments: rem_ench.0,
                         });
                         if let Some(session) = self.sessions.get_mut(&session_id) {
                             let _ = session
                                 .connection
                                 .send(Lane::Control, Payload::Msg(slot_update));
+                        }
+                    }
+
+                    // Degrade bow durability in survival mode
+                    if !is_creative {
+                        let held_idx = selected_slot as usize;
+                        let (broke, held_slot) = if let Some(entity) = entity
+                            && let Some(mut inv) = self.ecs_world.get_mut::<Inventory>(entity)
+                            && held_idx < inv.slots.len()
+                        {
+                            let rng_sample = {
+                                let mut h = self.tick_count ^ (u64::from(session_id) << 5);
+                                h = h.wrapping_mul(6_364_136_223_846_793_005);
+                                ((h & 0xFFFF_FFFF) as f32) / 4_294_967_296.0
+                            };
+                            let broke = telos_sim::apply_durability_damage(
+                                &mut inv.slots[held_idx],
+                                1,
+                                rng_sample,
+                            );
+                            (broke, inv.slots[held_idx])
+                        } else {
+                            (false, ItemStack::EMPTY)
+                        };
+
+                        #[allow(clippy::cast_possible_truncation)]
+                        let bow_update = S2cMessage::InventorySlot(S2cInventorySlot {
+                            slot: held_idx as u16,
+                            item: held_slot.item,
+                            count: held_slot.count,
+                            damage: held_slot.damage,
+                            enchantments: held_slot.enchantments.0,
+                        });
+                        if let Some(session) = self.sessions.get_mut(&session_id) {
+                            let _ = session
+                                .connection
+                                .send(Lane::Control, Payload::Msg(bow_update));
+                        }
+                        if broke {
+                            let break_status = S2cMessage::EntityStatus(S2cEntityStatus {
+                                net_id: self
+                                    .sessions
+                                    .get(&session_id)
+                                    .map_or(0, |s| s.entity_id),
+                                status: 47,
+                            });
+                            for s in self.sessions.values_mut() {
+                                if s.phase == ConnectionPhase::Play {
+                                    let _ = s
+                                        .connection
+                                        .send(Lane::Control, Payload::Msg(break_status.clone()));
+                                }
+                            }
                         }
                     }
 
@@ -4195,6 +4262,53 @@ impl Server {
                         }
                     }
                 }
+                PlayerCommandKind::Respawn => {
+                    if let Some(entity) = entity {
+                        if let Some(mut health) = self.ecs_world.get_mut::<Health>(entity) {
+                            health.cur = health.max;
+                        }
+                        if let Some(mut hunger) = self.ecs_world.get_mut::<Hunger>(entity) {
+                            hunger.food = 20;
+                            hunger.saturation = 5.0;
+                            hunger.exhaustion = 0.0;
+                        }
+                        if let Some(mut effects) = self.ecs_world.get_mut::<StatusEffects>(entity) {
+                            effects.effects.clear();
+                        }
+                    }
+                    if let Some(session) = self.sessions.get_mut(&session_id) {
+                        session.air_supply = 300;
+                        session.fall_distance = 0.0;
+                        session.is_dead = false;
+                        let spawn_pos = self
+                            .worlds
+                            .get_or_default_mut(&session.world_name)
+                            .find_safe_spawn(0, 0);
+                        session.position = spawn_pos;
+                        session.move_state.pos = spawn_pos;
+                        session.move_state.vel = Vec3::ZERO;
+                        session.teleport_id_counter = session.teleport_id_counter.wrapping_add(1);
+                        session.awaiting_teleport = Some(session.teleport_id_counter);
+
+                        let ack_msg = S2cMessage::PlayerMovementAck(S2cPlayerMovementAck {
+                            client_tick_ack: session.last_processed_client_tick,
+                            #[allow(clippy::cast_possible_truncation)]
+                            server_tick: self.tick_count as u32,
+                            x: spawn_pos.x,
+                            y: spawn_pos.y,
+                            z: spawn_pos.z,
+                            vx: 0.0,
+                            vy: 0.0,
+                            vz: 0.0,
+                            yaw: session.move_state.yaw,
+                            pitch: session.move_state.pitch,
+                            on_ground: true,
+                            flying: false,
+                            teleport_id: session.teleport_id_counter,
+                        });
+                        let _ = session.connection.send(Lane::Control, Payload::Msg(ack_msg));
+                    }
+                }
             }
         }
 
@@ -4222,13 +4336,47 @@ impl Server {
                 // Action 0 = Attack
                 let mut is_dead = false;
 
-                // Calculate attacker damage from Attributes
                 let attacker_entity = self.sessions.get(&session_id).and_then(|s| s.ecs_entity);
-                let mut attack_damage = 4.0f32;
+                let selected_slot = self
+                    .sessions
+                    .get(&session_id)
+                    .map_or(0, |s| s.selected_slot as usize);
+                let is_survival = self
+                    .sessions
+                    .get(&session_id)
+                    .is_some_and(|s| s.game_mode == GameMode::Survival);
+
+                let is_undead = self
+                    .ecs_world
+                    .get::<NetEntity>(target_entity)
+                    .is_some_and(|net| net.entity_type == EntityType::Zombie);
+
+                let (held_item, mut attack_damage, kb_bonus, fire_aspect) =
+                    if let Some(att_ent) = attacker_entity
+                        && let Some(inv) = self.ecs_world.get::<Inventory>(att_ent)
+                        && selected_slot < inv.slots.len()
+                    {
+                        let item = inv.slots[selected_slot];
+                        let base_dmg = telos_sim::weapon_base_damage(item.item);
+                        let dmg = telos_sim::calculate_melee_damage(
+                            base_dmg,
+                            item.enchantments,
+                            is_undead,
+                            false,
+                        );
+                        let kb = telos_sim::calculate_knockback_bonus(item.enchantments);
+                        let fa = telos_sim::calculate_fire_aspect_seconds(item.enchantments);
+                        (item, dmg, kb, fa)
+                    } else {
+                        (ItemStack::EMPTY, 1.0f32, 0.0f32, 0.0f32)
+                    };
+
+                // Add bonus damage from player Attributes if present
                 if let Some(att_ent) = attacker_entity
                     && let Some(mut attrs) = self.ecs_world.get_mut::<Attributes>(att_ent)
                 {
-                    attack_damage = (attrs.get_value(AttributeKind::AttackDamage) as f32).max(0.5);
+                    let bonus = (attrs.get_value(AttributeKind::AttackDamage) as f32).max(1.0) - 1.0;
+                    attack_damage += bonus;
                 }
 
                 // Query target defense
@@ -4267,6 +4415,53 @@ impl Server {
                     }
                 }
 
+                // Weapon durability damage in survival mode
+                if is_survival && !held_item.is_empty() && telos_sim::is_damageable(held_item.item) {
+                    let dur_loss = if telos_sim::is_sword(held_item.item) { 1 } else { 2 };
+                    let rng_sample = {
+                        let mut h = self.tick_count ^ (u64::from(session_id) << 4);
+                        h = h.wrapping_mul(6_364_136_223_846_793_005);
+                        ((h & 0xFFFF_FFFF) as f32) / 4_294_967_296.0
+                    };
+                    let (broke, updated_item) = if let Some(att_ent) = attacker_entity
+                        && let Some(mut inv) = self.ecs_world.get_mut::<Inventory>(att_ent)
+                        && selected_slot < inv.slots.len()
+                    {
+                        let broke = telos_sim::apply_durability_damage(
+                            &mut inv.slots[selected_slot],
+                            dur_loss,
+                            rng_sample,
+                        );
+                        (broke, inv.slots[selected_slot])
+                    } else {
+                        (false, ItemStack::EMPTY)
+                    };
+
+                    let slot_update = S2cMessage::InventorySlot(S2cInventorySlot {
+                        slot: selected_slot as u16,
+                        item: updated_item.item,
+                        count: updated_item.count,
+                        damage: updated_item.damage,
+                        enchantments: updated_item.enchantments.0,
+                    });
+                    if let Some(s) = self.sessions.get_mut(&session_id) {
+                        let _ = s.connection.send(Lane::Control, Payload::Msg(slot_update));
+                    }
+                    if broke {
+                        let break_status = S2cMessage::EntityStatus(S2cEntityStatus {
+                            net_id: self.sessions.get(&session_id).map_or(0, |s| s.entity_id),
+                            status: 47,
+                        });
+                        for s in self.sessions.values_mut() {
+                            if s.phase == ConnectionPhase::Play {
+                                let _ = s
+                                    .connection
+                                    .send(Lane::Control, Payload::Msg(break_status.clone()));
+                            }
+                        }
+                    }
+                }
+
                 self.event_queue.push(GameEvent::EntityDamage {
                     target_net_id: interact.target_net_id,
                     damage: attack_damage,
@@ -4286,7 +4481,19 @@ impl Server {
                         0.35,
                         (diff.z / horiz_dist) as f32,
                     );
-                    vel.0 += kb_dir * 0.4;
+                    vel.0 += kb_dir * (0.4 + kb_bonus * 0.2);
+                }
+
+                if fire_aspect > 0.0 && !is_dead {
+                    let mut query = self.ecs_world.query::<(&mut Health, &mut CombatTracker)>();
+                    if let Ok((mut health, mut tracker)) =
+                        query.get_mut(&mut self.ecs_world, target_entity)
+                    {
+                        telos_sim::apply_damage(&mut health, &mut tracker, 1.0, DamageType::Fire);
+                        if !health.is_alive() {
+                            is_dead = true;
+                        }
+                    }
                 }
 
                 // If passive mob, enter fleeing state
@@ -5386,6 +5593,7 @@ impl Server {
                                 slot: slot_idx as u16,
                                 item: inv.slots[slot_idx].item,
                                 count: inv.slots[slot_idx].count,
+                                damage: inv.slots[slot_idx].damage,
                                 enchantments: inv.slots[slot_idx].enchantments.0,
                             });
                             if let Some(s) = self.sessions.get_mut(&session_id) {
@@ -5426,6 +5634,7 @@ impl Server {
                                 slot: slot_idx as u16,
                                 item: inv.slots[slot_idx].item,
                                 count: inv.slots[slot_idx].count,
+                                damage: inv.slots[slot_idx].damage,
                                 enchantments: inv.slots[slot_idx].enchantments.0,
                             });
                             if let Some(s) = self.sessions.get_mut(&session_id) {
@@ -5666,11 +5875,7 @@ impl Server {
                     } else if world.registry().is_crafting_table(old_state) {
                         let mut slot_vec = Vec::with_capacity(10);
                         for _ in 0..10 {
-                            slot_vec.push(SlotData {
-                                item: 0,
-                                count: 0,
-                                enchantments: 0,
-                            });
+                            slot_vec.push(SlotData::new(0, 0));
                         }
                         let open_msg = S2cMessage::OpenContainer(S2cOpenContainer {
                             window_id: 1,
@@ -5694,11 +5899,7 @@ impl Server {
                     } else if world.registry().is_anvil(old_state) {
                         let mut slot_vec = Vec::with_capacity(3);
                         for _ in 0..3 {
-                            slot_vec.push(SlotData {
-                                item: 0,
-                                count: 0,
-                                enchantments: 0,
-                            });
+                            slot_vec.push(SlotData::new(0, 0));
                         }
                         let open_msg = S2cMessage::OpenContainer(S2cOpenContainer {
                             window_id: 1,
@@ -5778,6 +5979,34 @@ impl Server {
                                 }
 
                                 if session_game_mode == GameMode::Survival {
+                                    let selected_slot = self
+                                        .sessions
+                                        .get(&session_id)
+                                        .map_or(0, |s| s.selected_slot as usize);
+                                    let player_ent = self
+                                        .sessions
+                                        .get(&session_id)
+                                        .and_then(|s| s.ecs_entity);
+                                    let held_item = if let Some(pe) = player_ent
+                                        && let Some(inv) = self.ecs_world.get::<Inventory>(pe)
+                                        && selected_slot < inv.slots.len()
+                                    {
+                                        inv.slots[selected_slot]
+                                    } else {
+                                        ItemStack::EMPTY
+                                    };
+
+                                    let rng_sample = {
+                                        let mut h = self.tick_count ^ (u64::from(session_id) << 12);
+                                        h = h
+                                            .wrapping_mul(6_364_136_223_846_793_005)
+                                            .wrapping_add(target_pos.x() as u64);
+                                        h = h
+                                            .wrapping_mul(6_364_136_223_846_793_005)
+                                            .wrapping_add(target_pos.z() as u64);
+                                        ((h & 0xFFFF_FFFF) as f32) / 4_294_967_296.0
+                                    };
+
                                     let maybe_drop_stack = self
                                         .registries
                                         .block_registry()
@@ -5785,18 +6014,29 @@ impl Server {
                                         .and_then(|ident| {
                                             if ident.namespace() == "telos" {
                                                 if ident.path() == "anvil" {
-                                                    Some(ItemStack::new(telos_sim::ITEM_ANVIL, 1))
+                                                    if telos_sim::is_pickaxe(held_item.item) {
+                                                        Some(ItemStack::new(telos_sim::ITEM_ANVIL, 1))
+                                                    } else {
+                                                        None
+                                                    }
                                                 } else {
                                                     None
                                                 }
                                             } else {
-                                                self.registries
+                                                let item_id = self
+                                                    .registries
                                                     .item_registry()
-                                                    .get_by_ident(ident)
-                                                    .map(|item_id| ItemStack::new(item_id, 1))
+                                                    .get_by_ident(ident)?;
+                                                Some(ItemStack::new(item_id, 1))
                                             }
                                         })
-                                        .or_else(|| block_to_drop_item(old_state.0));
+                                        .or_else(|| {
+                                            telos_sim::block_to_drop_with_tool(
+                                                old_state.0,
+                                                held_item,
+                                                rng_sample,
+                                            )
+                                        });
 
                                     if let Some(drop_stack) = maybe_drop_stack {
                                         let spawn_pos = DVec3::new(
@@ -5811,6 +6051,60 @@ impl Server {
                                             vel,
                                             drop_stack,
                                         ));
+                                    }
+
+                                    // Apply tool durability damage
+                                    if !held_item.is_empty()
+                                        && telos_sim::is_damageable(held_item.item)
+                                    {
+                                        let dur_loss = if telos_sim::is_sword(held_item.item) {
+                                            2
+                                        } else {
+                                            1
+                                        };
+                                        let (broke, updated_item) = if let Some(pe) = player_ent
+                                            && let Some(mut inv) =
+                                                self.ecs_world.get_mut::<Inventory>(pe)
+                                            && selected_slot < inv.slots.len()
+                                        {
+                                            let broke = telos_sim::apply_durability_damage(
+                                                &mut inv.slots[selected_slot],
+                                                dur_loss,
+                                                rng_sample,
+                                            );
+                                            (broke, inv.slots[selected_slot])
+                                        } else {
+                                            (false, ItemStack::EMPTY)
+                                        };
+
+                                        let slot_update =
+                                            S2cMessage::InventorySlot(S2cInventorySlot {
+                                                slot: selected_slot as u16,
+                                                item: updated_item.item,
+                                                count: updated_item.count,
+                                                damage: updated_item.damage,
+                                                enchantments: updated_item.enchantments.0,
+                                            });
+                                        if let Some(s) = self.sessions.get_mut(&session_id) {
+                                            let _ = s
+                                                .connection
+                                                .send(Lane::Control, Payload::Msg(slot_update));
+                                        }
+                                        if broke {
+                                            let break_status =
+                                                S2cMessage::EntityStatus(S2cEntityStatus {
+                                                    net_id: session_entity_id,
+                                                    status: 47,
+                                                });
+                                            for s in self.sessions.values_mut() {
+                                                if s.phase == ConnectionPhase::Play {
+                                                    let _ = s.connection.send(
+                                                        Lane::Control,
+                                                        Payload::Msg(break_status.clone()),
+                                                    );
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
@@ -5982,6 +6276,7 @@ impl Server {
         }
 
         // 4c. Process player movement inputs and authoritative simulation
+        let mut hazard_hurts = Vec::new();
         for session in self.sessions.values_mut() {
             if session.phase != ConnectionPhase::Play {
                 continue;
@@ -6179,6 +6474,41 @@ impl Server {
                     }
                 }
 
+                let ack_msg = S2cMessage::PlayerMovementAck(S2cPlayerMovementAck {
+                    client_tick_ack: session.last_processed_client_tick,
+                    #[allow(clippy::cast_possible_truncation)]
+                    server_tick: self.tick_count as u32,
+                    x: session.move_state.pos.x,
+                    y: session.move_state.pos.y,
+                    z: session.move_state.pos.z,
+                    vx: session.move_state.vel.x,
+                    vy: session.move_state.vel.y,
+                    vz: session.move_state.vel.z,
+                    yaw: session.move_state.yaw,
+                    pitch: session.move_state.pitch,
+                    on_ground: session.move_state.on_ground,
+                    flying: session.move_state.flying,
+                    teleport_id: session.awaiting_teleport.unwrap_or(0),
+                });
+                let _ = session
+                    .connection
+                    .send(Lane::Control, Payload::Msg(ack_msg));
+            }
+
+            // Environmental hazard checks (fire/lava, drowning, void) run every tick
+            if session.phase == ConnectionPhase::Play {
+                #[allow(clippy::cast_possible_truncation)]
+                let block_pos = BlockPos::new(
+                    session.position.x.floor() as i32,
+                    session.position.y.floor() as i32,
+                    session.position.z.floor() as i32,
+                );
+                let block_state = self
+                    .worlds
+                    .get_or_default_mut(&session.world_name)
+                    .get_block(block_pos);
+                let reg = self.registries.block_registry();
+
                 // Check fire / lava / magma environmental hazard
                 if !session.capabilities.invincible
                     && session.move_mode != MoveMode::NoClipFly
@@ -6239,25 +6569,101 @@ impl Server {
                     }
                 }
 
-                let ack_msg = S2cMessage::PlayerMovementAck(S2cPlayerMovementAck {
-                    client_tick_ack: session.last_processed_client_tick,
+                // Underwater drowning hazard check
+                if !session.capabilities.invincible
+                    && session.move_mode != MoveMode::NoClipFly
+                    && session.game_mode == GameMode::Survival
+                    && !session.is_dead
+                {
                     #[allow(clippy::cast_possible_truncation)]
-                    server_tick: self.tick_count as u32,
-                    x: session.move_state.pos.x,
-                    y: session.move_state.pos.y,
-                    z: session.move_state.pos.z,
-                    vx: session.move_state.vel.x,
-                    vy: session.move_state.vel.y,
-                    vz: session.move_state.vel.z,
-                    yaw: session.move_state.yaw,
-                    pitch: session.move_state.pitch,
-                    on_ground: session.move_state.on_ground,
-                    flying: session.move_state.flying,
-                    teleport_id: session.awaiting_teleport.unwrap_or(0),
-                });
-                let _ = session
-                    .connection
-                    .send(Lane::Control, Payload::Msg(ack_msg));
+                    let eye_pos = BlockPos::new(
+                        session.position.x.floor() as i32,
+                        (session.position.y + 1.62).floor() as i32,
+                        session.position.z.floor() as i32,
+                    );
+                    let eye_block = self
+                        .worlds
+                        .get_or_default_mut(&session.world_name)
+                        .get_block(eye_pos);
+                    let eye_submerged = reg.is_water(eye_block);
+
+                    if eye_submerged {
+                        let respiration_level = if let Some(entity) = session.ecs_entity
+                            && let Some(inv) = self.ecs_world.get::<Inventory>(entity)
+                        {
+                            let helmet_slot = &inv.slots[ARMOR_HELMET_SLOT];
+                            if !helmet_slot.is_empty() {
+                                helmet_slot.enchantments.get_level(EnchantmentKind::Respiration)
+                            } else {
+                                0
+                            }
+                        } else {
+                            0
+                        };
+
+                        let skip_air_loss = if respiration_level > 0 {
+                            let rng_sample = {
+                                let mut h = self.tick_count ^ (u64::from(session.session_id) << 7);
+                                h = h.wrapping_mul(6_364_136_223_846_793_005);
+                                ((h & 0xFFFF_FFFF) as f32) / 4_294_967_296.0
+                            };
+                            rng_sample < (f32::from(respiration_level)) / (f32::from(respiration_level) + 1.0)
+                        } else {
+                            false
+                        };
+
+                        if !skip_air_loss {
+                            session.air_supply = session.air_supply.saturating_sub(1);
+                        }
+
+                        if session.air_supply <= 0 && self.tick_count.is_multiple_of(20) {
+                            if let Some(entity) = session.ecs_entity {
+                                let mut query = self.ecs_world.query::<(&mut Health, &mut CombatTracker)>();
+                                if let Ok((mut health, mut combat)) = query.get_mut(&mut self.ecs_world, entity) {
+                                    apply_damage(&mut health, &mut combat, 2.0, DamageType::Drown);
+                                }
+                                if let Some(mut hurt_time) = self.ecs_world.get_mut::<HurtTime>(entity) {
+                                    hurt_time.0 = 10;
+                                }
+                                hazard_hurts.push(session.entity_id);
+                            }
+                        }
+                    } else {
+                        session.air_supply = 300;
+                    }
+                }
+
+                // Void environmental hazard check
+                if !session.capabilities.invincible
+                    && session.move_mode != MoveMode::NoClipFly
+                    && session.game_mode == GameMode::Survival
+                    && !session.is_dead
+                    && session.position.y < -64.0
+                    && self.tick_count.is_multiple_of(10)
+                {
+                    if let Some(entity) = session.ecs_entity {
+                        let mut query = self.ecs_world.query::<(&mut Health, &mut CombatTracker)>();
+                        if let Ok((mut health, mut combat)) = query.get_mut(&mut self.ecs_world, entity) {
+                            apply_damage(&mut health, &mut combat, 4.0, DamageType::Void);
+                        }
+                        if let Some(mut hurt_time) = self.ecs_world.get_mut::<HurtTime>(entity) {
+                            hurt_time.0 = 10;
+                        }
+                        hazard_hurts.push(session.entity_id);
+                    }
+                }
+            }
+        }
+
+        for net_id in hazard_hurts {
+            let hurt_msg = S2cMessage::EntityStatus(S2cEntityStatus {
+                net_id,
+                status: 2,
+            });
+            for s in self.sessions.values_mut() {
+                if s.phase == ConnectionPhase::Play {
+                    let _ = s.connection.send(Lane::Control, Payload::Msg(hurt_msg.clone()));
+                }
             }
         }
 
@@ -6861,6 +7267,62 @@ impl Server {
                 if let Some(mut hurt_time) = self.ecs_world.get_mut::<HurtTime>(ecs_ent) {
                     hurt_time.0 = 10;
                 }
+
+                let is_survival = self
+                    .sessions
+                    .get(&target_session_id)
+                    .is_some_and(|s| s.game_mode == GameMode::Survival);
+
+                if is_survival {
+                    let armor_dur_loss = ((mob_damage / 4.0).floor() as u16).max(1);
+                    if let Some(mut inv) = self.ecs_world.get_mut::<Inventory>(ecs_ent) {
+                        for (piece_idx, slot_idx) in ARMOR_SLOTS.enumerate() {
+                            if !inv.slots[slot_idx].is_empty()
+                                && telos_sim::is_damageable(inv.slots[slot_idx].item)
+                            {
+                                let rng_sample = {
+                                    let mut h = self.tick_count
+                                        ^ (u64::from(target_session_id) << 6)
+                                        ^ (piece_idx as u64);
+                                    h = h.wrapping_mul(6_364_136_223_846_793_005);
+                                    ((h & 0xFFFF_FFFF) as f32) / 4_294_967_296.0
+                                };
+                                let broke = telos_sim::apply_durability_damage(
+                                    &mut inv.slots[slot_idx],
+                                    armor_dur_loss,
+                                    rng_sample,
+                                );
+                                let updated_slot = inv.slots[slot_idx];
+                                let armor_update = S2cMessage::InventorySlot(S2cInventorySlot {
+                                    slot: slot_idx as u16,
+                                    item: updated_slot.item,
+                                    count: updated_slot.count,
+                                    damage: updated_slot.damage,
+                                    enchantments: updated_slot.enchantments.0,
+                                });
+                                if let Some(session) = self.sessions.get_mut(&target_session_id) {
+                                    let _ = session
+                                        .connection
+                                        .send(Lane::Control, Payload::Msg(armor_update));
+                                }
+                                if broke {
+                                    let break_status = S2cMessage::EntityStatus(S2cEntityStatus {
+                                        net_id: player_net_id,
+                                        status: 47,
+                                    });
+                                    for s in self.sessions.values_mut() {
+                                        if s.phase == ConnectionPhase::Play {
+                                            let _ = s.connection.send(
+                                                Lane::Control,
+                                                Payload::Msg(break_status.clone()),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Directional knockback impulse
@@ -6966,6 +7428,7 @@ impl Server {
             }
         }
 
+        let mut player_deaths_to_process = Vec::new();
         for session in self.sessions.values_mut() {
             if session.phase != ConnectionPhase::Play {
                 continue;
@@ -6983,6 +7446,18 @@ impl Server {
             let food_val = hunger.map_or(20, |h| h.food);
             let sat_val = hunger.map_or(5.0, |h| h.saturation);
             let (xp_lvl, xp_prog) = xp.map_or((0, 0.0), |x| (x.level(), x.progress()));
+
+            if health_val <= 0.0 && !session.is_dead {
+                session.is_dead = true;
+                player_deaths_to_process.push((
+                    session.session_id,
+                    session.entity_id,
+                    entity,
+                    session.position,
+                    session.world_name.clone(),
+                    session.game_mode,
+                ));
+            }
 
             let stats_changed = (session.cached_health - health_val).abs() > 0.001
                 || session.cached_food != food_val
@@ -7079,6 +7554,84 @@ impl Server {
                     .send(Lane::Control, Payload::Msg(effects_msg));
 
                 session.cached_effects = current_effects;
+            }
+        }
+
+        for (sid, net_id, ecs_ent, p_pos, w_name, g_mode) in player_deaths_to_process {
+            // 1. Broadcast death animation status (status: 3)
+            let death_msg = S2cMessage::EntityStatus(S2cEntityStatus { net_id, status: 3 });
+            for s in self.sessions.values_mut() {
+                if s.phase == ConnectionPhase::Play {
+                    let _ = s.connection.send(Lane::Control, Payload::Msg(death_msg.clone()));
+                }
+            }
+
+            // 2. Broadcast death particles
+            #[allow(clippy::cast_possible_truncation)]
+            let smoke_msg = S2cMessage::ParticleEvent(S2cParticleEvent {
+                effect: ParticleEffectKind::Smoke,
+                x: p_pos.x as f32,
+                y: (p_pos.y + 0.8) as f32,
+                z: p_pos.z as f32,
+                count: 25,
+                speed: 0.15,
+                block_state_id: 0,
+            });
+            for s in self.sessions.values_mut() {
+                if s.phase == ConnectionPhase::Play {
+                    let _ = s.connection.send(Lane::Control, Payload::Msg(smoke_msg.clone()));
+                }
+            }
+
+            // 3. Drop all inventory items into the world in survival mode
+            let items_to_drop = if g_mode == GameMode::Survival
+                && let Some(mut inv) = self.ecs_world.get_mut::<Inventory>(ecs_ent)
+            {
+                let mut dropped = Vec::new();
+                for (slot_idx, slot) in inv.slots.iter_mut().enumerate() {
+                    if !slot.is_empty() {
+                        dropped.push((slot_idx, *slot));
+                        *slot = ItemStack::EMPTY;
+                    }
+                }
+                if !inv.carried.is_empty() {
+                    dropped.push((999, inv.carried));
+                    inv.carried = ItemStack::EMPTY;
+                }
+                dropped
+            } else {
+                Vec::new()
+            };
+
+            for (slot_idx, drop_stack) in items_to_drop {
+                let drop_pos = p_pos + DVec3::new(0.0, 0.5, 0.0);
+                let vel = if slot_idx == 999 {
+                    glam::Vec3::new(0.0, 0.22, 0.0)
+                } else {
+                    glam::Vec3::new(
+                        (slot_idx as f32 * 1.3).cos() * 0.12,
+                        0.22,
+                        (slot_idx as f32 * 1.3).sin() * 0.12,
+                    )
+                };
+                self.spawn_item_entity(
+                    &w_name,
+                    drop_pos,
+                    vel,
+                    drop_stack,
+                    PLAYER_DROP_PICKUP_DELAY,
+                );
+            }
+
+            if g_mode == GameMode::Survival {
+                let empty_slots = vec![stack_to_slot(ItemStack::EMPTY); PLAYER_INVENTORY_SLOTS];
+                if let Some(s) = self.sessions.get_mut(&sid) {
+                    let bulk_msg = S2cMessage::InventoryBulk(S2cInventoryBulk {
+                        slots: BoundedVec::new(empty_slots).expect("slots <= 64"),
+                        carried: stack_to_slot(ItemStack::EMPTY),
+                    });
+                    let _ = s.connection.send(Lane::Control, Payload::Msg(bulk_msg));
+                }
             }
         }
 

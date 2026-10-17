@@ -1269,6 +1269,8 @@ pub struct SlotData {
     pub item: u32,
     /// Number of items (0 = Empty, max 64).
     pub count: u16,
+    /// Item damage / durability consumed so far.
+    pub damage: u16,
     /// Bitpacked compact enchantments (0 = unenchanted).
     pub enchantments: u64,
 }
@@ -1280,6 +1282,7 @@ impl SlotData {
         Self {
             item,
             count,
+            damage: 0,
             enchantments: 0,
         }
     }
@@ -1290,6 +1293,18 @@ impl SlotData {
         Self {
             item,
             count,
+            damage: 0,
+            enchantments,
+        }
+    }
+
+    /// Creates a new slot data with damage and enchantments.
+    #[must_use]
+    pub const fn new_with_damage(item: u32, count: u16, damage: u16, enchantments: u64) -> Self {
+        Self {
+            item,
+            count,
+            damage,
             enchantments,
         }
     }
@@ -1298,6 +1313,7 @@ impl SlotData {
     pub fn encode(&self, buf: &mut Vec<u8>) {
         encode_varint(self.item, buf);
         encode_varint(u32::from(self.count), buf);
+        encode_varint(u32::from(self.damage), buf);
         encode_varlong(self.enchantments, buf);
     }
 
@@ -1312,15 +1328,17 @@ impl SlotData {
             });
         }
         let count = count_raw as u16;
+        let damage = decode_varint(cursor)? as u16;
         let enchantments = decode_varlong(cursor)?;
-        let (item, enchantments) = if count == 0 {
-            (0, 0)
+        let (item, damage, enchantments) = if count == 0 {
+            (0, 0, 0)
         } else {
-            (item, enchantments)
+            (item, damage, enchantments)
         };
         Ok(Self {
             item,
             count,
+            damage,
             enchantments,
         })
     }
@@ -1329,12 +1347,14 @@ impl SlotData {
 /// Server updates a single inventory slot on the client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct S2cInventorySlot {
-    /// Slot index (0..35).
+    /// Slot index (0..63).
     pub slot: u16,
     /// Item identifier.
     pub item: u32,
     /// Stack count.
     pub count: u16,
+    /// Item damage / durability lost.
+    pub damage: u16,
     /// Bitpacked compact enchantments.
     pub enchantments: u64,
 }
@@ -1345,6 +1365,7 @@ impl S2cInventorySlot {
         encode_varint(u32::from(self.slot), buf);
         encode_varint(self.item, buf);
         encode_varint(u32::from(self.count), buf);
+        encode_varint(u32::from(self.damage), buf);
         encode_varlong(self.enchantments, buf);
     }
 
@@ -1366,16 +1387,18 @@ impl S2cInventorySlot {
             });
         }
         let count = count_raw as u16;
+        let damage = decode_varint(cursor)? as u16;
         let enchantments = decode_varlong(cursor)?;
-        let (item, enchantments) = if count == 0 {
-            (0, 0)
+        let (item, damage, enchantments) = if count == 0 {
+            (0, 0, 0)
         } else {
-            (item, enchantments)
+            (item, damage, enchantments)
         };
         Ok(Self {
             slot,
             item,
             count,
+            damage,
             enchantments,
         })
     }
@@ -1527,6 +1550,8 @@ pub enum PlayerCommandKind {
     },
     /// Cast or reel in fishing rod.
     UseFishingRod,
+    /// Respawn player after death, resetting survival stats and returning to world spawn.
+    Respawn,
 }
 
 /// Server synchronizes weather condition, rain/thunder levels, and lightning flash to clients.
@@ -1922,6 +1947,9 @@ impl C2sPlayerCommand {
             PlayerCommandKind::UseFishingRod => {
                 buf.push(15);
             }
+            PlayerCommandKind::Respawn => {
+                buf.push(16);
+            }
         }
     }
 
@@ -2098,6 +2126,7 @@ impl C2sPlayerCommand {
                 }
             }
             15 => PlayerCommandKind::UseFishingRod,
+            16 => PlayerCommandKind::Respawn,
             other => {
                 return Err(ProtocolError::InvalidDiscriminant {
                     enum_name: "PlayerCommandKind",
@@ -3606,6 +3635,7 @@ mod tests {
             slot: 4,
             item: 2,
             count: 32,
+            damage: 5,
             enchantments: 0x0102_0304,
         };
         let mut buf = Vec::new();

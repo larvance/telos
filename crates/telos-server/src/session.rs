@@ -129,6 +129,10 @@ pub struct PlayerSession {
     pub portal_timer: u32,
     /// Cooldown ticks remaining before next dimensional portal transfer.
     pub portal_cooldown: u32,
+    /// Underwater breathing ticks remaining (default 300 = 15 seconds).
+    pub air_supply: i16,
+    /// Whether the player is currently dead and awaiting respawn.
+    pub is_dead: bool,
 }
 
 /// Tracks an open container window for a player session.
@@ -236,6 +240,8 @@ impl PlayerSession {
             active_fishing_bobber: None,
             portal_timer: 0,
             portal_cooldown: 0,
+            air_supply: 300,
+            is_dead: false,
         }
     }
 

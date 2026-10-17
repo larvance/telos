@@ -14,6 +14,8 @@ pub enum DamageType {
     Fall,
     /// Damage sustained when hunger reaches 0.
     Starvation,
+    /// Damage sustained from drowning underwater.
+    Drown,
     /// Damage sustained from falling into the void.
     Void,
     /// Damage dealt by a player or mob attack.
@@ -173,7 +175,7 @@ pub fn calculate_damage_mitigation(
     }
     if matches!(
         damage_type,
-        DamageType::Void | DamageType::Command | DamageType::Starvation
+        DamageType::Void | DamageType::Command | DamageType::Starvation | DamageType::Drown
     ) {
         return raw_damage;
     }

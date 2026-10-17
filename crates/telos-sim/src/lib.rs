@@ -72,9 +72,9 @@ pub use effect::{
 };
 pub use enchantment::{
     CompactEnchantments, EnchantmentKind, EnchantmentTarget, calculate_arrow_damage,
-    calculate_arrow_knockback, calculate_fire_aspect_seconds, calculate_knockback_bonus,
-    calculate_melee_damage, calculate_mining_speed, calculate_total_epf, has_infinite_arrows,
-    is_arrow_flaming, should_prevent_durability_loss,
+    calculate_arrow_knockback, calculate_fire_aspect_seconds, calculate_fortune_drop_count,
+    calculate_knockback_bonus, calculate_melee_damage, calculate_mining_speed, calculate_total_epf,
+    has_infinite_arrows, is_arrow_flaming, should_prevent_durability_loss,
 };
 pub use entity::{
     ARROW_AIR_DRAG, ARROW_DESPAWN_FLYING_TICKS, ARROW_DESPAWN_STUCK_TICKS, ARROW_GRAVITY,
@@ -118,11 +118,13 @@ pub use inventory::{
     ITEM_STONE_SHOVEL, ITEM_STONE_SWORD, ITEM_STRING, ITEM_WOODEN_AXE, ITEM_WOODEN_HOE,
     ITEM_WOODEN_PICKAXE, ITEM_WOODEN_SHOVEL, ITEM_WOODEN_SWORD, Inventory, InventoryError,
     ItemStack, MAX_STACK_SIZE, OFFHAND_SLOT, PLAYER_INVENTORY_SLOTS, STORAGE_SLOTS,
-    block_to_drop_item, container_click, inventory_click, inventory_click_with_registry, is_anvil,
-    is_armor, is_arrow, is_axe, is_boat, is_book, is_boots, is_bow, is_chest, is_chestplate,
+    ToolTier, apply_durability_damage, block_to_drop_item, block_to_drop_with_tool,
+    container_click, inventory_click, inventory_click_with_registry, is_anvil, is_armor, is_arrow,
+    is_axe, is_boat, is_book, is_boots, is_bow, is_chest, is_chestplate, is_damageable,
     is_enchanted_book, is_fishing_rod, is_flint_and_steel, is_furnace, is_helmet, is_hoe,
     is_leggings, is_minecart, is_pickaxe, is_potion, is_rail, is_shovel, is_slot_valid_for_item,
-    is_sword, is_tool, item_name, matching_armor_slot,
+    is_sword, is_tool, item_name, matching_armor_slot, max_durability, pickaxe_tier,
+    weapon_base_damage,
 };
 pub use logic::{
     LogicChunk, LogicComponent, LogicEngine, LogicKind, MAX_SIGNAL_DISTANCE, ScheduledLogicTick,
