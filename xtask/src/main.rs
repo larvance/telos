@@ -60,6 +60,10 @@ enum Commands {
         /// Bypass Hi-Z culling
         #[arg(long, default_value_t = false)]
         no_cull: bool,
+
+        /// Camera perspective ('first', 'third-back', 'third-front')
+        #[arg(long)]
+        perspective: Option<String>,
     },
     /// Build distribution packages (.deb, portable tarballs, `AppImage`)
     Dist {
@@ -129,7 +133,16 @@ fn main() -> Result<()> {
             frames,
             output,
             no_cull,
-        } => run_screenshot(&pos, yaw, pitch, frames, &output, no_cull)?,
+            perspective,
+        } => run_screenshot(
+            &pos,
+            yaw,
+            pitch,
+            frames,
+            &output,
+            no_cull,
+            perspective.as_deref(),
+        )?,
         Commands::Dist {
             version,
             portable_only,
@@ -518,12 +531,16 @@ fn run_screenshot(
     frames: u32,
     output: &str,
     no_cull: bool,
+    perspective: Option<&str>,
 ) -> Result<()> {
     println!(">> Capturing diagnostic screenshot...");
     println!("   Position: {pos}");
     println!("   Yaw: {yaw}°, Pitch: {pitch}°");
     println!("   Warmup frames: {frames}");
     println!("   Output: {output}");
+    if let Some(p) = perspective {
+        println!("   Perspective: {p}");
+    }
     if no_cull {
         println!("   Hi-Z culling: bypassed");
     }
@@ -535,6 +552,9 @@ fn run_screenshot(
     cmd.arg("--pitch").arg(pitch.to_string());
     cmd.arg("--frames").arg(frames.to_string());
     cmd.arg("--screenshot").arg(output);
+    if let Some(p) = perspective {
+        cmd.arg("--perspective").arg(p);
+    }
     if no_cull {
         cmd.arg("--no-cull");
     }

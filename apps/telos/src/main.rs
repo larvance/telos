@@ -322,6 +322,10 @@ struct Args {
     #[arg(long, default_value = "auto")]
     backend: String,
 
+    /// Initial camera perspective ('first', 'third-back', 'third-front').
+    #[arg(long)]
+    perspective: Option<String>,
+
     /// Maximum memory limit in megabytes.
     #[arg(long)]
     max_memory_mb: Option<u32>,
@@ -2144,7 +2148,11 @@ impl App {
             pending_lod_uploads: HashMap::new(),
 
             camera,
-            perspective: CameraPerspective::FirstPerson,
+            perspective: match args.perspective.as_deref() {
+                Some("third-back" | "third_back" | "third") => CameraPerspective::ThirdPersonBack,
+                Some("third-front" | "third_front") => CameraPerspective::ThirdPersonFront,
+                _ => CameraPerspective::FirstPerson,
+            },
             perspective_obstacle_dist: 4.0,
             attack_swing_timer: 0.0,
             local_walk_time: 0.0,
